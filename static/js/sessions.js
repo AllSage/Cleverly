@@ -9,6 +9,7 @@ import { providerLogo } from './providers.js';
 import { initModelPicker, updateModelPicker } from './modelPicker.js';
 import themeModule from './theme.js';
 import spinnerModule from './spinner.js';
+import focusCardsModule from './focusCards.js';
 
 const API_BASE = window.location.origin;
 
@@ -2121,12 +2122,14 @@ async function _checkServerStream(sessionId) {
     const spinner = spinnerMod.default.create('Generating response...', 'right');
     bodyDiv.appendChild(spinner.createElement());
     spinner.start();
+    const focusCards = focusCardsModule.mount(bodyDiv, { mode: 'reconnect' });
     box.appendChild(holder);
     uiModule.scrollHistory();
 
     const pollId = setInterval(async () => {
       if (getCurrentSessionId() !== sessionId) {
         clearInterval(pollId);
+        focusCards.destroy();
         spinner.destroy();
         if (holder.parentNode) holder.remove();
         return;
@@ -2135,6 +2138,7 @@ async function _checkServerStream(sessionId) {
         const r = await fetch(`${API_BASE}/api/chat/stream_status/${sessionId}`);
         if (!r.ok || (await r.json()).status !== 'streaming') {
           clearInterval(pollId);
+          focusCards.destroy();
           spinner.destroy();
           if (holder.parentNode) holder.remove();
           // Reload session to show the completed response + docs
@@ -2142,6 +2146,7 @@ async function _checkServerStream(sessionId) {
         }
       } catch (_) {
         clearInterval(pollId);
+        focusCards.destroy();
         spinner.destroy();
         if (holder.parentNode) holder.remove();
         selectSession(sessionId);

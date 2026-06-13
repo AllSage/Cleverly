@@ -8257,6 +8257,79 @@ body.hide-thinking .thinking-section { display: none !important; }
 .ai-spinner {
   color: var(--red);
 }
+.focus-card-waiting {
+  position: relative;
+  margin: 10px 0 2px;
+  padding: 10px 42px 10px 12px;
+  max-width: min(560px, 100%);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--accent, var(--red)) 78%, var(--fg));
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--panel) 88%, transparent),
+      color-mix(in srgb, var(--bg) 58%, transparent));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  animation: focus-card-in 180ms ease-out;
+}
+.focus-card-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: color-mix(in srgb, var(--accent, var(--red)) 70%, var(--fg));
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.focus-card-kicker span {
+  color: var(--fg);
+  opacity: 0.45;
+  font-weight: 650;
+}
+.focus-card-title {
+  margin-bottom: 4px;
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+.focus-card-body {
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.74;
+}
+.focus-card-dismiss {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  color: var(--fg);
+  padding: 4px 7px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.68;
+}
+.focus-card-dismiss:hover {
+  opacity: 1;
+  border-color: color-mix(in srgb, var(--accent, var(--red)) 60%, var(--border));
+}
+@keyframes focus-card-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 720px) {
+  .focus-card-waiting {
+    padding: 10px 38px 10px 10px;
+    max-width: 100%;
+  }
+}
 /* Nudge the Tidy button 2px left. */
 #memory-tidy-btn { position: relative; left: -2px; }
 /* Tidy button's whirlpool nudge — sits 1px lower so it visually centers on

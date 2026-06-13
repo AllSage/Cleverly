@@ -354,6 +354,29 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "docs/windows-installer.md" in security
 
 
+def test_focus_cards_are_local_waiting_ui_only():
+    focus_js = Path("static/js/focusCards.js").read_text(encoding="utf-8")
+    chat_js = Path("static/js/chat.js").read_text(encoding="utf-8")
+    sessions_js = Path("static/js/sessions.js").read_text(encoding="utf-8")
+    css = Path("static/style.css").read_text(encoding="utf-8")
+
+    assert "DEFAULT_DELAY_MS = 8500" in focus_js
+    assert "ROTATE_MS = 6500" in focus_js
+    assert "Setup or Offline Control" in focus_js
+    assert "1.1.1.1:80" in focus_js
+    assert "set the model key intentionally" in focus_js
+    assert "fetch(" not in focus_js
+    assert "http://" not in focus_js
+    assert "https://" not in focus_js
+    assert "focusCardsModule.mount(bodyDiv" in chat_js
+    assert "destroyFocusCards" in chat_js
+    assert "if (wasEmpty) destroyFocusCards();" in chat_js
+    assert "focusCardsModule.mount(newBody" in chat_js
+    assert "focusCardsModule.mount(bodyDiv, { mode: 'reconnect' })" in sessions_js
+    assert ".focus-card-waiting" in css
+    assert "focus-card-dismiss" in css
+
+
 def test_encrypted_app_backup_uses_password_kdf():
     route = Path("routes/backup_routes.py").read_text(encoding="utf-8")
     assert '"/api/backup/encrypted/export"' in route

@@ -21,6 +21,7 @@ import * as emailInbox from './emailInbox.js';
 import codeRunnerModule from './codeRunner.js';
 import slashCommands, { initSlashCommands, isCommand, handleSlashCommand, handleSetupInput, handleSetupWizard, typewriterInto } from './slashCommands.js';
 import createResearchSynapse from './researchSynapse.js';
+import focusCardsModule from './focusCards.js';
   const RESEARCH_TIMEOUT_MS = 360000;
   const DEFAULT_TIMEOUT_MS = 120000;
   const RESEARCH_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
@@ -519,6 +520,13 @@ import createResearchSynapse from './researchSynapse.js';
     let _renderStream = () => {};
     let _cancelThinkingTimer = () => {};
     let _removeThinkingSpinner = () => {};
+    let focusCards = null;
+    const destroyFocusCards = () => {
+      if (focusCards) {
+        try { focusCards.destroy(); } catch (_) {}
+        focusCards = null;
+      }
+    };
     const clearProcessingProbe = () => {
       if (processingProbeTimer) {
         clearTimeout(processingProbeTimer);
@@ -825,6 +833,10 @@ import createResearchSynapse from './researchSynapse.js';
       const bodyDiv = holder.querySelector('.body');
       bodyDiv.appendChild(spinner.createElement());
       spinner.start();
+      focusCards = focusCardsModule.mount(bodyDiv, {
+        modelName,
+        mode: el('research-toggle').checked ? 'research' : (_isAgent ? 'agent' : 'chat'),
+      });
       
       // Update spinner message based on mode
       if (el('web-toggle').checked && !_isAgent) {
@@ -1365,6 +1377,7 @@ import createResearchSynapse from './researchSynapse.js';
                 accumulated += _delta;
                 roundText += _delta;
                 currentAccumulated = accumulated; // Update global tracker
+                if (wasEmpty) destroyFocusCards();
                 // First token arrived — switch stop button from processing to streaming
                 if (wasEmpty && submitBtn && !_isBg) {
                   submitBtn.dataset.phase = 'receiving';
@@ -2155,6 +2168,11 @@ import createResearchSynapse from './researchSynapse.js';
                   spinner = spinnerModule.create('Generating response', 'right', 'wave');
                   newBody.appendChild(spinner.createElement());
                   spinner.start();
+                  destroyFocusCards();
+                  focusCards = focusCardsModule.mount(newBody, {
+                    modelName: metaS?.model,
+                    mode: 'agent',
+                  });
                 }
                 if (streamingTTS) window.aiTTSManager._streamSentencesSent = 0;
                 uiModule.scrollHistory();
@@ -2234,6 +2252,7 @@ import createResearchSynapse from './researchSynapse.js';
       }
 
       _renderStream();
+      destroyFocusCards();
       _cancelThinkingTimer();
       _removeThinkingSpinner();
       // Stop any thread pulse animations
@@ -2501,6 +2520,7 @@ import createResearchSynapse from './researchSynapse.js';
     } catch (err) {
       _renderStream();
       // Clean up any active spinner (e.g. "Generating response" during tool calls)
+      destroyFocusCards();
       if (spinner && spinner.element) spinner.destroy();
       _cancelThinkingTimer();
       _removeThinkingSpinner();
@@ -2672,6 +2692,7 @@ import createResearchSynapse from './researchSynapse.js';
       }
     } finally {
       clearProcessingProbe();
+      destroyFocusCards();
       // Always clean up research tracking regardless of background state
       _researchingStreamIds.delete(streamSessionId);
       if (_researchingStreamIds.size === 0) {
