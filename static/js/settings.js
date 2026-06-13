@@ -6,6 +6,7 @@ import searchModule from './search.js';
 import { makeWindowDraggable } from './windowDrag.js';
 import { clearDockSide } from './modalSnap.js';
 import { sortModelIds } from './modelSort.js';
+import Storage from './storage.js';
 
 let initialized = false;
 let modalEl = null;
@@ -2130,11 +2131,149 @@ function notifyIntegrationsChanged() {
   } catch (_) {}
 }
 
+function initResponseNotificationSettings() {
+  const toggle = el('set-response-notifications-toggle');
+  const status = el('set-response-notifications-status');
+  const permissionBtn = el('set-response-notifications-permission');
+  const testBtn = el('set-response-notifications-test');
+  if (!toggle) return;
+
+  const card = toggle.closest('.admin-card');
+  const supported = typeof window !== 'undefined' && 'Notification' in window;
+
+  function setStatus(text, color) {
+    if (!status) return;
+    status.textContent = text;
+    status.style.color = color || 'color-mix(in srgb, var(--fg) 60%, transparent)';
+  }
+
+  function saveEnabled(enabled) {
+    Storage.setJSON(Storage.KEYS.RESPONSE_NOTIFICATIONS, !!enabled);
+    try {
+      window.dispatchEvent(new CustomEvent('cleverly-response-notifications-changed'));
+    } catch (_) {}
+  }
+
+  function syncResponseNotificationUi() {
+    if (!supported) {
+      toggle.checked = false;
+      toggle.disabled = true;
+      if (permissionBtn) {
+        permissionBtn.disabled = true;
+        permissionBtn.textContent = 'Unavailable';
+      }
+      if (testBtn) testBtn.disabled = true;
+      if (card) card.style.opacity = '0.45';
+      setStatus('Browser notifications are not supported here.', 'var(--red)');
+      return;
+    }
+
+    toggle.disabled = false;
+    if (testBtn) testBtn.disabled = false;
+    if (card) card.style.opacity = toggle.checked ? '' : '0.72';
+
+    if (Notification.permission === 'granted') {
+      if (permissionBtn) {
+        permissionBtn.disabled = true;
+        permissionBtn.textContent = 'Allowed';
+      }
+      setStatus(
+        toggle.checked
+          ? 'Enabled for hidden tabs and other chats.'
+          : 'Off. Browser permission is allowed but Cleverly will not alert until enabled.',
+        toggle.checked ? 'var(--green, #50fa7b)' : 'color-mix(in srgb, var(--fg) 60%, transparent)'
+      );
+    } else if (Notification.permission === 'denied') {
+      if (permissionBtn) {
+        permissionBtn.disabled = true;
+        permissionBtn.textContent = 'Blocked';
+      }
+      setStatus('Browser notification permission is blocked in site settings.', 'var(--red)');
+    } else {
+      if (permissionBtn) {
+        permissionBtn.disabled = false;
+        permissionBtn.textContent = 'Allow Browser Notifications';
+      }
+      setStatus(
+        toggle.checked
+          ? 'Enable browser permission to receive alerts.'
+          : 'Off. Enable this setting and allow browser permission to receive alerts.',
+        'color-mix(in srgb, var(--fg) 60%, transparent)'
+      );
+    }
+  }
+
+  toggle.checked = Storage.getJSON(Storage.KEYS.RESPONSE_NOTIFICATIONS, false) === true;
+
+  if (!toggle.dataset.wired) {
+    toggle.dataset.wired = '1';
+    toggle.addEventListener('change', () => {
+      saveEnabled(toggle.checked);
+      syncResponseNotificationUi();
+    });
+  }
+
+  if (permissionBtn && !permissionBtn.dataset.wired) {
+    permissionBtn.dataset.wired = '1';
+    permissionBtn.addEventListener('click', async () => {
+      if (!supported || Notification.permission === 'denied') {
+        syncResponseNotificationUi();
+        return;
+      }
+      try {
+        const result = Notification.requestPermission();
+        const permission = result && typeof result.then === 'function'
+          ? await result
+          : Notification.permission;
+        if (permission === 'granted') {
+          toggle.checked = true;
+          saveEnabled(true);
+        }
+      } catch (e) {
+        setStatus('Permission request failed.', 'var(--red)');
+      }
+      syncResponseNotificationUi();
+    });
+  }
+
+  if (testBtn && !testBtn.dataset.wired) {
+    testBtn.dataset.wired = '1';
+    testBtn.addEventListener('click', () => {
+      if (!supported) {
+        syncResponseNotificationUi();
+        return;
+      }
+      if (!toggle.checked) {
+        setStatus('Turn on response notifications before testing.', 'var(--red)');
+        return;
+      }
+      if (Notification.permission !== 'granted') {
+        setStatus('Allow browser notifications before testing.', 'var(--red)');
+        syncResponseNotificationUi();
+        return;
+      }
+      try {
+        new Notification('Response Complete', {
+          body: 'This is a local browser-only test from Cleverly.',
+          tag: 'response-complete-test',
+          icon: '/static/cleverly-icon.svg?v=20260613',
+        });
+        setStatus('Test notification sent.', 'var(--green, #50fa7b)');
+      } catch (e) {
+        setStatus('Test notification failed.', 'var(--red)');
+      }
+    });
+  }
+
+  syncResponseNotificationUi();
+}
+
 async function initReminderSettings() {
   const root = el('settings-modal');
   if (!root || !root.querySelector('[data-settings-panel="reminders"]')) return;
   const emailEnabled = !window._cleverlyFeatures || window._cleverlyFeatures.email !== false;
   const networkNotificationsEnabled = !window._cleverlyFeatures || window._cleverlyFeatures.network_notifications !== false;
+  initResponseNotificationSettings();
 
   // Public URL field (used for deep-links in outgoing alert emails)
   const pubUrlIn = el('set-app-public-url');

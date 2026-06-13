@@ -23,7 +23,8 @@ export const KEYS = {
   MCP_ACTIVE: 'cleverly-mcp-active',
   SECTION_ORDER: 'sidebar-section-order',
   ADMIN_LAST_TAB: 'admin-last-tab',
-  DENSITY: 'cleverly-density'
+  DENSITY: 'cleverly-density',
+  RESPONSE_NOTIFICATIONS: 'cleverly-response-notifications'
 };
 
 /**

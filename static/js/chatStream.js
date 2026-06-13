@@ -204,6 +204,7 @@ export function notifyStreamComplete(sessionId, query) {
   var isHidden = document.hidden;
   var isOtherSession = sessionModule && sessionModule.getCurrentSessionId() !== sessionId;
   if (!isHidden && !isOtherSession) return;
+  if (Storage.getJSON(Storage.KEYS.RESPONSE_NOTIFICATIONS, false) !== true) return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   var body = query ? 'Response to "' + query.substring(0, 60) + '" is ready' : 'Your chat response has completed';
   var notification = new Notification('Response Complete', {

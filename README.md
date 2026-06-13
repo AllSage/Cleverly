@@ -20,7 +20,7 @@ It runs on your hardware, with your data.
 - **Documents**: multi-tab editor with markdown, HTML, CSV, syntax highlighting, AI edits, and suggestions.
 - **Memory / Skills**: persistent memory and reusable skills with ChromaDB and fastembed.
 - **Email**: IMAP/SMTP inbox with AI triage, reminders, tags, summaries, and reply drafts.
-- **Notes & Tasks**: notes, reminders, todos, scheduled tasks, ntfy/browser/email notification channels.
+- **Notes & Tasks**: notes, reminders, todos, scheduled tasks, ntfy/browser/email notification channels, and local response-complete alerts.
 - **Calendar**: local-first calendar with CalDAV sync and `.ics` import/export.
 - **Mobile / PWA**: responsive interface with installable app behavior.
 

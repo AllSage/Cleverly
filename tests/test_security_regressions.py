@@ -261,6 +261,30 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     assert "_features.deep_research !== false" in compare_selector
 
 
+def test_response_complete_notifications_are_browser_local_opt_in():
+    storage_js = Path("static/js/storage.js").read_text(encoding="utf-8")
+    index_html = Path("static/index.html").read_text(encoding="utf-8")
+    settings_js = Path("static/js/settings.js").read_text(encoding="utf-8")
+    chat_stream_js = Path("static/js/chatStream.js").read_text(encoding="utf-8")
+
+    assert "RESPONSE_NOTIFICATIONS: 'cleverly-response-notifications'" in storage_js
+    assert "set-response-notifications-toggle" in index_html
+    assert "set-response-notifications-permission" in index_html
+    assert "set-response-notifications-test" in index_html
+    assert "Storage.KEYS.RESPONSE_NOTIFICATIONS" in settings_js
+    assert "Notification.requestPermission" in settings_js
+    assert "new Notification('Response Complete'" in settings_js
+
+    response_fn = chat_stream_js.split("export function notifyStreamComplete", 1)[1]
+    response_fn = response_fn.split("export function insertStreamDoneToast", 1)[0]
+    assert "Storage.KEYS.RESPONSE_NOTIFICATIONS" in response_fn
+    assert "new Notification('Response Complete'" in response_fn
+    assert "fetch(" not in response_fn
+    assert "email" not in response_fn.lower()
+    assert "ntfy" not in response_fn.lower()
+    assert "webhook" not in response_fn.lower()
+
+
 def test_training_lab_is_local_only_and_wired_to_ui():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     index_html = Path("static/index.html").read_text(encoding="utf-8")
