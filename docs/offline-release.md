@@ -1,18 +1,20 @@
 # Cleverly Offline Release Runbook
 
 This runbook packages Cleverly for a machine that must run Docker with no
-internet access. The offline runtime uses `docker/offline.yml`, which places the
-app and bundled services on an internal Docker network and exposes only a local
-proxy on `127.0.0.1:${APP_PORT:-7000}`.
+internet access. Docker Compose is offline-by-default: the app and bundled
+services run on an internal Docker network, and only a local proxy is published
+on `127.0.0.1:${APP_PORT:-7000}`.
 
 ## What Offline Mode Changes
 
-- Sets `CLEVERLY_OFFLINE=1`.
+- Sets `CLEVERLY_OFFLINE=1` in base Compose.
 - Disables web search, web fetch, and deep research by default.
 - Clears internet-facing model/search endpoint defaults.
 - Skips startup network warmups.
 - Runs the Cleverly app container without internet egress.
 - Publishes the UI through the `cleverly_proxy` sidecar.
+- Refuses Docker startup with `CLEVERLY_OFFLINE` disabled unless
+  `CLEVERLY_ALLOW_NETWORK=I_ACCEPT_NETWORK_RISK` is explicitly set.
 - Leaves model, embedding, Chroma, and npm caches under mounted `./data`
   directories so they can be pre-seeded.
 
@@ -26,8 +28,8 @@ git clone https://github.com/AllSage/Cleverly.git
 cd Cleverly
 cp .env.example .env
 mkdir -p data logs data/ssh data/cache data/huggingface data/local data/npm-cache
-docker compose --env-file .env -f docker-compose.yml -f docker/offline.yml build cleverly
-docker compose --env-file .env -f docker-compose.yml -f docker/offline.yml pull chromadb searxng ntfy
+docker compose --env-file .env build cleverly
+docker compose --env-file .env pull chromadb searxng ntfy
 ```
 
 To bundle an offline chat model with Ollama, pull it into `./data/ollama` on
@@ -90,7 +92,6 @@ Start without pulling or building:
 ```bash
 docker compose --env-file .env \
   -f docker-compose.yml \
-  -f docker/offline.yml \
   -f docker/ollama-offline.yml \
   up -d --no-build --pull never
 ```
@@ -112,13 +113,13 @@ curl http://127.0.0.1:7000/api/health
 Check the Compose state:
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml -f docker/offline.yml ps
+docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml ps
 ```
 
 Confirm the app container has no internet egress:
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml -f docker/offline.yml exec cleverly \
+docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml exec cleverly \
   python -c "import socket; socket.create_connection(('1.1.1.1', 80), 3)"
 ```
 
@@ -141,12 +142,12 @@ Local model files should be copied into `data/huggingface` or another mounted
 path before startup. Offline mode does not download models.
 
 For the bundled Ollama path, copy `data/ollama` from the connected machine and
-include `docker/ollama-offline.yml` when starting Compose. The offline overlay
-does not run `ollama pull`; it only serves models that are already present in
-that directory.
+include `docker/ollama-offline.yml` when starting Compose. The offline Ollama
+overlay does not run `ollama pull`; it only serves models that are already
+present in that directory.
 
 ## Stop
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml -f docker/offline.yml down
+docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml down
 ```

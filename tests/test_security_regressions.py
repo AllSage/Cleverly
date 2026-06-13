@@ -113,31 +113,42 @@ def test_secret_storage_key_created_with_safe_mode(tmp_path, monkeypatch):
 
 # ── secure-by-default deployment + integration storage ─────────
 
-def test_docker_compose_binds_web_ui_to_loopback_by_default():
+def test_docker_compose_exposes_only_local_proxy_by_default():
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    app_service = compose.split("  cleverly_proxy:", 1)[0]
+    assert "ports:" not in app_service
     assert "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000" in compose
     assert '"${APP_PORT:-7000}:7000"' not in compose
+    assert "host.docker.internal:host-gateway" not in compose
+    assert "offline_private:" in compose
+    assert "internal: true" in compose
 
 
 def test_cleverly_container_has_baseline_hardening():
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
-    service = compose.split("  chromadb:", 1)[0]
+    service = compose.split("  cleverly_proxy:", 1)[0]
     assert 'user: "${PUID:-1000}:${PGID:-1000}"' in service
     assert "read_only: true" in service
     assert "cap_drop:" in service
     assert "      - ALL" in service
     assert "no-new-privileges:true" in service
     assert "/tmp:size=" in service
+    assert 'CLEVERLY_OFFLINE: "1"' in service
 
 
-def test_offline_compose_overlay_blocks_container_egress():
+def test_offline_compose_overlay_reinforces_container_egress_block():
     overlay = Path("docker/offline.yml").read_text(encoding="utf-8")
     assert "CLEVERLY_OFFLINE:" in overlay
     assert "CLEVERLY_OFFLINE_EMBEDDINGS:" in overlay
-    assert "cleverly_proxy:" in overlay
-    assert "tcp_proxy.py" in overlay
-    assert "offline_private:" in overlay
-    assert "internal: true" in overlay
+    assert "- offline_private" in overlay
+    assert "ports: !reset" not in overlay
+
+
+def test_docker_entrypoint_requires_explicit_network_break_glass():
+    entrypoint = Path("docker/entrypoint.sh").read_text(encoding="utf-8")
+    assert "CLEVERLY_ALLOW_NETWORK" in entrypoint
+    assert "I_ACCEPT_NETWORK_RISK" in entrypoint
+    assert "exit 64" in entrypoint
 
 
 def test_ollama_overlays_use_persistent_model_cache_and_auto_seed():
@@ -148,6 +159,7 @@ def test_ollama_overlays_use_persistent_model_cache_and_auto_seed():
     assert "ollama pull" in connected
     assert "CLEVERLY_AUTO_ADD_OLLAMA" in connected
     assert "CLEVERLY_AUTO_ADD_OLLAMA" in offline
+    assert "ports:" not in connected.split("  ollama_pull:", 1)[0]
     assert "offline_private" in offline
 
 

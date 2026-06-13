@@ -18,8 +18,8 @@ services:
       - /run:size=64m,mode=755
       - /var/tmp:size=256m,mode=1777
     pids_limit: ${CLEVERLY_PIDS_LIMIT:-4096}
-    ports:
-      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000"
+    networks:
+      - offline_private
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -36,15 +36,19 @@ services:
       - ./data/local:/app/.local
       # npm/npx cache for optional MCP helpers without writing to the image.
       - ./data/npm-cache:/app/.npm
-    extra_hosts:
-      # Lets the container reach local services on the Docker host, including
-      # Ollama at http://host.docker.internal:11434.
-      - "host.docker.internal:host-gateway"
     env_file:
       - path: .env
         required: false
     environment:
-      SEARXNG_INSTANCE: http://searxng:8080
+      CLEVERLY_OFFLINE: "1"
+      # Default offline mode avoids embedding model downloads on first boot.
+      # Set to "1" only after pre-seeding FASTEMBED_CACHE_PATH with the model.
+      CLEVERLY_OFFLINE_EMBEDDINGS: "0"
+      SEARXNG_INSTANCE: ""
+      OPENAI_API_KEY: ""
+      RESEARCH_LLM_ENDPOINT: ""
+      OLLAMA_BASE_URL: ""
+      LLM_HOSTS: ""
       CHROMADB_HOST: chromadb
       CHROMADB_PORT: "8000"
       DATA_DIR: /app/data
@@ -66,13 +70,35 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  cleverly_proxy:
+    image: ${CLEVERLY_IMAGE:-cleverly:local}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    entrypoint: ["python", "/app/docker/tcp_proxy.py"]
+    command: ["0.0.0.0", "7000", "cleverly", "7000"]
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000"
+    networks:
+      - offline_private
+      - offline_edge
+    depends_on:
+      - cleverly
+    restart: unless-stopped
+
   chromadb:
     image: docker.io/chromadb/chroma:latest
     init: true
     security_opt:
       - no-new-privileges:true
-    ports:
-      - "${CHROMADB_BIND:-127.0.0.1}:8100:8000"
+    networks:
+      - offline_private
     volumes:
       - chromadb-data:/chroma/chroma
     environment:
@@ -88,6 +114,8 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:size=128m,mode=1777
+    networks:
+      - offline_private
     entrypoint:
       - /bin/sh
       - -c
@@ -101,8 +129,6 @@ services:
           sed "s|__SEARXNG_SECRET__|$$secret|g" /tmp/searxng-settings.yml.template > /etc/searxng/settings.yml
         fi
         exec /usr/local/searxng/entrypoint.sh
-    ports:
-      - "127.0.0.1:8080:8080"
     volumes:
       - searxng-data:/etc/searxng
       - ./config/searxng/settings.yml:/tmp/searxng-settings.yml.template:ro
@@ -123,13 +149,19 @@ services:
     security_opt:
       - no-new-privileges:true
     command: serve
-    ports:
-      - "${NTFY_BIND:-127.0.0.1}:8091:80"
+    networks:
+      - offline_private
     volumes:
       - ntfy-cache:/var/cache/ntfy
     environment:
       - NTFY_BASE_URL=${NTFY_BASE_URL:-http://localhost:8091}
     restart: unless-stopped
+
+networks:
+  offline_private:
+    internal: true
+  offline_edge:
+    driver: bridge
 
 volumes:
   searxng-data:

@@ -45,23 +45,25 @@ docker compose up -d --build
 ```
 
 Open `http://localhost:7000` when the containers are healthy. Docker Compose
-binds the web UI to `127.0.0.1` by default. If the port is taken, set
-`APP_PORT=7001` in `.env` and recreate the container. Set `APP_BIND=0.0.0.0`
-only when you intentionally want LAN/reverse-proxy access.
+publishes only a localhost proxy on `127.0.0.1` by default. The Cleverly app
+container itself runs on an internal-only Docker network with no internet
+egress. If the port is taken, set `APP_PORT=7001` in `.env` and recreate the
+container. Keep `APP_BIND=127.0.0.1` unless you are deliberately placing a
+trusted reverse proxy in front of it.
 
 ### Offline Docker
 
-For a no-internet runtime, build or load the images first, then start with the
-offline overlay:
+Docker is offline-by-default. For a no-internet runtime, build or load the
+images first, then start without pulling or building:
 
 ```bash
-docker compose --env-file .env.example -f docker-compose.yml -f docker/offline.yml up -d --no-build
+docker compose --env-file .env.example up -d --no-build --pull never
 ```
 
-The offline overlay puts the Cleverly app container on an internal-only Docker
-network, so the app cannot reach the internet. A tiny no-data proxy sidecar
+The default Compose stack puts the Cleverly app container on an internal-only
+Docker network, so the app cannot reach the internet. A tiny no-data proxy sidecar
 publishes `127.0.0.1:7000` and forwards only to the app container, so the UI
-still works in your browser. The overlay also sets `CLEVERLY_OFFLINE=1`, which
+still works in your browser. Compose also sets `CLEVERLY_OFFLINE=1`, which
 disables web search/fetch/deep-research defaults and skips startup network
 warmups.
 
@@ -91,7 +93,7 @@ For offline use, pull the model on a connected machine first, transfer
 `./data/ollama` with the Docker images, then start with:
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml -f docker/offline.yml -f docker/ollama-offline.yml up -d --no-build --pull never
+docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml up -d --no-build --pull never
 ```
 
 ### Native Linux / macOS
@@ -152,13 +154,16 @@ available.
 
 ## Docker Notes
 
-Compose starts Cleverly, ChromaDB, SearXNG, and ntfy. Cleverly and bundled
-service ports bind to `127.0.0.1` by default.
+Compose starts Cleverly, ChromaDB, SearXNG, ntfy, and the local proxy.
+Cleverly and bundled services run on an internal-only Docker network by
+default. Only the proxy publishes a host port, and it binds to `127.0.0.1`.
 
 The Cleverly service runs as a non-root UID/GID, drops Linux capabilities, uses
 `no-new-privileges`, mounts the application filesystem read-only, and uses tmpfs
 for `/tmp`, `/run`, and `/var/tmp`. Runtime state is written only to mounted
-paths under `./data` and `./logs`.
+paths under `./data` and `./logs`. The Docker entrypoint also refuses to start
+with `CLEVERLY_OFFLINE` disabled unless `CLEVERLY_ALLOW_NETWORK=I_ACCEPT_NETWORK_RISK`
+is explicitly set.
 
 On Linux, make sure the bind-mounted directories are writable by the configured
 `PUID`/`PGID` before first boot:
@@ -172,11 +177,8 @@ Cookbook downloads live in `./data/huggingface`, and Cookbook-installed Python
 CLIs and serve engines live in `./data/local`, so they survive container
 recreation.
 
-To use Ollama from Docker, add this endpoint in Settings:
-
-```text
-http://host.docker.internal:11434/v1
-```
+To use Ollama from Docker, prefer the bundled Ollama overlay documented above.
+It keeps inference traffic inside Docker's internal-only network.
 
 Useful checks:
 
@@ -220,13 +222,13 @@ for deployment-level defaults and secrets you want present before first boot.
 | `OPENAI_API_KEY` | unset | Optional OpenAI key |
 | `SEARXNG_INSTANCE` | `http://localhost:8080` | SearXNG URL |
 | `SEARXNG_SECRET` | generated on first Docker boot | Optional SearXNG cookie/CSRF secret |
-| `APP_BIND` | `127.0.0.1` | Docker Compose host bind address |
+| `APP_BIND` | `127.0.0.1` | Docker Compose local proxy bind address |
 | `APP_PORT` | `7000` | Docker Compose host port |
 | `PUID` / `PGID` | `1000` / `1000` | UID/GID used by the hardened Docker container |
 | `CLEVERLY_TMPFS_SIZE` | `1g` | Size of the Cleverly `/tmp` tmpfs in Docker |
 | `CLEVERLY_PIDS_LIMIT` | `4096` | Process limit for the Cleverly container |
-| `CLEVERLY_OFFLINE` | unset | Disable internet-facing features and startup network warmups |
-| `CLEVERLY_OFFLINE_EMBEDDINGS` | `0` in offline overlay | Allow local FastEmbed only after its cache is pre-seeded |
+| `CLEVERLY_OFFLINE` | `1` in Docker | Disable internet-facing features and startup network warmups |
+| `CLEVERLY_OFFLINE_EMBEDDINGS` | `0` in Docker | Allow local FastEmbed only after its cache is pre-seeded |
 | `AUTH_ENABLED` | `true` | Enable/disable login |
 | `LOCALHOST_BYPASS` | `false` | Development-only auth bypass for direct loopback requests |
 | `DATABASE_URL` | `sqlite:///./data/app.db` | Database connection string |

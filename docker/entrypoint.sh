@@ -8,6 +8,15 @@ set -e
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
+offline_value="$(printf '%s' "${CLEVERLY_OFFLINE:-}" | tr '[:upper:]' '[:lower:]')"
+if [ "$offline_value" != "1" ] && [ "$offline_value" != "true" ] && [ "$offline_value" != "yes" ] && [ "$offline_value" != "on" ]; then
+    if [ "${CLEVERLY_ALLOW_NETWORK:-}" != "I_ACCEPT_NETWORK_RISK" ]; then
+        echo "ERROR: Cleverly Docker runtime is offline-only by default." >&2
+        echo "Set CLEVERLY_OFFLINE=1, or set CLEVERLY_ALLOW_NETWORK=I_ACCEPT_NETWORK_RISK to bypass this guard intentionally." >&2
+        exit 64
+    fi
+fi
+
 if [ "$(id -u)" = "0" ]; then
     if ! getent group "$PGID" >/dev/null 2>&1; then
         groupadd -g "$PGID" cleverly

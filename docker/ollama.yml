@@ -25,8 +25,8 @@ services:
   ollama:
     image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:latest}
     init: true
-    ports:
-      - "${OLLAMA_BIND:-127.0.0.1}:${OLLAMA_PORT:-11434}:11434"
+    networks:
+      - offline_private
     volumes:
       - ./data/ollama:/root/.ollama
     environment:
