@@ -1745,7 +1745,7 @@ body.bg-pattern-sparkles {
     /* Welcome screen — centered in available space above input bar */
     #welcome-screen {
       position:absolute;
-      top:40%;
+      top:37%;
       left:50%;
       transform:translate(-50%,-50%);
       display:flex;
@@ -1753,6 +1753,7 @@ body.bg-pattern-sparkles {
       align-items:center;
       text-align:center;
       pointer-events:none;
+      width:min(520px, calc(100% - 32px));
       animation: welcome-enter 0.4s ease-out both;
       transition: top 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease, transform 0.3s ease;
     }
@@ -1797,8 +1798,8 @@ body.bg-pattern-sparkles {
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      letter-spacing:0.03em;
-      margin-bottom:10px;
+      letter-spacing:0;
+      margin-bottom:8px;
     }
     .welcome-icon,
     .welcome-mark {
@@ -1820,9 +1821,9 @@ body.bg-pattern-sparkles {
     #welcome-screen .welcome-sub {
       font-size:0.85rem;
       color:color-mix(in srgb, var(--fg) 60%, transparent);
-      opacity:0.6;
+      opacity:0.72;
       line-height:1.5;
-      max-width:300px;
+      max-width:360px;
     }
     #welcome-screen .welcome-version {
       font-size:0.7rem;
@@ -1834,30 +1835,30 @@ body.bg-pattern-sparkles {
     #welcome-screen .welcome-tip {
       font-size:0.75rem;
       color:var(--fg);
-      opacity:0.2;
-      margin-top:24px;
-      max-width:320px;
+      opacity:0.32;
+      margin-top:20px;
+      max-width:420px;
       line-height:1.4;
     }
     .welcome-readiness {
       pointer-events: auto;
       display: none;
       align-items: center;
-      gap: 8px;
-      max-width: 360px;
-      margin-top: 12px;
-      padding: 8px 10px;
+      gap: 12px;
+      width: min(450px, 100%);
+      margin-top: 16px;
+      padding: 10px 12px;
       border: 1px solid var(--border);
       border-radius: 8px;
-      background: color-mix(in srgb, var(--panel) 78%, transparent);
+      background: color-mix(in srgb, var(--panel) 86%, transparent);
       color: var(--fg);
       text-align: left;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.16);
     }
     .welcome-readiness:not(:empty) { display: inline-flex; }
     .welcome-readiness-score {
-      min-width: 42px;
-      font-size: 1rem;
+      min-width: 52px;
+      font-size: 1.1rem;
       font-weight: 800;
       text-align: center;
     }
@@ -1873,15 +1874,15 @@ body.bg-pattern-sparkles {
     #welcome-screen .welcome-actions {
       pointer-events: auto;
       display: flex;
-      gap: 8px;
+      gap: 10px;
       align-items: center;
       justify-content: center;
       flex-wrap: wrap;
-      margin-top: 14px;
+      margin-top: 16px;
     }
     .welcome-action-btn {
-      border: 1px solid var(--border);
-      background: color-mix(in srgb, var(--panel) 84%, transparent);
+      border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+      background: color-mix(in srgb, var(--panel) 88%, transparent);
       color: var(--fg);
       border-radius: 8px;
       padding: 7px 10px;
@@ -1893,6 +1894,7 @@ body.bg-pattern-sparkles {
       font: inherit;
       font-size: 12px;
       min-height: 34px;
+      box-shadow: 0 8px 22px rgba(0,0,0,0.12);
     }
     .welcome-action-btn.primary {
       background: var(--accent, var(--red));
@@ -1907,25 +1909,26 @@ body.bg-pattern-sparkles {
     }
     .incognito-btn {
       pointer-events: auto;
-      background: none;
-      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--panel) 82%, transparent);
+      border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
       color: var(--fg);
-      opacity: 0.25;
+      opacity: 0.62;
       cursor: pointer;
-      padding: 6px 12px;
+      padding: 7px 12px;
       border-radius: 20px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
       transition: all 0.15s;
-      margin-top: 16px;
+      margin-top: 12px;
       font-family: inherit;
       font-size: 11px;
+      backdrop-filter: blur(8px);
     }
     .incognito-btn:hover {
-      opacity: 0.6;
-      background: color-mix(in srgb, var(--fg) 6%, transparent);
+      opacity: 0.9;
+      background: color-mix(in srgb, var(--fg) 8%, transparent);
     }
     .incognito-btn.active {
       opacity: 1;
@@ -1945,7 +1948,7 @@ body.bg-pattern-sparkles {
       transition: margin 0.3s ease, max-width 0.3s ease;
     }
     .chat-container.welcome-active .chat-input-bar {
-      margin-bottom:30vh;
+      margin-bottom:clamp(96px, 15vh, 150px);
       margin-left:auto;
       margin-right:auto;
       max-width: 800px;
