@@ -51,9 +51,10 @@ egress. If the port is taken, set `APP_PORT=7001` in `.env` and recreate the
 container. Keep `APP_BIND=127.0.0.1` unless you are deliberately placing a
 trusted reverse proxy in front of it.
 
-The main Docker container is named `cleverly` by default, so common checks work
-with commands like `docker logs cleverly`. The proxy and bundled Ollama
-containers default to `cleverly-proxy` and `cleverly-ollama`.
+The Compose project/stack is named `cleverly`. The main Docker container is
+also named `cleverly` by default, so common checks work with commands like
+`docker logs cleverly`. The proxy and bundled Ollama containers default to
+`cleverly-proxy` and `cleverly-ollama`.
 
 On Windows, you can use the app-style Docker launcher after the images and
 model are prepared:

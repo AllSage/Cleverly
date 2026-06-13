@@ -1,3 +1,5 @@
+name: cleverly
+
 services:
   cleverly:
     container_name: ${CLEVERLY_CONTAINER_NAME:-cleverly}

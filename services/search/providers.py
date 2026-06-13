@@ -102,8 +102,8 @@ def searxng_search_api(query: str, count: int = 10, categories: str = "general",
     # search like "Canada latest news" returns actual news instead of Wikipedia.
     # Pin English for ALL searches — without it, SearXNG geolocates / mixes
     # languages and brand-ambiguous terms bleed in foreign SEO pages (e.g.
-    # "Odyssey" → Honda Japan, "Trojan" → Japanese malware blogs, "Polyphemus"
-    # → Chinese math forums). The news path already did this; general didn't.
+    # Honda "Pilot" pages, Japanese "Trojan" malware blogs, Chinese math forums
+    # for "Polyphemus"). The news path already did this; general didn't.
     params = {"q": query, "format": "json", "language": "en"}
     q_lc = query.lower()
     is_news = time_filter is not None or any(h in q_lc for h in _NEWS_HINTS)

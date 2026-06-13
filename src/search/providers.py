@@ -103,7 +103,7 @@ def searxng_search_api(query: str, count: int = 10, categories: str = "general",
     # the 'news' category, constrain recency, and pin language to English so a
     # search like "Canada latest news" returns actual news instead of Wikipedia.
     # Pin English for ALL searches — without it SearXNG mixes languages and
-    # brand-ambiguous terms bleed in foreign SEO pages (Honda "Odyssey" JP,
+    # brand-ambiguous terms bleed in foreign SEO pages (Honda "Pilot" pages,
     # Japanese "Trojan" malware blogs, Chinese math forums for "Polyphemus").
     params = {"q": query, "format": "json", "language": "en"}
     q_lc = query.lower()

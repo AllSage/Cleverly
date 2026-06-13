@@ -3,6 +3,7 @@
   Cleverly Docker app launcher.
 
   Defaults to the offline Docker runtime:
+    - Compose project/stack named "cleverly"
     - local-only proxy at http://127.0.0.1:7000
     - Cleverly container named "cleverly"
     - bundled Ollama container named "cleverly-ollama"
@@ -30,6 +31,7 @@ $env:OLLAMA_IMAGE = if ($env:OLLAMA_IMAGE) { $env:OLLAMA_IMAGE } else { "cleverl
 $env:OLLAMA_MODEL = if ($env:OLLAMA_MODEL) { $env:OLLAMA_MODEL } else { $Model }
 
 $ComposeArgs = @(
+    "--project-name", "cleverly",
     "--env-file", ".env.example",
     "-f", "docker-compose.yml",
     "-f", "docker/ollama-offline.yml"
@@ -115,7 +117,7 @@ function Stop-Cleverly {
 function Prep-Cleverly {
     Require-Docker
     Write-Step "Building Cleverly image"
-    docker compose --env-file .env.example build cleverly
+    docker compose --project-name cleverly --env-file .env.example build cleverly
     if ($LASTEXITCODE -ne 0) { Fail "Failed to build cleverly:local." }
 
     Write-Step "Building local Ollama image"
@@ -123,7 +125,7 @@ function Prep-Cleverly {
     if ($LASTEXITCODE -ne 0) { Fail "Failed to build cleverly-ollama:local." }
 
     Write-Step "Pulling Ollama model into ./data/ollama"
-    docker compose --env-file .env.example -f docker-compose.yml -f docker/ollama.yml run --rm ollama_pull
+    docker compose --project-name cleverly --env-file .env.example -f docker-compose.yml -f docker/ollama.yml run --rm ollama_pull
     if ($LASTEXITCODE -ne 0) { Fail "Failed to pull Ollama model $env:OLLAMA_MODEL." }
 }
 

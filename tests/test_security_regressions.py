@@ -116,6 +116,7 @@ def test_secret_storage_key_created_with_safe_mode(tmp_path, monkeypatch):
 def test_docker_compose_exposes_only_local_proxy_by_default():
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     app_service = compose.split("  cleverly_proxy:", 1)[0]
+    assert compose.startswith("name: cleverly\n")
     assert "container_name: ${CLEVERLY_CONTAINER_NAME:-cleverly}" in app_service
     assert "ports:" not in app_service
     assert "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000" in compose
@@ -156,6 +157,7 @@ def test_docker_entrypoint_requires_explicit_network_break_glass():
 def test_windows_app_launcher_uses_offline_docker_runtime():
     launcher = Path("Cleverly.ps1").read_text(encoding="utf-8")
     cmd = Path("Cleverly.cmd").read_text(encoding="utf-8")
+    assert '--project-name", "cleverly"' in launcher
     assert "--pull never" in launcher
     assert "docker/ollama-offline.yml" in launcher
     assert "cleverly:local" in launcher
