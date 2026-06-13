@@ -1,0 +1,9 @@
+# Optional offline fine-tuning stack.
+# Build into an image on a connected prep machine, then transfer the image
+# and local trainable model files to the offline runtime machine.
+torch
+transformers
+accelerate
+peft
+safetensors
+

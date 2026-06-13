@@ -52,6 +52,10 @@ def _artifacts_dir(root: str | Path | None = None) -> Path:
     return _root(root) / "artifacts"
 
 
+def _finetune_dir(root: str | Path | None = None) -> Path:
+    return _root(root) / "finetune"
+
+
 def _slug(value: str, fallback: str) -> str:
     value = (value or "").strip().lower()
     value = _SLUG_RE.sub("-", value).strip(".-_")
@@ -94,6 +98,9 @@ def ensure_training_dirs(root: str | Path | None = None) -> Path:
     base = _root(root)
     _datasets_dir(base).mkdir(parents=True, exist_ok=True)
     _artifacts_dir(base).mkdir(parents=True, exist_ok=True)
+    (_finetune_dir(base) / "jobs").mkdir(parents=True, exist_ok=True)
+    (_finetune_dir(base) / "adapters").mkdir(parents=True, exist_ok=True)
+    (_finetune_dir(base) / "base-models").mkdir(parents=True, exist_ok=True)
     return base
 
 
@@ -137,10 +144,15 @@ def create_dataset(name: str, text: str, root: str | Path | None = None) -> dict
 
 def _dataset_text(dataset_id: str, root: str | Path | None = None) -> str:
     dataset_id = _validate_id(dataset_id, "dataset")
-    path = _datasets_dir(root) / dataset_id / "text.txt"
+    path = dataset_text_path(dataset_id, root)
     if not path.exists():
         raise LocalTrainingError("Dataset not found")
     return path.read_text(encoding="utf-8")
+
+
+def dataset_text_path(dataset_id: str, root: str | Path | None = None) -> Path:
+    dataset_id = _validate_id(dataset_id, "dataset")
+    return _datasets_dir(root) / dataset_id / "text.txt"
 
 
 def train_ngram(

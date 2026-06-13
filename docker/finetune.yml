@@ -1,0 +1,15 @@
+# Optional connected-build overlay for offline LoRA fine-tuning.
+#
+# Build this on a connected prep machine after the base cleverly:local image is
+# built, then transfer cleverly:finetune to the offline runtime machine.
+services:
+  cleverly:
+    image: ${CLEVERLY_FINETUNE_IMAGE:-cleverly:finetune}
+    build:
+      context: .
+      dockerfile: docker/finetune.Dockerfile
+      args:
+        BASE_IMAGE: ${CLEVERLY_IMAGE:-cleverly:local}
+    environment:
+      CLEVERLY_FINETUNE_ENABLED: "1"
+

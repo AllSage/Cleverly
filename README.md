@@ -102,7 +102,9 @@ release and verification checklist.
 
 The built-in [Training Lab](docs/local-training-lab.md) also runs offline. It
 uses pasted local text and writes datasets/artifacts under `./data/training`;
-it does not download datasets, install packages, or call model endpoints.
+it does not download datasets or call model endpoints. Advanced LoRA
+fine-tuning is available only when its optional dependencies and a trainable
+local model directory are already baked into the image.
 
 ### Docker With Bundled Ollama
 

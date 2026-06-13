@@ -208,27 +208,34 @@ def test_training_lab_is_local_only_and_wired_to_ui():
     training_js = Path("static/js/trainingLab.js").read_text(encoding="utf-8")
     route_py = Path("routes/training_routes.py").read_text(encoding="utf-8")
     trainer_py = Path("src/local_training.py").read_text(encoding="utf-8")
+    finetune_py = Path("src/offline_finetune.py").read_text(encoding="utf-8")
+    runner_py = Path("src/offline_finetune_runner.py").read_text(encoding="utf-8")
 
     assert "tool-training-btn" in index_html
     assert "training-lab-modal" in index_html
+    assert "Advanced LoRA" in training_js
     assert "trainingLabModule.open" in app_js
     assert "'/training'" in app_js
     assert "/api/training/status" in training_js
+    assert "/api/training/finetune/jobs" in training_js
     assert "DEFAULT_ORDER = 3" in trainer_py
     assert "Depends(require_admin)" in route_py
+    assert "finetune_status" in route_py
+    assert "HF_HUB_OFFLINE" in finetune_py
+    assert "TRANSFORMERS_OFFLINE" in finetune_py
+    assert "shell=False" in finetune_py
+    assert "local_files_only=True" in runner_py
+    assert "trust_remote_code=False" in runner_py
 
-    combined = "\n".join([training_js, route_py, trainer_py])
+    combined = "\n".join([training_js, route_py, trainer_py, finetune_py, runner_py])
     forbidden = [
         "requests.",
         "httpx.",
         "urllib.",
         "aiohttp",
-        "subprocess",
-        "Popen",
         "os.system",
         "socket.",
         "pip install",
-        "huggingface",
     ]
     for token in forbidden:
         assert token not in combined

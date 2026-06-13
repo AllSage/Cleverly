@@ -10,6 +10,7 @@ let _state = {
   defaultOrder: 3,
   maxDatasetChars: 512000,
   maxGenerateChars: 1000,
+  finetune: null,
   status: '',
   output: '',
 };
@@ -59,6 +60,7 @@ async function _loadStatus() {
   _state.defaultOrder = data.default_order || 3;
   _state.maxDatasetChars = data.max_dataset_chars || 512000;
   _state.maxGenerateChars = data.max_generate_chars || 1000;
+  _state.finetune = data.finetune || null;
 }
 
 function _datasetOptions() {
@@ -73,6 +75,60 @@ function _artifactOptions() {
   return _state.artifacts.map((item) => (
     `<option value="${_escape(item.id)}">${_escape(item.name || item.id)} (order ${_escape(item.order || 3)})</option>`
   )).join('');
+}
+
+function _fineTuneDatasetOptions() {
+  if (!_state.datasets.length) return '<option value="">No datasets</option>';
+  return _state.datasets.map((item) => (
+    `<option value="${_escape(item.id)}">${_escape(item.name || item.id)}</option>`
+  )).join('');
+}
+
+function _trainableModelOptions() {
+  const models = _state.finetune?.trainable_models || [];
+  if (!models.length) return '<option value="">No trainable models</option>';
+  return models.map((item) => (
+    `<option value="${_escape(item.id)}">${_escape(item.name || item.id)} - ${_escape(item.model_type || 'model')}</option>`
+  )).join('');
+}
+
+function _fineTuneReadiness() {
+  const ft = _state.finetune || {};
+  const deps = ft.dependencies || {};
+  const missing = deps.missing || [];
+  const models = ft.trainable_models || [];
+  if (!deps.available) return { ready: false, label: `Missing: ${missing.join(', ') || 'training dependencies'}` };
+  if (!_state.datasets.length) return { ready: false, label: 'Add a dataset first' };
+  if (!models.length) return { ready: false, label: 'No trainable local model found' };
+  return { ready: true, label: 'Ready' };
+}
+
+function _ollamaNotice() {
+  const models = _state.finetune?.ollama_models || [];
+  if (!models.length) return '';
+  const shown = models.slice(0, 3).map((item) => _escape(item.name)).join(', ');
+  const suffix = models.length > 3 ? ` +${models.length - 3}` : '';
+  return `<div class="training-lab-note">Ollama runtime: ${shown}${suffix}; trainable weights required for LoRA.</div>`;
+}
+
+function _jobRows() {
+  const jobs = _state.finetune?.jobs || [];
+  if (!jobs.length) return '<div class="training-lab-note">No fine-tune jobs.</div>';
+  return jobs.slice(0, 5).map((job) => {
+    const status = _escape(job.status || 'unknown');
+    const name = _escape(job.output_name || job.id);
+    const adapter = job.adapter_path ? `<div class="training-lab-job-path">${_escape(job.adapter_path)}</div>` : '';
+    const error = job.error ? `<div class="cookbook-output-error">${_escape(job.error)}</div>` : '';
+    const log = job.log_tail ? `<pre class="cookbook-output-pre training-lab-job-log">${_escape(job.log_tail)}</pre>` : '';
+    return `
+      <div class="training-lab-job">
+        <div class="training-lab-job-head"><strong>${name}</strong><span>${status}</span></div>
+        ${adapter}
+        ${error}
+        ${log}
+      </div>
+    `;
+  }).join('');
 }
 
 function _render() {
@@ -159,6 +215,52 @@ function _render() {
         </div>
         <pre id="training-output" class="cookbook-output-pre training-lab-output">${_escape(_state.output)}</pre>
       </section>
+
+      <section class="cookbook-card training-lab-card training-lab-finetune-card">
+        <div class="cookbook-card-header">
+          <div>
+            <div class="cookbook-card-title">Advanced LoRA</div>
+            <div class="cookbook-card-desc">${_escape(_fineTuneReadiness().label)}</div>
+          </div>
+          <button id="training-refresh-finetune" class="cookbook-btn">Refresh</button>
+        </div>
+        ${_ollamaNotice()}
+        <div class="cookbook-fields training-lab-finetune-fields">
+          <label class="cookbook-field-label">
+            Dataset
+            <select id="finetune-dataset-select" class="cookbook-field-input" ${_state.datasets.length ? '' : 'disabled'}>${_fineTuneDatasetOptions()}</select>
+          </label>
+          <label class="cookbook-field-label">
+            Base Model
+            <select id="finetune-model-select" class="cookbook-field-input" ${(_state.finetune?.trainable_models || []).length ? '' : 'disabled'}>${_trainableModelOptions()}</select>
+          </label>
+          <label class="cookbook-field-label">
+            Adapter
+            <input id="finetune-output-name" class="cookbook-field-input" value="local-lora" maxlength="80" autocomplete="off">
+          </label>
+          <label class="cookbook-field-label">
+            Steps
+            <input id="finetune-max-steps" class="cookbook-field-input" type="number" min="1" max="${_escape(_state.finetune?.max_steps || 1000)}" step="1" value="20">
+          </label>
+          <label class="cookbook-field-label">
+            Rank
+            <input id="finetune-lora-rank" class="cookbook-field-input" type="number" min="1" max="256" step="1" value="8">
+          </label>
+          <label class="cookbook-field-label">
+            Length
+            <input id="finetune-max-length" class="cookbook-field-input" type="number" min="64" max="2048" step="64" value="512">
+          </label>
+        </div>
+        <label class="cookbook-field-label">
+          Target Modules
+          <input id="finetune-target-modules" class="cookbook-field-input" value="${_escape(_state.finetune?.default_target_modules || '')}" autocomplete="off">
+        </label>
+        <div class="cookbook-actions">
+          <button id="finetune-start" class="cookbook-btn cookbook-run-btn" ${_fineTuneReadiness().ready ? '' : 'disabled'}>Start LoRA</button>
+          <span class="training-lab-meter">${_escape(_state.finetune?.base_models_dir || '')}</span>
+        </div>
+        <div class="training-lab-jobs">${_jobRows()}</div>
+      </section>
     </div>
     <div id="training-lab-status" class="training-lab-status">${_escape(_state.status)}</div>
   `;
@@ -236,6 +338,60 @@ function _wireBody() {
         _setStatus(err.message || String(err), true);
       } finally {
         generateBtn.disabled = false;
+      }
+    });
+  }
+
+  const refreshBtn = document.getElementById('training-refresh-finetune');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', async () => {
+      refreshBtn.disabled = true;
+      _setStatus('Refreshing fine-tune status...');
+      try {
+        await _loadStatus();
+        _state.status = _fineTuneReadiness().label;
+        _render();
+      } catch (err) {
+        _setStatus(err.message || String(err), true);
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    });
+  }
+
+  const fineTuneBtn = document.getElementById('finetune-start');
+  if (fineTuneBtn) {
+    fineTuneBtn.addEventListener('click', async () => {
+      const datasetId = document.getElementById('finetune-dataset-select')?.value || '';
+      const modelId = document.getElementById('finetune-model-select')?.value || '';
+      const outputName = document.getElementById('finetune-output-name')?.value || 'local-lora';
+      const maxSteps = Number(document.getElementById('finetune-max-steps')?.value || 20);
+      const loraRank = Number(document.getElementById('finetune-lora-rank')?.value || 8);
+      const maxLength = Number(document.getElementById('finetune-max-length')?.value || 512);
+      const targetModules = document.getElementById('finetune-target-modules')?.value || '';
+      if (!datasetId || !modelId) return;
+      fineTuneBtn.disabled = true;
+      _setStatus('Starting LoRA job...');
+      try {
+        const data = await _api('/api/training/finetune/jobs', {
+          method: 'POST',
+          body: JSON.stringify({
+            dataset_id: datasetId,
+            model_id: modelId,
+            output_name: outputName,
+            max_steps: maxSteps,
+            lora_rank: loraRank,
+            max_length: maxLength,
+            target_modules: targetModules,
+          }),
+        });
+        await _loadStatus();
+        _state.status = `Started ${data.job?.id || 'fine-tune job'}`;
+        _render();
+      } catch (err) {
+        _setStatus(err.message || String(err), true);
+      } finally {
+        fineTuneBtn.disabled = false;
       }
     });
   }
@@ -317,4 +473,3 @@ export function close() {
 }
 
 export default { open, close };
-

@@ -17315,6 +17315,9 @@ body.gallery-selecting .gallery-dl-btn,
 .training-lab-generate-card {
   grid-column: 1 / -1;
 }
+.training-lab-finetune-card {
+  grid-column: 1 / -1;
+}
 .training-lab-textarea,
 .training-lab-prompt {
   resize: vertical;
@@ -17338,12 +17341,57 @@ body.gallery-selecting .gallery-dl-btn,
 .training-lab-train-fields {
   grid-template-columns: minmax(0, 1fr) 90px;
 }
+.training-lab-finetune-fields {
+  grid-template-columns: minmax(140px, 1.2fr) minmax(160px, 1.4fr) minmax(130px, 1fr) repeat(3, minmax(74px, .6fr));
+}
+.training-lab-note {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  padding: 6px 8px;
+}
+.training-lab-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.training-lab-job {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 8px;
+}
+.training-lab-job-head {
+  align-items: center;
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  justify-content: space-between;
+}
+.training-lab-job-head span,
+.training-lab-job-path {
+  color: var(--fg-muted);
+  font-size: 10px;
+}
+.training-lab-job-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.training-lab-job-log {
+  margin-top: 6px;
+  max-height: 120px;
+}
 @media (max-width: 768px) {
   .training-lab-grid {
     grid-template-columns: 1fr;
   }
-  .training-lab-generate-card {
+  .training-lab-generate-card,
+  .training-lab-finetune-card {
     grid-column: auto;
+  }
+  .training-lab-finetune-fields {
+    grid-template-columns: 1fr;
   }
 }
 .cookbook-group {

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from core.middleware import require_admin
+from src.offline_finetune import finetune_status, read_job, start_lora_job
 from src.local_training import (
     DEFAULT_ORDER,
     MAX_DATASET_CHARS,
@@ -44,6 +45,22 @@ class GenerateRequest(BaseModel):
     seed: int | None = None
 
 
+class FineTuneRequest(BaseModel):
+    dataset_id: str
+    model_id: str
+    output_name: str = Field(default="local-lora", max_length=80)
+    max_steps: int = Field(default=20, ge=1, le=1000)
+    epochs: int = Field(default=1, ge=1, le=10)
+    batch_size: int = Field(default=1, ge=1, le=16)
+    learning_rate: float = Field(default=2e-4, ge=1e-7, le=1.0)
+    max_length: int = Field(default=512, ge=64, le=2048)
+    lora_rank: int = Field(default=8, ge=1, le=256)
+    target_modules: str = Field(
+        default="q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj",
+        max_length=240,
+    )
+
+
 def _bad_request(exc: LocalTrainingError) -> HTTPException:
     return HTTPException(status_code=400, detail=str(exc))
 
@@ -68,6 +85,7 @@ def setup_training_routes() -> APIRouter:
             "max_generate_chars": MAX_GENERATE_CHARS,
             "datasets": list_datasets(),
             "artifacts": list_artifacts(),
+            "finetune": finetune_status(),
         }
 
     @router.post("/datasets")
@@ -99,5 +117,34 @@ def setup_training_routes() -> APIRouter:
         except LocalTrainingError as exc:
             raise _bad_request(exc)
 
-    return router
+    @router.get("/finetune/status")
+    def training_finetune_status():
+        return {"ok": True, "finetune": finetune_status()}
 
+    @router.post("/finetune/jobs")
+    def training_start_finetune(body: FineTuneRequest):
+        try:
+            job = start_lora_job(
+                dataset_id=body.dataset_id,
+                model_id=body.model_id,
+                output_name=body.output_name,
+                max_steps=body.max_steps,
+                epochs=body.epochs,
+                batch_size=body.batch_size,
+                learning_rate=body.learning_rate,
+                max_length=body.max_length,
+                lora_rank=body.lora_rank,
+                target_modules=body.target_modules,
+            )
+            return {"ok": True, "job": job}
+        except LocalTrainingError as exc:
+            raise _bad_request(exc)
+
+    @router.get("/finetune/jobs/{job_id}")
+    def training_get_finetune_job(job_id: str):
+        try:
+            return {"ok": True, "job": read_job(job_id)}
+        except LocalTrainingError as exc:
+            raise _bad_request(exc)
+
+    return router

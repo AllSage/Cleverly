@@ -17,6 +17,8 @@ on `127.0.0.1:${APP_PORT:-7000}`.
   `CLEVERLY_ALLOW_NETWORK=I_ACCEPT_NETWORK_RISK` is explicitly set.
 - Keeps the Training Lab local-only; datasets and artifacts stay under
   `./data/training`.
+- Enables Advanced LoRA fine-tuning only when optional training dependencies
+  and trainable local model weights were pre-baked on a connected prep machine.
 - Leaves model, embedding, Chroma, and npm caches under mounted `./data`
   directories so they can be pre-seeded.
 
@@ -70,6 +72,19 @@ Copy these items to the offline machine:
 - any pre-seeded `data/huggingface`, `data/cache/fastembed`, `data/local`, or
   `data/npm-cache` contents you need
 
+For Advanced LoRA fine-tuning, build the optional dependency image on the
+connected prep machine and include it in your transfer:
+
+```bash
+docker compose --project-name cleverly -f docker-compose.yml -f docker/finetune.yml build cleverly
+docker save cleverly:local cleverly:finetune -o cleverly-finetune-images.tar
+```
+
+Also copy HF-format trainable model directories into
+`data/training/finetune/base-models`, `data/models`, or `data/huggingface`.
+Ollama runtime files in `data/ollama` are usable for inference but are not
+trainable base weights.
+
 ## Offline Machine
 
 Load the images:
@@ -96,6 +111,16 @@ Start without pulling or building:
 docker compose --env-file .env \
   -f docker-compose.yml \
   -f docker/ollama-offline.yml \
+  up -d --no-build --pull never
+```
+
+If you transferred `cleverly:finetune`, include the fine-tune overlay:
+
+```bash
+docker compose --env-file .env \
+  -f docker-compose.yml \
+  -f docker/ollama-offline.yml \
+  -f docker/finetune.yml \
   up -d --no-build --pull never
 ```
 
