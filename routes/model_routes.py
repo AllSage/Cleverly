@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from core.database import SessionLocal, ModelEndpoint, Session as DbSession
 from core.middleware import require_admin
 from src.llm_core import _detect_provider, ANTHROPIC_MODELS
+from src.offline_policy import is_local_model_url
 from src.settings import load_settings as _load_settings, save_settings as _save_settings, offline_mode
 from src.endpoint_resolver import normalize_base as _normalize_base, build_chat_url
 from src.auth_helpers import owner_filter
@@ -24,14 +25,7 @@ logger = logging.getLogger(__name__)
 
 def _offline_endpoint_allowed(base_url: str) -> bool:
     """Offline mode permits loopback and Docker-service style model endpoints only."""
-    parsed = urlparse((base_url or "").strip())
-    host = (parsed.hostname or "").strip().lower()
-    if host in {"localhost", "127.0.0.1", "::1", "host.docker.internal"}:
-        return True
-    if host.startswith("127."):
-        return True
-    # Compose service names are usually bare hostnames such as "ollama".
-    return bool(host) and "." not in host
+    return is_local_model_url(base_url)
 
 
 def _anthropic_api_root(base: str) -> str:

@@ -11,7 +11,8 @@ from core.database import ModelEndpoint, SessionLocal
 from src import code_workspace
 from src.endpoint_resolver import build_chat_url, build_headers, normalize_base
 from src.llm_core import llm_call_async
-from src.settings import get_setting
+from src.offline_policy import is_local_model_url
+from src.settings import get_setting, offline_mode
 
 
 MAX_CONTEXT_CHARS = 80_000
@@ -47,10 +48,14 @@ def resolve_model_key(model_key: str, owner: str = "") -> tuple[str, str, dict[s
             ep_owner = getattr(ep, "owner", None)
             if owner and ep_owner and ep_owner != owner:
                 continue
+            if offline_mode() and not is_local_model_url(ep.base_url):
+                continue
             candidates.append(ep)
 
         if not candidates:
-            raise code_workspace.CodeWorkspaceError("No enabled model endpoint matches the Code Workspace model key")
+            raise code_workspace.CodeWorkspaceError(
+                "No enabled local model endpoint matches the Code Workspace model key"
+            )
 
         for ep in candidates:
             cached = []
@@ -225,6 +230,7 @@ async def run_agent(
     test_command: str = "",
     max_rounds: int = 2,
     selected_paths: list[str] | None = None,
+    apply_changes: bool = False,
     root=None,
 ) -> dict[str, Any]:
     task = (task or "").strip()
@@ -269,6 +275,10 @@ async def run_agent(
         if not diff:
             steps.append({"phase": "patch", "round": round_no, "error": "Model did not return a unified diff"})
             break
+        if not apply_changes:
+            final_diff = diff
+            steps.append({"phase": "draft", "round": round_no, "exit_code": 0})
+            break
         patch_result = code_workspace.apply_unified_diff(workspace_id, diff, owner=owner, root=root)
         steps.append({"phase": "patch", "round": round_no, "exit_code": patch_result.get("exit_code"), "stderr": patch_result.get("stderr", "")})
         if patch_result.get("exit_code") != 0:
@@ -293,10 +303,12 @@ async def run_agent(
         "model": model,
         "snapshot": snapshot,
         "selected_paths": [f["path"] for f in files],
-        "applied_diff": final_diff,
+        "proposed_diff": final_diff if not apply_changes else "",
+        "applied_diff": final_diff if apply_changes else "",
         "test_result": test_result,
         "status": status,
         "diff": diff_result,
         "steps": steps,
+        "applied": bool(apply_changes and final_diff),
         "exit_code": 0 if (not test_result or test_result.get("exit_code") == 0) and final_diff else 1,
     }

@@ -135,6 +135,7 @@ FUNCTION_TOOL_SCHEMAS = [
                     "task": {"type": "string", "description": "For agent: coding task to perform"},
                     "model_key": {"type": "string", "description": "For agent: optional explicit model key; otherwise uses code_workspace_model_key setting"},
                     "test_command": {"type": "string", "description": "For agent: offline test/build command after applying patch"},
+                    "apply_changes": {"type": "boolean", "description": "For agent: false drafts a diff for review; true applies it immediately"},
                     "snapshot_id": {"type": "string", "description": "Snapshot id for restore_snapshot"},
                     "label": {"type": "string", "description": "Snapshot label"}
                 },

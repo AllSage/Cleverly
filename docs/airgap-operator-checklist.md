@@ -4,7 +4,8 @@ Use this checklist on the machine that will run Cleverly with sensitive data.
 
 ## Green Checks
 
-Run the app checklist from **Code -> Checks** or call:
+Run the app checklist from **Code -> Checks**, open
+`http://127.0.0.1:7000/operator`, or call:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:7000/api/operator/checks
@@ -14,7 +15,8 @@ Expected results:
 
 - `Offline mode`: `ok`
 - `Online feature flags`: `ok`
-- `Code Workspace command runner`: `ok` with `runner=worker`
+- `Configured model endpoints`: `ok`
+- `Code Workspace worker isolation`: `ok` with `runner=worker`
 - `Code Workspace model key`: `ok` after you set the local model key
 - `Proxy bind`: `ok` with `APP_BIND=127.0.0.1`
 
@@ -56,7 +58,7 @@ Do not load sensitive data if any of these are true:
 - `CODE_WORKSPACE_RUNNER` is not `worker` in Docker.
 - `cleverly-code-worker` has any network mode other than `none`.
 - The app proxy is bound to a LAN/public address.
-- A cloud/API model endpoint is selected for Code Workspace.
+- Any enabled model endpoint points to a cloud/API/LAN URL instead of loopback or a Docker service name.
 - You intentionally enabled `-HostData` and the host folder is readable by other users.
 
 ## Data Boundary

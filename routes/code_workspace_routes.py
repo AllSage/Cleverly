@@ -47,6 +47,7 @@ class AgentRequest(BaseModel):
     test_command: str = Field(default="", max_length=400)
     max_rounds: int = Field(default=2, ge=1, le=3)
     selected_paths: list[str] = Field(default_factory=list, max_length=12)
+    apply_changes: bool = False
 
 
 def _owner(request: Request) -> str:
@@ -170,6 +171,7 @@ def setup_code_workspace_routes() -> APIRouter:
                 test_command=body.test_command,
                 max_rounds=body.max_rounds,
                 selected_paths=body.selected_paths,
+                apply_changes=body.apply_changes,
             )
         except code_workspace.CodeWorkspaceError as exc:
             raise _bad(exc)

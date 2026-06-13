@@ -9,6 +9,8 @@ let _selected = '';
 let _workspaces = [];
 let _currentFile = '';
 let _wired = false;
+let _pendingDiff = '';
+let _pendingSnapshot = null;
 
 function el(id) { return document.getElementById(id); }
 function esc(s) { return uiModule.esc(s == null ? '' : String(s)); }
@@ -32,6 +34,9 @@ function ensureStyles() {
     .code-ws-btn.primary{background:var(--accent,var(--red));color:white;border-color:transparent;}
     .code-ws-editor{width:100%;height:100%;resize:none;box-sizing:border-box;background:#0f1117;color:#e7eaf0;border:1px solid var(--border);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;min-height:220px;}
     .code-ws-task{width:100%;height:78px;resize:vertical;box-sizing:border-box;background:var(--input-bg,var(--panel));color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;font:12px/1.35 system-ui,sans-serif;}
+    .code-ws-review{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);}
+    .code-ws-review.hidden{display:none;}
+    .code-ws-review-label{font-size:12px;font-weight:700;color:var(--fg);margin-right:auto;}
     .code-ws-output{height:138px;overflow:auto;background:#0f1117;color:#e7eaf0;border:1px solid var(--border);border-radius:8px;padding:9px;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;}
     .code-ws-path{font-size:12px;opacity:.75;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     @media(max-width:760px){.code-ws-grid{grid-template-columns:1fr;grid-template-rows:220px 1fr}.code-workspace-body{overflow:auto}.code-ws-main{min-height:640px}}
@@ -90,9 +95,16 @@ function renderShell() {
         <div class="code-ws-head" style="display:block;">
           <textarea class="code-ws-task" id="code-ws-agent-task" placeholder="Ask the coding agent to change this repo."></textarea>
           <div class="code-ws-toolbar" style="margin-top:6px;">
-            <button class="code-ws-btn primary" id="code-ws-agent-run">Run Agent</button>
+            <button class="code-ws-btn primary" id="code-ws-agent-run">Draft Diff</button>
             <button class="code-ws-btn" id="code-ws-snapshot">Snapshot</button>
             <button class="code-ws-btn" id="code-ws-restore-latest">Restore Latest</button>
+          </div>
+          <div class="code-ws-review hidden" id="code-ws-review">
+            <span class="code-ws-review-label">Proposed diff ready</span>
+            <button class="code-ws-btn primary" id="code-ws-apply-proposed">Apply</button>
+            <button class="code-ws-btn" id="code-ws-reject-proposed">Reject</button>
+            <button class="code-ws-btn" id="code-ws-test-proposed">Run Tests</button>
+            <button class="code-ws-btn" id="code-ws-restore-review">Restore</button>
           </div>
         </div>
         <div class="code-ws-head">
@@ -136,6 +148,13 @@ function renderShell() {
 function setOutput(text) {
   const out = el('code-ws-output');
   if (out) out.textContent = text || '';
+}
+
+function setPendingDiff(diff, snapshot) {
+  _pendingDiff = diff || '';
+  _pendingSnapshot = snapshot || null;
+  const review = el('code-ws-review');
+  if (review) review.classList.toggle('hidden', !_pendingDiff);
 }
 
 function selectedName() {
@@ -191,6 +210,7 @@ async function refreshModelKey() {
 async function selectWorkspace(id) {
   _selected = id;
   _currentFile = '';
+  setPendingDiff('', null);
   const editor = el('code-ws-editor');
   if (editor) editor.value = '';
   renderList();
@@ -213,6 +233,7 @@ async function loadFile(path) {
   const editor = el('code-ws-editor');
   if (current) current.textContent = `${selectedName()} / ${_currentFile}`;
   if (editor) editor.value = data.content || '';
+  setPendingDiff('', null);
   setOutput('');
 }
 
@@ -257,6 +278,29 @@ async function applyPatch() {
   await loadTree('');
 }
 
+async function applyProposedDiff() {
+  if (!_selected || !_pendingDiff) {
+    setOutput('No proposed diff to apply.');
+    return;
+  }
+  await api(`/${encodeURIComponent(_selected)}/snapshots`, {
+    method: 'POST',
+    body: JSON.stringify({ label: 'Before applying agent draft' }),
+  });
+  const data = await api(`/${encodeURIComponent(_selected)}/patch`, {
+    method: 'POST',
+    body: JSON.stringify({ diff: _pendingDiff }),
+  });
+  setPendingDiff('', null);
+  setOutput([data.stdout, data.stderr].filter(Boolean).join('\n') || 'Proposed diff applied.');
+  await loadTree('');
+}
+
+function rejectProposedDiff() {
+  setPendingDiff('', null);
+  setOutput('Proposed diff rejected.');
+}
+
 async function runCommand() {
   if (!_selected) return;
   const command = el('code-ws-command')?.value || '';
@@ -281,6 +325,7 @@ async function runAgent() {
       test_command: testCommand.trim(),
       max_rounds: 2,
       selected_paths: _currentFile ? [_currentFile] : [],
+      apply_changes: false,
     }),
   });
   const lines = [
@@ -297,8 +342,12 @@ async function runAgent() {
     lines.push(data.test_result.stdout || '');
     lines.push(data.test_result.stderr || '');
   }
-  const finalDiff = data.diff?.stdout || data.applied_diff || '';
+  const finalDiff = data.proposed_diff || data.applied_diff || data.diff?.stdout || '';
   if (finalDiff && el('code-ws-editor')) el('code-ws-editor').value = finalDiff;
+  setPendingDiff(data.proposed_diff || '', data.snapshot || null);
+  if (data.proposed_diff) {
+    lines.push('review: proposed diff is waiting for Apply or Reject');
+  }
   setOutput(lines.filter(Boolean).join('\n'));
   await loadTree('');
 }
@@ -390,6 +439,10 @@ function wireControls() {
   el('code-ws-apply-patch')?.addEventListener('click', guarded(applyPatch));
   el('code-ws-run')?.addEventListener('click', guarded(runCommand));
   el('code-ws-agent-run')?.addEventListener('click', guarded(runAgent));
+  el('code-ws-apply-proposed')?.addEventListener('click', guarded(applyProposedDiff));
+  el('code-ws-reject-proposed')?.addEventListener('click', rejectProposedDiff);
+  el('code-ws-test-proposed')?.addEventListener('click', guarded(runCommand));
+  el('code-ws-restore-review')?.addEventListener('click', guarded(restoreLatestSnapshot));
   el('code-ws-snapshot')?.addEventListener('click', guarded(createSnapshot));
   el('code-ws-restore-latest')?.addEventListener('click', guarded(restoreLatestSnapshot));
   el('code-ws-export')?.addEventListener('click', exportWorkspace);

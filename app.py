@@ -736,6 +736,10 @@ async def serve_training(request: Request):
 async def serve_code(request: Request):
     return await serve_index(request)
 
+@app.get("/operator")
+async def serve_operator(request: Request):
+    return RedirectResponse(url="/api/operator/page", status_code=302)
+
 @app.get("/email")
 async def serve_email(request: Request):
     return await serve_index(request)
@@ -800,6 +804,13 @@ async def runtime_info() -> Dict[str, object]:
 async def startup_event():
     global upload_cleanup_task
     logger.info("Application starting up...")
+    try:
+        from src.offline_policy import enforce_startup_policy
+
+        app.state.offline_policy_report = enforce_startup_policy()
+    except Exception as e:
+        logger.error("Offline startup policy blocked Cleverly: %s", e)
+        raise
     webhook_manager.set_loop(asyncio.get_running_loop())
     # Wipe any leftover incognito sessions from previous process — they're
     # ephemeral by design and must not survive a restart.

@@ -193,7 +193,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 python setup.py
-python -m uvicorn app:app --host 127.0.0.1 --port 7000
+CLEVERLY_OFFLINE=1 python -m uvicorn app:app --host 127.0.0.1 --port 7000
 ```
 
 Use `--host 0.0.0.0` only when you intentionally want LAN or reverse-proxy access.
@@ -216,6 +216,7 @@ python -m venv venv
 venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python setup.py
+$env:CLEVERLY_OFFLINE='1'
 python -m uvicorn app:app --host 127.0.0.1 --port 7000
 ```
 
@@ -266,13 +267,16 @@ traversal, symlinks, `.git` internals, and oversized expansion.
 
 The Code panel also includes a coding-agent workflow. Give it a task, choose a
 local test command such as `pytest -q`, and it will snapshot the repo, read a
-bounded set of files, ask the configured model for a unified diff, apply it,
-run the test command, and show the final diff. You can manually create
-snapshots, restore the latest snapshot, or export the patched repo archive.
+bounded set of files, and ask the configured model for a unified diff. The diff
+is shown for review first; use **Apply**, **Reject**, **Snapshot**, **Run
+Tests**, and **Restore** in the Code panel before committing changes. You can
+also manually create snapshots, restore the latest snapshot, or export the
+patched repo archive.
 
 The Code Workspace model key is intentionally blank by default. Set it in the
 Code panel or with `manage_settings` before expecting an agent to use a specific
-coding model, for example `GLM-5.2`.
+coding model, for example `GLM-5.2`. In offline mode, Code Workspace only uses
+loopback or Docker-service model endpoints; cloud/API endpoints are refused.
 
 In Docker, workspace test/build commands run through the `cleverly-code-worker`
 sidecar by default. That worker has `network_mode: none` and communicates with
@@ -291,7 +295,9 @@ The Cleverly service runs as a non-root UID/GID, drops Linux capabilities, uses
 for `/tmp`, `/run`, and `/var/tmp`. Runtime state is written to Docker named
 volumes by default. The Docker entrypoint also refuses to start with
 `CLEVERLY_OFFLINE` disabled unless `CLEVERLY_ALLOW_NETWORK=I_ACCEPT_NETWORK_RISK`
-is explicitly set.
+is explicitly set. The app itself also runs an offline startup policy check and
+will fail closed if offline mode, loopback binding, worker isolation, or
+local-only model endpoint checks fail.
 
 Code Workspace commands run in the `cleverly-code-worker` sidecar by default.
 That container is read-only, drops Linux capabilities, uses `no-new-privileges`,
@@ -344,6 +350,7 @@ tokens, and webhooks. Treat it like an admin console.
 - Keep shell/Python/file read-write, MCP management, API tokens, webhooks, model serving, backup/vault, and app settings admin-only.
 - Rotate any API keys or tokens that were ever pasted into shared chats, screenshots, demos, or logs.
 - Prefer binding manual development runs to `127.0.0.1`; bind to `0.0.0.0` only when you intentionally want LAN/reverse-proxy access.
+- Check the admin-only operator page at `http://127.0.0.1:7000/operator` before loading sensitive data.
 - Review dependency changes with [docs/dependency-audit.md](docs/dependency-audit.md); `requirements.lock` is an audit snapshot, while `requirements.txt` remains the portable install input.
 
 For HTTPS, put a TLS-terminating reverse proxy in front. Minimal Caddy example:
@@ -375,6 +382,8 @@ for deployment-level defaults and secrets you want present before first boot.
 | `CLEVERLY_TMPFS_SIZE` | `1g` | Size of the Cleverly `/tmp` tmpfs in Docker |
 | `CLEVERLY_PIDS_LIMIT` | `4096` | Process limit for the Cleverly container |
 | `CLEVERLY_OFFLINE` | `1` in Docker | Disable internet-facing features and startup network warmups |
+| `CLEVERLY_ALLOW_NETWORK` | unset | Break-glass token; must equal `I_ACCEPT_NETWORK_RISK` to bypass Docker/app offline startup guards |
+| `CLEVERLY_DISABLE_OFFLINE_POLICY` | unset | Development-only bypass for the app-level strict offline startup policy |
 | `CLEVERLY_OFFLINE_EMBEDDINGS` | `0` in Docker | Allow local FastEmbed only after its cache is pre-seeded |
 | `CLEVERLY_HOST_DATA` | unset | Set to `1` only to make `Cleverly.ps1` use visible `./data` and `./logs` bind mounts |
 | `CODE_WORKSPACE_DIR` | unset | Optional override for sealed code workspace storage; defaults to `DATA_DIR/code-workspaces` |

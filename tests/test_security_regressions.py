@@ -197,8 +197,12 @@ def test_offline_compose_overlay_reinforces_container_egress_block():
 
 def test_docker_entrypoint_requires_explicit_network_break_glass():
     entrypoint = Path("docker/entrypoint.sh").read_text(encoding="utf-8")
+    policy = Path("src/offline_policy.py").read_text(encoding="utf-8")
+    app_py = Path("app.py").read_text(encoding="utf-8")
     assert "CLEVERLY_ALLOW_NETWORK" in entrypoint
     assert "I_ACCEPT_NETWORK_RISK" in entrypoint
+    assert "NETWORK_BREAK_GLASS_VALUE" in policy
+    assert "enforce_startup_policy" in app_py
     assert "exit 64" in entrypoint
 
 

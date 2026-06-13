@@ -1522,6 +1522,7 @@ async def do_code_workspace(content: str, owner: Optional[str] = None) -> Dict:
                 test_command=args.get("test_command") or "",
                 max_rounds=int(args.get("max_rounds") or 2),
                 selected_paths=args.get("selected_paths") or [],
+                apply_changes=bool(args.get("apply_changes")),
             )
         if action == "status":
             return code_workspace.git_status(workspace_id, owner=owner or "")

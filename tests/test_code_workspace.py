@@ -169,9 +169,11 @@ def test_code_workspace_is_wired_as_admin_only_offline_tool():
     operator_routes = (root / "routes" / "operator_routes.py").read_text(encoding="utf-8")
     assert 'prefix="/api/operator"' in operator_routes
     assert '@router.get("/checks")' in operator_routes
+    assert '@router.get("/page"' in operator_routes
     assert "tool-code-workspace-btn" in (root / "static" / "index.html").read_text(encoding="utf-8")
     assert "code_workspace_model_key" in (root / "static" / "js" / "codeWorkspace.js").read_text(encoding="utf-8")
     assert "code-ws-agent-run" in (root / "static" / "js" / "codeWorkspace.js").read_text(encoding="utf-8")
+    assert "code-ws-apply-proposed" in (root / "static" / "js" / "codeWorkspace.js").read_text(encoding="utf-8")
 
 
 def test_code_workspace_worker_is_networkless_in_compose():
