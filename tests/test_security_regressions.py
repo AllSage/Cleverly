@@ -11,6 +11,7 @@
 These are pure-function tests — no FastAPI app boot, no DB.
 """
 
+import asyncio
 import sys
 import types
 import json
@@ -278,6 +279,41 @@ def test_offline_control_center_is_admin_gated_and_local_only():
     assert "/egress-test" in setup_js
     assert 'placeholder="Model tag you pulled"' in setup_js
     assert 'value="llama3.2:3b"' not in setup_js
+
+
+def test_offline_model_cache_scan_skips_unreadable_roots(monkeypatch, tmp_path):
+    from routes import offline_control_routes as routes
+
+    readable_root = tmp_path / "models"
+    readable_root.mkdir()
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+
+    original_exists = Path.exists
+
+    def guarded_exists(path):
+        if str(path).replace("\\", "/").endswith("/root/.cache/huggingface"):
+            raise PermissionError("admin required")
+        return original_exists(path)
+
+    monkeypatch.setattr(Path, "exists", guarded_exists)
+
+    roots = routes._candidate_roots()
+    assert readable_root.resolve() in roots
+    assert all(not str(root).replace("\\", "/").endswith("/root/.cache/huggingface") for root in roots)
+
+
+def test_bg_followup_missing_session_is_handled(monkeypatch):
+    from src import bg_monitor
+
+    class MissingSessionManager:
+        def get_session(self, session_id):
+            raise KeyError(f"Session {session_id} not found")
+
+    fake_ai_interaction = types.SimpleNamespace(get_session_manager=lambda: MissingSessionManager())
+    monkeypatch.setitem(sys.modules, "src.ai_interaction", fake_ai_interaction)
+
+    handled = asyncio.run(bg_monitor._run_followup({"id": "job-1", "session_id": "missing"}))
+    assert handled is True
 
 
 def test_offline_assurance_workflow_has_local_reports_audit_and_help():

@@ -104,6 +104,13 @@ def _read_text(path: Path, limit: int = 20000) -> str:
         return ""
 
 
+def _path_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
 def _safe_rel(path: Path, root: Path) -> str:
     try:
         return str(path.relative_to(root)).replace("\\", "/")
@@ -135,7 +142,7 @@ def _candidate_roots() -> list[Path]:
         except Exception:
             resolved = root
         key = str(resolved)
-        if key in seen or not resolved.exists():
+        if key in seen or not _path_exists(resolved):
             continue
         seen.add(key)
         out.append(resolved)
@@ -161,7 +168,7 @@ def _scan_local_models(limit: int = 80) -> list[dict[str, Any]]:
             root_stat = root.stat()
         except Exception:
             root_stat = None
-        if (root / "config.json").exists():
+        if _path_exists(root / "config.json"):
             candidates.append({
                 "name": root.name,
                 "model_id": root.name,
