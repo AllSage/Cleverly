@@ -165,6 +165,20 @@ def test_windows_app_launcher_uses_offline_docker_runtime():
     assert "Cleverly.ps1" in cmd
 
 
+def test_offline_frontend_hides_online_feature_entrypoints():
+    app_js = Path("static/app.js").read_text(encoding="utf-8")
+    index_html = Path("static/index.html").read_text(encoding="utf-8")
+    compare_selector = Path("static/js/compare/selector.js").read_text(encoding="utf-8")
+    assert "window._cleverlyFeatures" in app_js
+    assert '[data-settings-tab="search"]' in app_js
+    assert '[data-settings-panel="search"]' in app_js
+    assert "data-ui-key" in app_js
+    assert 'data-online-feature="deep_research"' in index_html
+    assert 'data-online-feature="web_search"' in index_html
+    assert "_features.web_search !== false" in compare_selector
+    assert "_features.deep_research !== false" in compare_selector
+
+
 def test_ollama_overlays_use_persistent_model_cache_and_auto_seed():
     connected = Path("docker/ollama.yml").read_text(encoding="utf-8")
     offline = Path("docker/ollama-offline.yml").read_text(encoding="utf-8")

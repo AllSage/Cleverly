@@ -1283,23 +1283,52 @@ function initializeEventListeners() {
 
   // Feature visibility — hide admin-disabled features
   // Use prefetched data from login page if available
+  function applyFeatureVisibility(features) {
+    const hideSelectors = {
+      web_search: [
+        '#web-toggle-btn',
+        '[data-settings-tab="search"]',
+        '[data-settings-panel="search"]',
+      ],
+      deep_research: [
+        '#research-toggle-btn',
+        '#tool-research-btn',
+        '#overflow-research-btn',
+        '#rail-research',
+        '[data-online-feature="deep_research"]',
+      ],
+      document_editor: ['#overflow-doc-btn', '#rail-documents'],
+      gallery: ['#tool-gallery-btn', '#rail-gallery'],
+    };
+
+    Object.entries(hideSelectors).forEach(([key, selectors]) => {
+      const hidden = features[key] === false;
+      selectors.forEach(selector => {
+        document.querySelectorAll(selector).forEach(node => {
+          node.style.display = hidden ? 'none' : '';
+        });
+      });
+    });
+
+    const hiddenUiKeys = [];
+    if (features.web_search === false) hiddenUiKeys.push('web-toggle-btn');
+    if (features.deep_research === false) hiddenUiKeys.push('tool-research', 'research-btn');
+    hiddenUiKeys.forEach(key => {
+      document.querySelectorAll(`[data-ui-key="${key}"]`).forEach(node => {
+        const row = node.closest('.vis-row') || node;
+        row.style.display = 'none';
+      });
+    });
+  }
+
   const _prefetchedFeatures = sessionStorage.getItem('ody-prefetch-features');
   sessionStorage.removeItem('ody-prefetch-features');
   window._initFeaturesReady = (_prefetchedFeatures
     ? Promise.resolve(JSON.parse(_prefetchedFeatures))
     : fetch(`${API_BASE}/api/auth/features`, { credentials: 'same-origin' }).then(r => r.json())
   ).then(features => {
-      const map = {
-        web_search:      ['web-toggle-btn'],
-        deep_research:   ['research-toggle-btn', 'tool-research-btn', 'overflow-research-btn', 'rail-research'],
-        document_editor: ['overflow-doc-btn', 'rail-documents'],
-        gallery:         ['tool-gallery-btn', 'rail-gallery'],
-      };
-      Object.entries(map).forEach(([key, ids]) => {
-        if (features[key] === false) {
-          ids.forEach(id => { const e = el(id); if (e) e.style.display = 'none'; });
-        }
-      });
+      window._cleverlyFeatures = features || {};
+      applyFeatureVisibility(window._cleverlyFeatures);
       // Re-apply the user's Appearance UI-vis preferences after the
       // features fetch finishes hiding things — otherwise an admin-
       // disabled feature leaves the sidebar entry hidden even when the
@@ -1307,6 +1336,7 @@ function initializeEventListeners() {
       // off then on to trigger applyUIVis a second time, which is the
       // bug they report as "deep research only shows after I toggle".
       try { if (window.applyUIVis && window.loadUIVis) window.applyUIVis(window.loadUIVis()); } catch (_) {}
+      applyFeatureVisibility(window._cleverlyFeatures);
     })
     .catch(() => {});
 
@@ -2403,6 +2433,7 @@ function initializeEventListeners() {
     applyTextEmojis(state['text-emojis'] !== false);
     // Hide thinking sections toggle (show-thinking: checked=show, unchecked=hide)
     document.body.classList.toggle('hide-thinking', state['show-thinking'] === false);
+    if (window._cleverlyFeatures) applyFeatureVisibility(window._cleverlyFeatures);
   }
 
   // Rearrange toggles in session/model sort dropdowns
