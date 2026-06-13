@@ -56,8 +56,8 @@ also named `cleverly` by default, so common checks work with commands like
 `docker logs cleverly`. The proxy and bundled Ollama containers default to
 `cleverly-proxy` and `cleverly-ollama`.
 
-On Windows, you can use the app-style Docker launcher after the images and
-model are prepared:
+On Windows, the app-style Docker launcher starts at the offline runtime step
+after the images and model are already prepared:
 
 ```powershell
 .\Cleverly.ps1 start
@@ -65,14 +65,15 @@ model are prepared:
 .\Cleverly.ps1 status
 ```
 
-First-time connected prep can be run with:
+Double-clicking `Cleverly.cmd` runs the same offline `start` path and opens the
+browser. It does not pull, build, or download.
+
+Connected prep is intentionally opt-in and should be run only on a non-sensitive
+connected prep machine:
 
 ```powershell
-.\Cleverly.ps1 prep
+.\Cleverly.ps1 prep -AllowConnectedPrep
 ```
-
-Double-clicking `Cleverly.cmd` starts the same offline Docker runtime and opens
-the browser.
 
 ### Offline Docker
 

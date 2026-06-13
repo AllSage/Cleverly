@@ -14,14 +14,15 @@
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 stop
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 status
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 logs
-    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 prep
+    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 prep -AllowConnectedPrep
 #>
 param(
     [ValidateSet("start", "stop", "restart", "status", "open", "logs", "prep")]
     [string]$Action = "start",
     [string]$Url = "http://127.0.0.1:7000",
     [string]$Model = "llama3.2:3b",
-    [switch]$NoOpen
+    [switch]$NoOpen,
+    [switch]$AllowConnectedPrep
 )
 
 $ErrorActionPreference = "Stop"
@@ -84,10 +85,10 @@ function Show-Status {
 function Start-Cleverly {
     Require-Docker
     if (-not (Test-Image "cleverly:local")) {
-        Fail "Missing image cleverly:local. Run '.\Cleverly.ps1 prep' while connected first."
+        Fail "Missing image cleverly:local. This launcher will not pull or build during start. Load prepared images first, or run '.\Cleverly.ps1 prep -AllowConnectedPrep' only on a connected prep machine."
     }
     if (-not (Test-Image $env:OLLAMA_IMAGE)) {
-        Fail "Missing image $env:OLLAMA_IMAGE. Run '.\Cleverly.ps1 prep' while connected first."
+        Fail "Missing image $env:OLLAMA_IMAGE. This launcher will not pull models during start. Load prepared images/models first, or run '.\Cleverly.ps1 prep -AllowConnectedPrep' only on a connected prep machine."
     }
 
     Write-Step "Starting Cleverly offline runtime"
@@ -116,6 +117,10 @@ function Stop-Cleverly {
 
 function Prep-Cleverly {
     Require-Docker
+    $prepAllowed = $AllowConnectedPrep -or ($env:CLEVERLY_ALLOW_CONNECTED_PREP -eq "I_ACCEPT_CONNECTED_PREP")
+    if (-not $prepAllowed) {
+        Fail "Connected prep is disabled by default. On a non-sensitive connected prep machine, rerun '.\Cleverly.ps1 prep -AllowConnectedPrep' or set CLEVERLY_ALLOW_CONNECTED_PREP=I_ACCEPT_CONNECTED_PREP. On a sensitive machine, load prepared images/models and run '.\Cleverly.ps1 start'."
+    }
     Write-Step "Building Cleverly image"
     docker compose --project-name cleverly --env-file .env.example build cleverly
     if ($LASTEXITCODE -ne 0) { Fail "Failed to build cleverly:local." }

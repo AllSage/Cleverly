@@ -97,6 +97,20 @@ docker compose --env-file .env \
   up -d --no-build --pull never
 ```
 
+On Windows, the launcher uses that same offline start path:
+
+```powershell
+.\Cleverly.ps1 start
+```
+
+Do not run connected prep on the offline/sensitive machine. If you need the
+Windows prep helper, run it only on a connected prep machine and pass the
+explicit opt-in:
+
+```powershell
+.\Cleverly.ps1 prep -AllowConnectedPrep
+```
+
 Open:
 
 ```text

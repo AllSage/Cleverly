@@ -162,6 +162,9 @@ def test_windows_app_launcher_uses_offline_docker_runtime():
     assert "docker/ollama-offline.yml" in launcher
     assert "cleverly:local" in launcher
     assert "cleverly-ollama:local" in launcher
+    assert "AllowConnectedPrep" in launcher
+    assert "CLEVERLY_ALLOW_CONNECTED_PREP" in launcher
+    assert "Connected prep is disabled by default" in launcher
     assert "Cleverly.ps1" in cmd
 
 
