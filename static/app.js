@@ -38,6 +38,7 @@ import themeModule from './js/theme.js';
 import cookbookModule from './js/cookbook.js';
 import trainingLabModule from './js/trainingLab.js';
 import codeWorkspaceModule from './js/codeWorkspace.js';
+import offlineControlModule from './js/offlineControl.js';
 import groupModule from './js/group.js';
 import * as researchPanelModule from './js/research/panel.js';
 import ttsModule from './js/tts-ai.js';
@@ -53,6 +54,7 @@ window.uiModule = uiModule;
 window.adminModule = adminModule;
 window.cookbookModule = cookbookModule;
 window.trainingLabModule = trainingLabModule;
+window.offlineControlModule = offlineControlModule;
 
 // Redirect to login on 401 from any fetch
 const _origFetch = window.fetch;
@@ -830,6 +832,17 @@ function initializeEventListeners() {
     });
   }
 
+  const toolOfflineBtn = el('tool-offline-btn');
+  if (toolOfflineBtn) {
+    toolOfflineBtn.addEventListener('click', async () => {
+      if (!offlineControlModule) return;
+      const Modals = await import('./js/modalManager.js');
+      if (!Modals.toggle('offline-control-modal')) {
+        offlineControlModule.open();
+      }
+    });
+  }
+
   // Document library tool button
   const toolDoclibBtn = el('tool-doclib-btn');
   if (toolDoclibBtn) {
@@ -992,6 +1005,7 @@ function initializeEventListeners() {
     '/cookbook': () => document.getElementById('tool-cookbook-btn')?.click(),
     '/training': () => document.getElementById('tool-training-btn')?.click(),
     '/code': () => document.getElementById('tool-code-workspace-btn')?.click(),
+    '/offline': () => document.getElementById('tool-offline-btn')?.click(),
     '/email':    () => {
       // Collapse the wide sidebar → icon rail (48px) so the user keeps
       // navigation visible alongside the fullscreen email view.
@@ -2445,6 +2459,7 @@ function initializeEventListeners() {
     'tool-cookbook':       '#tool-cookbook-btn',
     'tool-training':       '#tool-training-btn',
     'tool-code-workspace': '#tool-code-workspace-btn',
+    'tool-offline':        '#tool-offline-btn',
     'tool-research':       '#tool-research-btn',
     'tool-gallery':        '#tool-gallery-btn',
     'tool-library':        '#tool-library-btn',
@@ -3547,6 +3562,7 @@ function startCleverlyApp() {
     'rail-research':  'tool-research-btn',
     'rail-cookbook':   'tool-cookbook-btn',
     'rail-training':   'tool-training-btn',
+    'rail-offline':    'tool-offline-btn',
     'rail-archive':   'tool-library-btn',
     'rail-gallery':   'tool-gallery-btn',
     'rail-tasks':     'tool-tasks-btn',
@@ -4001,6 +4017,10 @@ function startCleverlyApp() {
       if (tip) tip.textContent = 'Add an AI endpoint from Settings in the sidebar, or paste an endpoint/API key into the chat.';
     }
   }).catch(() => {});
+  if (offlineControlModule && offlineControlModule.refreshBadge) {
+    offlineControlModule.refreshBadge();
+    setInterval(() => offlineControlModule.refreshBadge(), 5 * 60 * 1000);
+  }
   modelsModule.refreshProviders();
   ragModule.loadPersonalDocs();
   memoryModule.loadMemories(); // Ensure memories are loaded on page load

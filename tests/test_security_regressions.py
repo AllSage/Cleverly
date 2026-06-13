@@ -209,6 +209,8 @@ def test_docker_entrypoint_requires_explicit_network_break_glass():
 def test_windows_app_launcher_uses_offline_docker_runtime():
     launcher = Path("Cleverly.ps1").read_text(encoding="utf-8")
     cmd = Path("Cleverly.cmd").read_text(encoding="utf-8")
+    gui = Path("Cleverly-Launcher.ps1").read_text(encoding="utf-8")
+    gui_cmd = Path("Cleverly-App.cmd").read_text(encoding="utf-8")
     assert '--project-name", "cleverly"' in launcher
     assert "--pull never" in launcher
     assert "docker/ollama-offline.yml" in launcher
@@ -233,6 +235,47 @@ def test_windows_app_launcher_uses_offline_docker_runtime():
     assert "CLEVERLY_ALLOW_CONNECTED_PREP" in launcher
     assert "Connected prep is disabled by default" in launcher
     assert "Cleverly.ps1" in cmd
+    assert "Cleverly Offline App" in gui
+    assert 'Run-Action "start" @("-NoOpen")' in gui
+    assert 'Run-Action "restart" @("-NoOpen")' in gui
+    assert 'Run-Action "doctor"' in gui
+    assert "http://127.0.0.1:7000" in gui
+    assert "Cleverly-Launcher.ps1" in gui_cmd
+
+
+def test_offline_control_center_is_admin_gated_and_local_only():
+    route = Path("routes/offline_control_routes.py").read_text(encoding="utf-8")
+    app_js = Path("static/app.js").read_text(encoding="utf-8")
+    index_html = Path("static/index.html").read_text(encoding="utf-8")
+    ui_js = Path("static/js/offlineControl.js").read_text(encoding="utf-8")
+    app_py = Path("app.py").read_text(encoding="utf-8")
+
+    assert 'prefix="/api/offline-control"' in route
+    assert "Depends(require_admin)" in route
+    assert "evaluate_offline_policy(include_db=True)" in route
+    assert 'socket.create_connection(target, timeout=2.5)' in route
+    assert "is_local_model_url(base_url)" in route
+    assert "Only local model endpoints" in route
+    assert "setup_offline_control_routes" in app_py
+    assert "offlineControlModule" in app_js
+    assert "'/offline'" in app_js
+    assert "rail-offline" in index_html
+    assert "tool-offline-btn" in index_html
+    assert "offline-control-modal" in index_html
+    assert "offline-proof-badge" in index_html
+    assert "/api/backup/encrypted/export" in ui_js
+    assert "/api/backup/encrypted/import" in ui_js
+
+
+def test_encrypted_app_backup_uses_password_kdf():
+    route = Path("routes/backup_routes.py").read_text(encoding="utf-8")
+    assert '"/api/backup/encrypted/export"' in route
+    assert '"/api/backup/encrypted/import"' in route
+    assert "BACKUP_KDF_ITERATIONS = 390_000" in route
+    assert "PBKDF2HMAC" in route
+    assert "hashes.SHA256()" in route
+    assert "Fernet(key).encrypt" in route
+    assert "Invalid password or encrypted backup" in route
 
 
 def test_offline_frontend_hides_online_feature_entrypoints():

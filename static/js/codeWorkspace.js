@@ -11,6 +11,7 @@ let _currentFile = '';
 let _wired = false;
 let _pendingDiff = '';
 let _pendingSnapshot = null;
+let _snapshots = [];
 
 function el(id) { return document.getElementById(id); }
 function esc(s) { return uiModule.esc(s == null ? '' : String(s)); }
@@ -99,6 +100,11 @@ function renderShell() {
             <button class="code-ws-btn" id="code-ws-snapshot">Snapshot</button>
             <button class="code-ws-btn" id="code-ws-restore-latest">Restore Latest</button>
           </div>
+          <div class="code-ws-toolbar" style="margin-top:6px;">
+            <select class="code-ws-input" id="code-ws-snapshot-select" style="flex:1;min-width:130px;"></select>
+            <button class="code-ws-btn" id="code-ws-snapshot-diff">Diff Snapshot</button>
+            <button class="code-ws-btn" id="code-ws-restore-selected">Restore Selected</button>
+          </div>
           <div class="code-ws-review hidden" id="code-ws-review">
             <span class="code-ws-review-label">Proposed diff ready</span>
             <button class="code-ws-btn primary" id="code-ws-apply-proposed">Apply</button>
@@ -112,6 +118,7 @@ function renderShell() {
           <button class="code-ws-btn" id="code-ws-import">Import Archive</button>
           <button class="code-ws-btn" id="code-ws-refresh">Refresh</button>
           <button class="code-ws-btn" id="code-ws-checks">Checks</button>
+          <button class="code-ws-btn" id="code-ws-delete">Delete</button>
         </div>
         <div class="code-ws-list" id="code-ws-list"></div>
       </section>
@@ -193,12 +200,32 @@ function renderTree(entries) {
   });
 }
 
+function renderSnapshotSelect() {
+  const select = el('code-ws-snapshot-select');
+  if (!select) return;
+  if (!_snapshots.length) {
+    select.innerHTML = '<option value="">No snapshots</option>';
+    return;
+  }
+  select.innerHTML = _snapshots.map(s => {
+    const label = s.label || 'Snapshot';
+    const when = s.created_at ? new Date(s.created_at * 1000).toLocaleString() : '';
+    return `<option value="${esc(s.id)}">${esc(label)}${when ? ' - ' + esc(when) : ''}</option>`;
+  }).join('');
+}
+
 async function refresh() {
   const data = await api('');
   _workspaces = data.workspaces || [];
   if (!_selected && _workspaces[0]) _selected = _workspaces[0].id;
   renderList();
-  if (_selected) await loadTree('');
+  if (_selected) {
+    await loadTree('');
+    await loadSnapshots();
+  } else {
+    _snapshots = [];
+    renderSnapshotSelect();
+  }
 }
 
 async function refreshModelKey() {
@@ -210,11 +237,13 @@ async function refreshModelKey() {
 async function selectWorkspace(id) {
   _selected = id;
   _currentFile = '';
+  _snapshots = [];
   setPendingDiff('', null);
   const editor = el('code-ws-editor');
   if (editor) editor.value = '';
   renderList();
   await loadTree('');
+  await loadSnapshots();
 }
 
 async function loadTree(path) {
@@ -294,6 +323,7 @@ async function applyProposedDiff() {
   setPendingDiff('', null);
   setOutput([data.stdout, data.stderr].filter(Boolean).join('\n') || 'Proposed diff applied.');
   await loadTree('');
+  await loadSnapshots();
 }
 
 function rejectProposedDiff() {
@@ -359,6 +389,18 @@ async function createSnapshot() {
     body: JSON.stringify({ label: 'Manual snapshot' }),
   });
   setOutput(`Created snapshot ${data.snapshot.id}`);
+  await loadSnapshots();
+}
+
+async function loadSnapshots() {
+  if (!_selected) {
+    _snapshots = [];
+    renderSnapshotSelect();
+    return;
+  }
+  const data = await api(`/${encodeURIComponent(_selected)}/snapshots`);
+  _snapshots = data.snapshots || [];
+  renderSnapshotSelect();
 }
 
 async function restoreLatestSnapshot() {
@@ -373,6 +415,50 @@ async function restoreLatestSnapshot() {
   setOutput(`Restored snapshot ${snap.id}`);
   _currentFile = '';
   await loadTree('');
+  await loadSnapshots();
+}
+
+function selectedSnapshotId() {
+  return el('code-ws-snapshot-select')?.value || (_snapshots[0] && _snapshots[0].id) || '';
+}
+
+async function restoreSelectedSnapshot() {
+  if (!_selected) return;
+  const snapshotId = selectedSnapshotId();
+  if (!snapshotId) {
+    setOutput('No snapshot selected.');
+    return;
+  }
+  await api(`/${encodeURIComponent(_selected)}/snapshots/${encodeURIComponent(snapshotId)}/restore`, { method: 'POST' });
+  setOutput(`Restored snapshot ${snapshotId}`);
+  _currentFile = '';
+  await loadTree('');
+  await loadSnapshots();
+}
+
+async function diffSelectedSnapshot() {
+  if (!_selected) return;
+  const snapshotId = selectedSnapshotId();
+  if (!snapshotId) {
+    setOutput('No snapshot selected.');
+    return;
+  }
+  const data = await api(`/${encodeURIComponent(_selected)}/snapshots/${encodeURIComponent(snapshotId)}/diff`);
+  setOutput(data.stdout || 'No diff.');
+}
+
+async function deleteWorkspace() {
+  if (!_selected) return;
+  const name = selectedName() || _selected;
+  if (!window.confirm(`Delete workspace "${name}"? This only removes the sealed workspace copy.`)) return;
+  await api(`/${encodeURIComponent(_selected)}`, { method: 'DELETE' });
+  _selected = '';
+  _currentFile = '';
+  _snapshots = [];
+  const editor = el('code-ws-editor');
+  if (editor) editor.value = '';
+  setOutput(`Deleted workspace ${name}.`);
+  await refresh();
 }
 
 function exportWorkspace() {
@@ -445,7 +531,10 @@ function wireControls() {
   el('code-ws-restore-review')?.addEventListener('click', guarded(restoreLatestSnapshot));
   el('code-ws-snapshot')?.addEventListener('click', guarded(createSnapshot));
   el('code-ws-restore-latest')?.addEventListener('click', guarded(restoreLatestSnapshot));
+  el('code-ws-restore-selected')?.addEventListener('click', guarded(restoreSelectedSnapshot));
+  el('code-ws-snapshot-diff')?.addEventListener('click', guarded(diffSelectedSnapshot));
   el('code-ws-export')?.addEventListener('click', exportWorkspace);
+  el('code-ws-delete')?.addEventListener('click', guarded(deleteWorkspace));
   el('code-ws-status')?.addEventListener('click', guarded(showStatus));
   el('code-ws-diff')?.addEventListener('click', guarded(showDiff));
   el('code-ws-commit')?.addEventListener('click', guarded(commit));
