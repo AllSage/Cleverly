@@ -1323,8 +1323,11 @@ class TaskScheduler:
         if output != "session":
             return
 
-        endpoint_url = task.endpoint_url
-        model_name = model or task.model
+        def _plain_str(value):
+            return value if isinstance(value, str) else None
+
+        endpoint_url = _plain_str(getattr(task, "endpoint_url", None))
+        model_name = _plain_str(model) or _plain_str(getattr(task, "model", None))
         crew = None
         if getattr(task, "crew_member_id", None):
             try:
@@ -1332,13 +1335,13 @@ class TaskScheduler:
             except Exception:
                 crew = None
         if (not endpoint_url or not model_name) and crew:
-            endpoint_url = endpoint_url or crew.endpoint_url
-            model_name = model_name or crew.model
+            endpoint_url = endpoint_url or _plain_str(getattr(crew, "endpoint_url", None))
+            model_name = model_name or _plain_str(getattr(crew, "model", None))
         if not endpoint_url or not model_name:
             try:
                 resolved_url, resolved_model = self._resolve_defaults(db, task.owner)
-                endpoint_url = endpoint_url or resolved_url
-                model_name = model_name or resolved_model
+                endpoint_url = endpoint_url or _plain_str(resolved_url)
+                model_name = model_name or _plain_str(resolved_model)
             except Exception:
                 pass
 
@@ -1438,9 +1441,9 @@ class TaskScheduler:
             msg["From"] = from_addr
             msg["To"] = to_addr
             msg["Subject"] = f"[Task] {task.name}"
-            msg["X-Odysseus-Origin"] = "odysseus-ui"
-            msg["X-Odysseus-Kind"] = "task"
-            msg["X-Odysseus-Ref"] = str(task.id)
+            msg["X-Cleverly-Origin"] = "cleverly-ui"
+            msg["X-Cleverly-Kind"] = "task"
+            msg["X-Cleverly-Ref"] = str(task.id)
             msg.set_content(result or "")
             _send_smtp_message(cfg, from_addr, [to_addr], msg.as_string(), timeout=30)
             logger.info("Task %s emailed result to %s (%sb)", task.id, to_addr, len(result or ""))
@@ -1749,9 +1752,9 @@ class TaskScheduler:
             "subject": f"[Task] {task.name}",
             "body": result,
             "headers": {
-                "X-Odysseus-Origin": "odysseus-ui",
-                "X-Odysseus-Kind": "task",
-                "X-Odysseus-Ref": str(task.id),
+                "X-Cleverly-Origin": "cleverly-ui",
+                "X-Cleverly-Kind": "task",
+                "X-Cleverly-Ref": str(task.id),
             },
         }
         if recipient:

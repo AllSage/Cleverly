@@ -526,11 +526,18 @@ def detect_system(host="", ssh_port="", platform="", fresh=False):
         _cache_by_host[cache_key] = (now, result)
         return result
 
+    apple_gpu_info = None
+    if not _remote_host:
+        try:
+            apple_gpu_info = _detect_apple_silicon()
+        except Exception:
+            apple_gpu_info = None
+
     # Local Windows: the Linux /proc + /sys + os.sysconf path returns 0 GB RAM,
     # "unknown" CPU and no GPU on Windows (and os.sysconf doesn't even exist),
     # so detect locally via PowerShell/WMI instead. _detect_windows() runs the
     # same probe used for remote Windows, but _run() executes it locally.
-    if not _remote_host and os.name == "nt":
+    if not _remote_host and os.name == "nt" and not apple_gpu_info:
         result = _detect_windows()
         if result:
             _cache_by_host[cache_key] = (now, result)
@@ -551,7 +558,7 @@ def detect_system(host="", ssh_port="", platform="", fresh=False):
     cpu_cores = _get_cpu_count()
     cpu_name = _get_cpu_name()
 
-    gpu_info = _detect_apple_silicon() or _detect_nvidia() or _detect_amd()
+    gpu_info = apple_gpu_info or _detect_apple_silicon() or _detect_nvidia() or _detect_amd()
 
     if gpu_info:
         result = {

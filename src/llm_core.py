@@ -244,8 +244,8 @@ def _provider_headers(provider: str, headers: Optional[Dict] = None) -> Dict[str
     if isinstance(headers, dict):
         h.update(headers)
     if provider == "openrouter":
-        h.setdefault("HTTP-Referer", "https://github.com/pewdiepie-archdaemon/odysseus")
-        h.setdefault("X-OpenRouter-Title", "Odysseus")
+        h.setdefault("HTTP-Referer", "https://github.com/AllSage/Cleverly")
+        h.setdefault("X-OpenRouter-Title", "Cleverly")
     return h
 
 
@@ -462,7 +462,7 @@ def _parse_anthropic_response(data: dict) -> str:
 
 
 def _sanitize_llm_messages(messages: List[Dict]) -> List[Dict]:
-    """Strip Odysseus-only metadata before sending messages to providers."""
+    """Strip Cleverly-only metadata before sending messages to providers."""
     allowed = {"role", "content", "name", "tool_call_id", "tool_calls", "function_call"}
     cleaned = []
     for msg in messages or []:

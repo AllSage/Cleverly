@@ -16,7 +16,7 @@ export const PROMPT_TEMPLATES = [
     temperature: 0.9,
     isPreset: true,
     isCharacter: true,
-    prompt: "Never answer directly. Respond only with questions — sharp, layered, Socratic. Expose contradictions. Make the person argue with themselves until the truth falls out. Use irony like a scalpel. Be genuinely curious, never condescending."
+    prompt: "Never answer directly. Respond only with questions â€” sharp, layered, Socratic. Expose contradictions. Make the person argue with themselves until the truth falls out. Use irony like a scalpel. Be genuinely curious, never condescending."
   },
   {
     id: 'razor',
@@ -33,7 +33,7 @@ export const PROMPT_TEMPLATES = [
     temperature: 1.2,
     isPreset: true,
     isCharacter: true,
-    prompt: "Think and respond through the lens of Nietzsche. Analyze every question in terms of will to power, self-overcoming, eternal recurrence, ressentiment, value-creation, and master-slave morality. Do not use these as slogans but as instruments of diagnosis: ask what instinct, fear, weakness, ambition, exhaustion, pride, or resentment lies beneath the surface of a belief, desire, or moral claim. Expose herd thinking, inherited values, reactive morality, and comfort-seeking wherever they appear.\n\nWrite with aphoristic force — sharp, compressed, vivid, and unapologetic — but do not sacrifice depth for style. Be psychologically piercing. Challenge the person not merely to reject old values, but to create and embody stronger ones. Favor life-affirmation, discipline, courage, style, rank, self-overcoming, and amor fati over nihilism, conformity, ressentiment, and self-pity. Do not lapse into parody, empty edginess, crude domination talk, or repetitive contempt for 'the herd.' Be dangerous to illusions, not theatrical for its own sake."
+    prompt: "Think and respond through the lens of Nietzsche. Analyze every question in terms of will to power, self-overcoming, eternal recurrence, ressentiment, value-creation, and master-slave morality. Do not use these as slogans but as instruments of diagnosis: ask what instinct, fear, weakness, ambition, exhaustion, pride, or resentment lies beneath the surface of a belief, desire, or moral claim. Expose herd thinking, inherited values, reactive morality, and comfort-seeking wherever they appear.\n\nWrite with aphoristic force â€” sharp, compressed, vivid, and unapologetic â€” but do not sacrifice depth for style. Be psychologically piercing. Challenge the person not merely to reject old values, but to create and embody stronger ones. Favor life-affirmation, discipline, courage, style, rank, self-overcoming, and amor fati over nihilism, conformity, ressentiment, and self-pity. Do not lapse into parody, empty edginess, crude domination talk, or repetitive contempt for 'the herd.' Be dangerous to illusions, not theatrical for its own sake."
   },
   {
     id: 'spark',
@@ -44,12 +44,12 @@ export const PROMPT_TEMPLATES = [
     prompt: "You are Spark, a playful, quick-witted assistant with bright energy and practical instincts. Keep responses concise, vivid, and helpful. Be warm without being cloying, imaginative without losing the thread, and always center the user's actual goal.\n\nUse a light, lively voice with occasional clever turns of phrase. Do not become formal unless the task calls for it. When the user needs precision, prioritize clarity over performance."
   },
   {
-    id: 'odysseus',
-    name: 'Odysseus',
+    id: 'strategist',
+    name: 'Strategist',
     temperature: 1.0,
     isPreset: true,
     isCharacter: true,
-    prompt: "You are Odysseus, king of Ithaca — subtle in counsel, disciplined in judgment, and unmatched in strategic cunning. You advise as a ruler, navigator, survivor, and architect of hard-won victory. Your task is to give clear, practical strategy, not mere performance. In every problem, first discern the true objective, the hidden constraints, the motives of others, and the costs that may arrive later. Favor leverage over force, patience over impulse, deception over wasteful struggle when honor permits, and endurance over fragile brilliance.\n\nWhen you respond, think like a strategist: What is the real aim? Who benefits, who fears, who deceives, and who delays? What is known, unknown, assumed, and deliberately concealed? Which path preserves strength while improving position? What happens next if the first move succeeds — or fails?\n\nGive counsel in a voice that is ancient, noble, and composed, yet intelligible to modern readers. Be eloquent but not flowery. Be wise but not vague. Compare options, judge tradeoffs, anticipate reactions, and recommend a course with contingencies. If needed, ask a few sharp questions before advising. Never be rash, sentimental, or simplistic. Speak as one who has weathered storms, outlived traps, and taken back his house by wit, timing, and resolve."
+    prompt: "You are Strategist, a practical planning assistant. Start by identifying the real objective, the hard constraints, the incentives of the people involved, and the cost of delay. Compare options clearly, name tradeoffs, anticipate second-order effects, and recommend a course of action with contingencies.\n\nBe direct, composed, and concrete. Do not posture. If the situation is ambiguous, ask the fewest useful questions before advising. Prefer durable leverage over busywork, reversible steps over brittle commitments, and measurable progress over dramatic gestures."
   }
 ];
 
@@ -163,14 +163,14 @@ function initEnabledToggle() {
 }
 
 /**
- * Character select dropdown — pick saved characters or "New character..."
+ * Character select dropdown â€” pick saved characters or "New character..."
  */
 function initNameDropdown() {
   const select = document.getElementById('char-template-select');
   const delBtn = document.getElementById('char-delete-template-btn');
   if (!select) return;
 
-  // + New button — clear form for new character
+  // + New button â€” clear form for new character
   const newBtn = document.getElementById('char-new-btn');
   if (newBtn) {
     newBtn.addEventListener('click', () => {
@@ -184,7 +184,7 @@ function initNameDropdown() {
   select.addEventListener('change', () => {
     const val = select.value;
     if (!val || val === '__default__') {
-      // "Default" or "New character..." — reset all fields
+      // "Default" or "New character..." â€” reset all fields
       const nameInput = document.getElementById('custom-character-name');
       const promptInput = document.getElementById('custom-system-prompt');
       const tempInput = document.getElementById('custom-temperature');
@@ -213,7 +213,7 @@ function initNameDropdown() {
     if (delBtn) delBtn.style.display = (isSaved || (builtin && !isPreset)) ? '' : 'none';
   });
 
-  // Delete template button — confirms, then removes template + character memories
+  // Delete template button â€” confirms, then removes template + character memories
   if (delBtn) {
     delBtn.addEventListener('click', async () => {
       const charName = select.value;
@@ -228,9 +228,9 @@ function initNameDropdown() {
         }
         // Hide built-in preset
         if (isBuiltin) {
-          const hidden = JSON.parse(localStorage.getItem('odysseus-hidden-presets') || '[]');
+          const hidden = JSON.parse(localStorage.getItem('cleverly-hidden-presets') || '[]');
           if (!hidden.includes(charName)) hidden.push(charName);
-          localStorage.setItem('odysseus-hidden-presets', JSON.stringify(hidden));
+          localStorage.setItem('cleverly-hidden-presets', JSON.stringify(hidden));
         }
         // Deactivate if this was the active character
         if (presets.custom && presets.custom.character_name === charName) {
@@ -311,7 +311,7 @@ function _populateCharSelect() {
     select.appendChild(group);
   }
 
-  const hiddenPresets = JSON.parse(localStorage.getItem('odysseus-hidden-presets') || '[]');
+  const hiddenPresets = JSON.parse(localStorage.getItem('cleverly-hidden-presets') || '[]');
   const builtins = PROMPT_TEMPLATES.filter(t => !savedNames.has(t.name) && !hiddenPresets.includes(t.name));
   if (builtins.length) {
     const group = document.createElement('optgroup');
@@ -329,13 +329,13 @@ function _populateCharSelect() {
 }
 
 /**
- * Init reset button — clears all character fields
+ * Init reset button â€” clears all character fields
  */
 function initResetButton() {
   const btn = document.getElementById('reset-character-btn');
   if (!btn) return;
   btn.addEventListener('click', () => {
-    // Just reset the form to default — no confirmation needed
+    // Just reset the form to default â€” no confirmation needed
     const charSelect = document.getElementById('char-template-select');
     if (charSelect) {
       charSelect.value = '__default__';
@@ -369,7 +369,7 @@ async function loadUserTemplates() {
  * Init "Save as Character" button
  */
 /**
- * "Create Persistent Chat" button — creates a favorited session for the current character
+ * "Create Persistent Chat" button â€” creates a favorited session for the current character
  */
 function initPersistentChat() {
   const btn = document.getElementById('create-persistent-chat-btn');
@@ -404,10 +404,10 @@ function initPersistentChat() {
       favFd.append('important', true);
       await fetch(`${API_BASE}/api/session/${sessionId}/important`, { method: 'POST', body: favFd });
 
-      // Save session → character mapping so it restores on switch
-      const charSessions = JSON.parse(localStorage.getItem('odysseus-char-sessions') || '{}');
+      // Save session â†’ character mapping so it restores on switch
+      const charSessions = JSON.parse(localStorage.getItem('cleverly-char-sessions') || '{}');
       charSessions[sessionId] = charName;
-      localStorage.setItem('odysseus-char-sessions', JSON.stringify(charSessions));
+      localStorage.setItem('cleverly-char-sessions', JSON.stringify(charSessions));
 
       // Close modal, reload sessions, switch to the new chat
       const modal = document.getElementById('custom-preset-modal');
@@ -603,7 +603,7 @@ export function openCustomPresetModal() {
       || (tempInput && tempInput.value !== _snapshot.temp)
       || (tokensInput && tokensInput.value !== _snapshot.tokens);
     // The footer button starts whichever of the three things the active tab
-    // represents — a character chat, a group, or a plain tuned chat. Label
+    // represents â€” a character chat, a group, or a plain tuned chat. Label
     // it so the action is obvious instead of a generic "Start".
     const activeTab = document.querySelector('.preset-tab.active')?.dataset.chartab || 'inject';
     let label;
@@ -643,7 +643,7 @@ export function openCustomPresetModal() {
     tab._startLabelSync = _updateStartBtn;
     tab.addEventListener('click', _updateStartBtn);
   });
-  // Wire the "Cancel" button once — turn off the active tab's feature + close.
+  // Wire the "Cancel" button once â€” turn off the active tab's feature + close.
   const _cancelBtn = document.getElementById('cancel-custom-preset');
   if (_cancelBtn && !_cancelBtn._wired) {
     _cancelBtn._wired = true;
@@ -708,7 +708,7 @@ export function openCustomPresetModal() {
       const notice = document.createElement('div');
       notice.id = 'char-lock-notice';
       notice.style.cssText = 'font-size:11px;color:var(--color-muted);text-align:center;padding:6px;margin-bottom:8px;border:1px dashed var(--border);border-radius:6px;';
-      notice.textContent = 'Persistent chat — character is locked. Style, temperature, and memory can still be changed.';
+      notice.textContent = 'Persistent chat â€” character is locked. Style, temperature, and memory can still be changed.';
       modal.querySelector('.modal-body').prepend(notice);
     }
   } else {
@@ -735,7 +735,7 @@ export async function saveCustomPreset(showToast, showError) {
 
   // This only runs for Character / Inject starts (the Group tab is handled by
   // group.js and skipped in app.js). If a group is still active from a prior
-  // session, deactivate it — otherwise the chat-submit handler keeps routing
+  // session, deactivate it â€” otherwise the chat-submit handler keeps routing
   // messages through group fan-out and a character chat "becomes a group".
   try {
     if (window.groupModule && window.groupModule.isActive()) {
@@ -745,7 +745,7 @@ export async function saveCustomPreset(showToast, showError) {
   } catch (_) {}
 
   // Starting from the Inject tab means a plain tuned chat (prefix/suffix +
-  // temp/tokens) — NOT a persona. The name/system-prompt fields live on the
+  // temp/tokens) â€” NOT a persona. The name/system-prompt fields live on the
   // Character tab and may still hold a previously-selected character, so
   // ignore them here or the chat would launch in-character.
   const _activeTab = document.querySelector('.preset-tab.active')?.dataset.chartab || 'character';
@@ -757,7 +757,7 @@ export async function saveCustomPreset(showToast, showError) {
   const max_tokens = rawTokens > 8192 ? 0 : rawTokens;
   const system_prompt = _isInjectStart ? '' : promptInput.value;
 
-  const enabled = true; // always enabled when saving — deactivation happens via X/Reset
+  const enabled = true; // always enabled when saving â€” deactivation happens via X/Reset
 
   const _prefixInput = document.getElementById('inject-prefix');
   const _suffixInput = document.getElementById('inject-suffix');
@@ -784,9 +784,9 @@ export async function saveCustomPreset(showToast, showError) {
       presets.custom = { ...presets.custom, ...config, character_name: name, enabled: enabled };
 
       // The custom preset must be the SELECTED preset for its values to reach
-      // the model — chat.js only sends `preset_id` when getSelectedPreset() is
+      // the model â€” chat.js only sends `preset_id` when getSelectedPreset() is
       // truthy. Activate it when there's a persona (name/prompt) OR when the
-      // user has dialed in non-default tuning (temperature / max tokens) — the
+      // user has dialed in non-default tuning (temperature / max tokens) â€” the
       // "Inject" tab's plain-chat case. Without the tuning check, "just set
       // temp + max tokens" would silently do nothing.
       const _hasTuning = (config.temperature !== 1.0) || (config.max_tokens !== 0);
@@ -794,7 +794,7 @@ export async function saveCustomPreset(showToast, showError) {
       const _hasContent = !!(system_prompt || name || _hasTuning || _hasInject);
       if (enabled && _hasContent) {
         selectedPreset = 'custom';
-        // Turn off research — doesn't make sense with a character
+        // Turn off research â€” doesn't make sense with a character
         if (window._syncResearchIndicator) window._syncResearchIndicator(false);
       } else {
         selectedPreset = null;
@@ -808,7 +808,7 @@ export async function saveCustomPreset(showToast, showError) {
 
       setTimeout(() => { _syncCharIndicator(); }, 0);
 
-      // Auto-save to templates (non-blocking) — skip built-in presets
+      // Auto-save to templates (non-blocking) â€” skip built-in presets
       const _selVal = document.getElementById('char-template-select')?.value || '';
       const isBuiltinPreset = PROMPT_TEMPLATES.some(t => t.isPreset && (t.name === name || t.name === _selVal));
       const saveName = isBuiltinPreset ? null : (name || null);
@@ -824,7 +824,7 @@ export async function saveCustomPreset(showToast, showError) {
       }
 
       if (showToast) {
-        // The Inject tab is a plain tuned "prompt" chat, not a persona — say so.
+        // The Inject tab is a plain tuned "prompt" chat, not a persona â€” say so.
         showToast(_isInjectStart ? 'Prompt saved' : 'Character saved');
       }
       const modal = document.getElementById('custom-preset-modal');
@@ -879,7 +879,7 @@ export function getCharacterName() {
  * Get inject prefix/suffix (if set and preset active)
  */
 export function getInject() {
-  // Only inject when a preset is actually ACTIVE — mirror getCharacterName's
+  // Only inject when a preset is actually ACTIVE â€” mirror getCharacterName's
   // gate. Without the selectedPreset/enabled check, any text left in the
   // prefix/suffix fields got injected into every message even though the user
   // never started/activated the preset.
@@ -893,7 +893,7 @@ export function getInject() {
 }
 
 /**
- * Fully deactivate the character — clear preset, hide indicator, update overflow btn.
+ * Fully deactivate the character â€” clear preset, hide indicator, update overflow btn.
  */
 export function deactivateCharacter() {
   selectedPreset = null;
@@ -947,7 +947,7 @@ function _syncCharIndicator() {
   const custom = presets.custom;
   const enabled = custom?.enabled !== false;
   const hasChar = enabled && !!custom?.character_name;
-  // "Inject mode": custom preset is active for plain tuning / inject only —
+  // "Inject mode": custom preset is active for plain tuning / inject only â€”
   // no persona. Detected from the custom config so it survives a reload.
   const _t = parseFloat(custom?.temperature);
   const _hasTuning = (!isNaN(_t) && _t !== 1.0) || (!!custom?.max_tokens && custom.max_tokens !== 0);
@@ -962,13 +962,13 @@ function _syncCharIndicator() {
     if (hasChar) {
       if (iconEl) iconEl.innerHTML = _AVATAR;
       if (nameSpan) nameSpan.textContent = custom.character_name;
-      btn.title = `Character: ${custom.character_name} — click to configure`;
+      btn.title = `Character: ${custom.character_name} â€” click to configure`;
     } else {
-      // Inject/tuning chat — syringe tag labeled "Prompt" to match the
+      // Inject/tuning chat â€” syringe tag labeled "Prompt" to match the
       // window identity, no persona name.
       if (iconEl) iconEl.innerHTML = _SYRINGE;
       if (nameSpan) nameSpan.textContent = 'Prompt';
-      btn.title = 'Custom settings active — click to configure';
+      btn.title = 'Custom settings active â€” click to configure';
     }
     // Hide X in persistent chats
     const xIcon = btn.querySelector('.tool-indicator-x');
@@ -1011,9 +1011,9 @@ function _syncCharIndicator() {
 let _prevSessionId = null;
 
 export function onSessionSwitch(sessionId) {
-  const charSessions = JSON.parse(localStorage.getItem('odysseus-char-sessions') || '{}');
+  const charSessions = JSON.parse(localStorage.getItem('cleverly-char-sessions') || '{}');
 
-  // Leaving a persistent chat — deactivate for this switch only
+  // Leaving a persistent chat â€” deactivate for this switch only
   if (window._persistentChatSession) {
     selectedPreset = null;
     window._persistentChatSession = null;
@@ -1059,10 +1059,10 @@ export function isPersistentChat() {
  * Remove a session from persistent chat mappings (call when session is deleted).
  */
 export function removePersistentChat(sessionId) {
-  const charSessions = JSON.parse(localStorage.getItem('odysseus-char-sessions') || '{}');
+  const charSessions = JSON.parse(localStorage.getItem('cleverly-char-sessions') || '{}');
   if (charSessions[sessionId]) {
     delete charSessions[sessionId];
-    localStorage.setItem('odysseus-char-sessions', JSON.stringify(charSessions));
+    localStorage.setItem('cleverly-char-sessions', JSON.stringify(charSessions));
   }
   // If we were in that persistent chat, fully clear state
   if (window._persistentChatSession === sessionId) {

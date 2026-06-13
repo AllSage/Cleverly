@@ -9,12 +9,14 @@ from src.request_models import DirectoryRequest
 from core.constants import BASE_DIR, PERSONAL_DIR
 from src.rag_singleton import get_rag_manager
 from src.auth_helpers import get_current_user, require_user
+from src.compat import getenv
 from core.middleware import require_admin
 from src.upload_handler import secure_filename
 
 UPLOADS_DIR = os.path.join(BASE_DIR, "data", "personal_uploads")
+
 MAX_PERSONAL_UPLOAD_BYTES = int(
-    os.getenv("ODYSSEUS_PERSONAL_UPLOAD_MAX_BYTES", str(25 * 1024 * 1024))
+    getenv("CLEVERLY_PERSONAL_UPLOAD_MAX_BYTES", str(25 * 1024 * 1024))
 )
 
 logger = logging.getLogger(__name__)

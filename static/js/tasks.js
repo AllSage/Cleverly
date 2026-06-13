@@ -1573,7 +1573,7 @@ async function _doRunNow(id, force = false) {
     let fired = false;
     try {
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        new Notification('Task', { body: msg, tag: 'task-runnow-' + id, icon: '/static/favicon.ico' });
+        new Notification('Task', { body: msg, tag: 'task-runnow-' + id, icon: '/static/cleverly-icon.svg?v=20260613' });
         fired = true;
       }
     } catch (_) {}
@@ -2641,7 +2641,7 @@ async function _pollTaskNotifications() {
         let fired = false;
         try {
           if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            new Notification(title, { body: n.body, tag: 'task-' + (n.task_id || title), icon: '/static/favicon.ico' });
+            new Notification(title, { body: n.body, tag: 'task-' + (n.task_id || title), icon: '/static/cleverly-icon.svg?v=20260613' });
             fired = true;
           }
         } catch (_) {}
