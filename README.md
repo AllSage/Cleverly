@@ -73,6 +73,27 @@ models or embeddings available without downloads.
 See [docs/offline-release.md](docs/offline-release.md) for the full offline
 release and verification checklist.
 
+### Docker With Bundled Ollama
+
+To have Docker pull a local model on a connected machine, add the Ollama
+overlay. The default model is `llama3.2:3b`; override `OLLAMA_MODEL` for a
+different Ollama tag.
+
+```bash
+OLLAMA_MODEL=llama3.2:3b docker compose -f docker-compose.yml -f docker/ollama.yml up -d --build
+```
+
+This stores Ollama models under `./data/ollama`, registers
+`http://ollama:11434/v1` as a Cleverly endpoint, and sets the pulled model as
+the default if no default model is already configured.
+
+For offline use, pull the model on a connected machine first, transfer
+`./data/ollama` with the Docker images, then start with:
+
+```bash
+docker compose --env-file .env -f docker-compose.yml -f docker/offline.yml -f docker/ollama-offline.yml up -d --no-build --pull never
+```
+
 ### Native Linux / macOS
 
 ```bash

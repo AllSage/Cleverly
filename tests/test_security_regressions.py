@@ -140,6 +140,17 @@ def test_offline_compose_overlay_blocks_container_egress():
     assert "internal: true" in overlay
 
 
+def test_ollama_overlays_use_persistent_model_cache_and_auto_seed():
+    connected = Path("docker/ollama.yml").read_text(encoding="utf-8")
+    offline = Path("docker/ollama-offline.yml").read_text(encoding="utf-8")
+    assert "./data/ollama:/root/.ollama" in connected
+    assert "./data/ollama:/root/.ollama" in offline
+    assert "ollama pull" in connected
+    assert "CLEVERLY_AUTO_ADD_OLLAMA" in connected
+    assert "CLEVERLY_AUTO_ADD_OLLAMA" in offline
+    assert "offline_private" in offline
+
+
 def test_offline_mode_disables_internet_features(monkeypatch):
     from src import settings
 

@@ -1,0 +1,59 @@
+# Connected-machine Ollama overlay.
+#
+# Pulls a model into ./data/ollama, starts Ollama, and points Cleverly at it.
+# Requires internet during the pull step. For air-gapped runtime, transfer
+# ./data/ollama plus the Docker images, then use docker/ollama-offline.yml.
+#
+# Example:
+#   OLLAMA_MODEL=llama3.2:3b docker compose \
+#     -f docker-compose.yml -f docker/ollama.yml up -d --build
+services:
+  cleverly:
+    environment:
+      LLM_HOST: ollama
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      EMBEDDING_URL: http://ollama:11434/v1/embeddings
+      CLEVERLY_AUTO_ADD_OLLAMA: "1"
+      CLEVERLY_OLLAMA_ENDPOINT_NAME: ${CLEVERLY_OLLAMA_ENDPOINT_NAME:-Bundled Ollama}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+    depends_on:
+      ollama:
+        condition: service_started
+      ollama_pull:
+        condition: service_completed_successfully
+
+  ollama:
+    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:latest}
+    init: true
+    ports:
+      - "${OLLAMA_BIND:-127.0.0.1}:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
+    restart: unless-stopped
+
+  ollama_pull:
+    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:latest}
+    init: true
+    restart: "no"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    environment:
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        ollama serve >/tmp/ollama-pull.log 2>&1 &
+        pid="$$!"
+        trap 'kill "$$pid" 2>/dev/null || true' EXIT
+        for _ in $$(seq 1 90); do
+          if ollama list >/dev/null 2>&1; then
+            break
+          fi
+          sleep 1
+        done
+        ollama pull "$${OLLAMA_MODEL}"
+        ollama list

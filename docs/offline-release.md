@@ -30,11 +30,26 @@ docker compose --env-file .env -f docker-compose.yml -f docker/offline.yml build
 docker compose --env-file .env -f docker-compose.yml -f docker/offline.yml pull chromadb searxng ntfy
 ```
 
+To bundle an offline chat model with Ollama, pull it into `./data/ollama` on
+the connected machine:
+
+```bash
+OLLAMA_MODEL=llama3.2:3b docker compose --env-file .env \
+  -f docker-compose.yml \
+  -f docker/ollama.yml \
+  up -d --build
+```
+
+Set `OLLAMA_MODEL` to a different Ollama tag if needed. Cleverly will register
+`http://ollama:11434/v1` and make the pulled model the default when no default
+model is already configured.
+
 Save the images to a portable archive:
 
 ```bash
 docker save \
   cleverly:local \
+  docker.io/ollama/ollama:latest \
   docker.io/chromadb/chroma:latest \
   docker.io/searxng/searxng:latest \
   docker.io/binwiederhier/ntfy:latest \
@@ -46,6 +61,7 @@ Copy these items to the offline machine:
 - `cleverly-offline-images.tar`
 - the Cleverly repository checkout
 - `.env`
+- `data/ollama` if using the bundled Ollama model
 - any pre-seeded `data/huggingface`, `data/cache/fastembed`, `data/local`, or
   `data/npm-cache` contents you need
 
@@ -75,6 +91,7 @@ Start without pulling or building:
 docker compose --env-file .env \
   -f docker-compose.yml \
   -f docker/offline.yml \
+  -f docker/ollama-offline.yml \
   up -d --no-build --pull never
 ```
 
@@ -122,6 +139,11 @@ CLEVERLY_OFFLINE_EMBEDDINGS=1
 
 Local model files should be copied into `data/huggingface` or another mounted
 path before startup. Offline mode does not download models.
+
+For the bundled Ollama path, copy `data/ollama` from the connected machine and
+include `docker/ollama-offline.yml` when starting Compose. The offline overlay
+does not run `ollama pull`; it only serves models that are already present in
+that directory.
 
 ## Stop
 

@@ -1,0 +1,35 @@
+# Offline Ollama overlay.
+#
+# Use after ./data/ollama has already been populated on a connected machine.
+# Combine with docker/offline.yml so Cleverly and Ollama share the internal
+# offline network and neither service needs internet egress.
+#
+# Example:
+#   docker compose --env-file .env \
+#     -f docker-compose.yml -f docker/offline.yml -f docker/ollama-offline.yml \
+#     up -d --no-build --pull never
+services:
+  cleverly:
+    environment:
+      LLM_HOST: ollama
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+      EMBEDDING_URL: http://ollama:11434/v1/embeddings
+      CLEVERLY_AUTO_ADD_OLLAMA: "1"
+      CLEVERLY_OLLAMA_ENDPOINT_NAME: ${CLEVERLY_OLLAMA_ENDPOINT_NAME:-Bundled Ollama}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+    depends_on:
+      ollama:
+        condition: service_started
+    networks:
+      - offline_private
+
+  ollama:
+    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:latest}
+    init: true
+    volumes:
+      - ./data/ollama:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
+    networks:
+      - offline_private
+    restart: unless-stopped

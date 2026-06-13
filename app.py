@@ -829,6 +829,15 @@ async def startup_event():
 
     _startup_tasks.append(asyncio.create_task(_startup_mcp_connections()))
 
+    async def _seed_startup_endpoints():
+        try:
+            from src.startup_endpoints import seed_ollama_endpoint_from_env
+            await asyncio.to_thread(seed_ollama_endpoint_from_env)
+        except Exception as e:
+            logger.warning(f"Startup endpoint seeding failed (non-critical): {type(e).__name__}: {e}")
+
+    _startup_tasks.append(asyncio.create_task(_seed_startup_endpoints()))
+
     # Pre-warm the RAG tool index off the request path. Loading the local
     # embedding model + opening ChromaDB + indexing the built-in tools is a
     # one-time ~1-3s cost that otherwise lands on the user's FIRST message
