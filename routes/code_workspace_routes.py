@@ -6,10 +6,12 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from core.middleware import require_admin
 from src import code_workspace
+from src import code_workspace_agent
 from src.auth_helpers import get_current_user
 
 
@@ -33,6 +35,18 @@ class RunRequest(BaseModel):
 
 class CommitRequest(BaseModel):
     message: str = Field(default="Cleverly code workspace changes", max_length=140)
+
+
+class SnapshotRequest(BaseModel):
+    label: str = Field(default="Manual snapshot", max_length=120)
+
+
+class AgentRequest(BaseModel):
+    task: str = Field(min_length=1, max_length=6000)
+    model_key: str = Field(default="", max_length=200)
+    test_command: str = Field(default="", max_length=400)
+    max_rounds: int = Field(default=2, ge=1, le=3)
+    selected_paths: list[str] = Field(default_factory=list, max_length=12)
 
 
 def _owner(request: Request) -> str:
@@ -145,6 +159,21 @@ def setup_code_workspace_routes() -> APIRouter:
         except code_workspace.CodeWorkspaceError as exc:
             raise _bad(exc)
 
+    @router.post("/{workspace_id}/agent")
+    async def code_workspace_agent_run(workspace_id: str, body: AgentRequest, request: Request):
+        try:
+            return await code_workspace_agent.run_agent(
+                workspace_id,
+                body.task,
+                owner=_owner(request),
+                model_key=body.model_key,
+                test_command=body.test_command,
+                max_rounds=body.max_rounds,
+                selected_paths=body.selected_paths,
+            )
+        except code_workspace.CodeWorkspaceError as exc:
+            raise _bad(exc)
+
     @router.get("/{workspace_id}/status")
     def code_workspace_status(workspace_id: str, request: Request):
         try:
@@ -163,6 +192,42 @@ def setup_code_workspace_routes() -> APIRouter:
     def code_workspace_commit(workspace_id: str, body: CommitRequest, request: Request):
         try:
             return {"ok": True, **code_workspace.git_commit(workspace_id, body.message, owner=_owner(request))}
+        except code_workspace.CodeWorkspaceError as exc:
+            raise _bad(exc)
+
+    @router.get("/{workspace_id}/snapshots")
+    def code_workspace_snapshots(workspace_id: str, request: Request):
+        try:
+            return {"ok": True, "snapshots": code_workspace.list_snapshots(workspace_id, owner=_owner(request))}
+        except code_workspace.CodeWorkspaceError as exc:
+            raise _bad(exc)
+
+    @router.post("/{workspace_id}/snapshots")
+    def code_workspace_snapshot(workspace_id: str, body: SnapshotRequest, request: Request):
+        try:
+            return {"ok": True, "snapshot": code_workspace.create_snapshot(workspace_id, body.label, owner=_owner(request))}
+        except code_workspace.CodeWorkspaceError as exc:
+            raise _bad(exc)
+
+    @router.post("/{workspace_id}/snapshots/{snapshot_id}/restore")
+    def code_workspace_restore_snapshot(workspace_id: str, snapshot_id: str, request: Request):
+        try:
+            return {"ok": True, **code_workspace.restore_snapshot(workspace_id, snapshot_id, owner=_owner(request))}
+        except code_workspace.CodeWorkspaceError as exc:
+            raise _bad(exc)
+
+    @router.get("/{workspace_id}/snapshots/{snapshot_id}/diff")
+    def code_workspace_diff_snapshot(workspace_id: str, snapshot_id: str, request: Request):
+        try:
+            return {"ok": True, **code_workspace.diff_snapshot(workspace_id, snapshot_id, owner=_owner(request))}
+        except code_workspace.CodeWorkspaceError as exc:
+            raise _bad(exc)
+
+    @router.get("/{workspace_id}/export")
+    def code_workspace_export(workspace_id: str, request: Request):
+        try:
+            export = code_workspace.export_workspace(workspace_id, owner=_owner(request))
+            return FileResponse(export["path"], filename=export["filename"], media_type="application/zip")
         except code_workspace.CodeWorkspaceError as exc:
             raise _bad(exc)
 

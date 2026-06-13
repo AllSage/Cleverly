@@ -117,7 +117,11 @@ FUNCTION_TOOL_SCHEMAS = [
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["list", "create", "tree", "read", "write", "patch", "run", "status", "diff", "commit"],
+                        "enum": [
+                            "list", "create", "tree", "read", "write", "patch", "run",
+                            "agent", "status", "diff", "commit", "snapshots",
+                            "snapshot", "restore_snapshot", "export"
+                        ],
                         "description": "Workspace action"
                     },
                     "workspace_id": {"type": "string", "description": "Workspace id from list/create/import"},
@@ -127,7 +131,12 @@ FUNCTION_TOOL_SCHEMAS = [
                     "diff": {"type": "string", "description": "Unified diff for patch"},
                     "command": {"type": "string", "description": "Offline test/build command to run in the workspace"},
                     "timeout_seconds": {"type": "integer", "description": "Command timeout, max 300 seconds"},
-                    "message": {"type": "string", "description": "Commit message"}
+                    "message": {"type": "string", "description": "Commit message"},
+                    "task": {"type": "string", "description": "For agent: coding task to perform"},
+                    "model_key": {"type": "string", "description": "For agent: optional explicit model key; otherwise uses code_workspace_model_key setting"},
+                    "test_command": {"type": "string", "description": "For agent: offline test/build command after applying patch"},
+                    "snapshot_id": {"type": "string", "description": "Snapshot id for restore_snapshot"},
+                    "label": {"type": "string", "description": "Snapshot label"}
                 },
                 "required": ["action"]
             }

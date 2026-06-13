@@ -44,6 +44,8 @@ services:
         required: false
     environment:
       CLEVERLY_OFFLINE: "1"
+      CODE_WORKSPACE_RUNNER: ${CODE_WORKSPACE_RUNNER:-worker}
+      CODE_WORKSPACE_WORKER_DIR: /app/data/code-workspaces/.worker
       # Default offline mode avoids embedding model downloads on first boot.
       # Set to "1" only after pre-seeding FASTEMBED_CACHE_PATH with the model.
       CLEVERLY_OFFLINE_EMBEDDINGS: "0"
@@ -71,6 +73,43 @@ services:
         condition: service_healthy
       chromadb:
         condition: service_started
+      cleverly_code_worker:
+        condition: service_started
+    restart: unless-stopped
+
+  cleverly_code_worker:
+    container_name: ${CLEVERLY_CODE_WORKER_CONTAINER_NAME:-cleverly-code-worker}
+    image: ${CLEVERLY_IMAGE:-cleverly:local}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    network_mode: "none"
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+      - /run:size=32m,mode=755
+      - /var/tmp:size=128m,mode=1777
+    pids_limit: ${CLEVERLY_CODE_WORKER_PIDS_LIMIT:-1024}
+    entrypoint: ["python", "-m", "src.code_workspace_worker"]
+    volumes:
+      - cleverly-data:/app/data
+      - cleverly-cache:/app/.cache
+      - cleverly-local:/app/.local
+      - cleverly-npm-cache:/app/.npm
+    environment:
+      CLEVERLY_OFFLINE: "1"
+      DATA_DIR: /app/data
+      XDG_CACHE_HOME: /app/data/cache
+      HF_HOME: /app/.cache/huggingface
+      FASTEMBED_CACHE_PATH: /app/data/cache/fastembed
+      npm_config_cache: /app/.npm
+      PYTHONDONTWRITEBYTECODE: "1"
+      CODE_WORKSPACE_WORKER_DIR: /app/data/code-workspaces/.worker
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
     restart: unless-stopped
 
   cleverly_proxy:

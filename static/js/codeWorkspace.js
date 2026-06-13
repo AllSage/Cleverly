@@ -31,6 +31,7 @@ function ensureStyles() {
     .code-ws-btn{border:1px solid var(--border);background:var(--panel);color:var(--fg);border-radius:6px;padding:7px 9px;font-size:12px;cursor:pointer;white-space:nowrap;}
     .code-ws-btn.primary{background:var(--accent,var(--red));color:white;border-color:transparent;}
     .code-ws-editor{width:100%;height:100%;resize:none;box-sizing:border-box;background:#0f1117;color:#e7eaf0;border:1px solid var(--border);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;min-height:220px;}
+    .code-ws-task{width:100%;height:78px;resize:vertical;box-sizing:border-box;background:var(--input-bg,var(--panel));color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;font:12px/1.35 system-ui,sans-serif;}
     .code-ws-output{height:138px;overflow:auto;background:#0f1117;color:#e7eaf0;border:1px solid var(--border);border-radius:8px;padding:9px;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;}
     .code-ws-path{font-size:12px;opacity:.75;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     @media(max-width:760px){.code-ws-grid{grid-template-columns:1fr;grid-template-rows:220px 1fr}.code-workspace-body{overflow:auto}.code-ws-main{min-height:640px}}
@@ -86,10 +87,19 @@ function renderShell() {
           <input class="code-ws-input" id="code-ws-model-key" placeholder="Model key, e.g. GLM-5.2" style="flex:1">
           <button class="code-ws-btn" id="code-ws-save-model-key">Save</button>
         </div>
+        <div class="code-ws-head" style="display:block;">
+          <textarea class="code-ws-task" id="code-ws-agent-task" placeholder="Ask the coding agent to change this repo."></textarea>
+          <div class="code-ws-toolbar" style="margin-top:6px;">
+            <button class="code-ws-btn primary" id="code-ws-agent-run">Run Agent</button>
+            <button class="code-ws-btn" id="code-ws-snapshot">Snapshot</button>
+            <button class="code-ws-btn" id="code-ws-restore-latest">Restore Latest</button>
+          </div>
+        </div>
         <div class="code-ws-head">
           <input type="file" id="code-ws-import-file" accept=".zip,.tar,.tgz,.gz" style="display:none">
           <button class="code-ws-btn" id="code-ws-import">Import Archive</button>
           <button class="code-ws-btn" id="code-ws-refresh">Refresh</button>
+          <button class="code-ws-btn" id="code-ws-checks">Checks</button>
         </div>
         <div class="code-ws-list" id="code-ws-list"></div>
       </section>
@@ -99,6 +109,7 @@ function renderShell() {
             <span class="code-ws-path" id="code-ws-current">No workspace selected</span>
             <button class="code-ws-btn" id="code-ws-status">Status</button>
             <button class="code-ws-btn" id="code-ws-diff">Diff</button>
+            <button class="code-ws-btn" id="code-ws-export">Export</button>
             <input class="code-ws-input" id="code-ws-command" placeholder="pytest -q" style="flex:1">
             <button class="code-ws-btn" id="code-ws-run">Run</button>
           </div>
@@ -256,6 +267,81 @@ async function runCommand() {
   setOutput([data.stdout, data.stderr, `exit_code: ${data.exit_code}`].filter(Boolean).join('\n'));
 }
 
+async function runAgent() {
+  if (!_selected) return;
+  const task = el('code-ws-agent-task')?.value || '';
+  const modelKey = el('code-ws-model-key')?.value || '';
+  const testCommand = el('code-ws-command')?.value || '';
+  setOutput('Running coding agent...');
+  const data = await api(`/${encodeURIComponent(_selected)}/agent`, {
+    method: 'POST',
+    body: JSON.stringify({
+      task,
+      model_key: modelKey.trim(),
+      test_command: testCommand.trim(),
+      max_rounds: 2,
+      selected_paths: _currentFile ? [_currentFile] : [],
+    }),
+  });
+  const lines = [
+    `model: ${data.model || data.model_key || ''}`,
+    `snapshot: ${(data.snapshot && data.snapshot.id) || ''}`,
+    `files: ${(data.selected_paths || []).join(', ')}`,
+  ];
+  for (const step of data.steps || []) {
+    lines.push(`${step.phase}${step.round ? ' #' + step.round : ''}: exit_code=${step.exit_code ?? 0}`);
+    if (step.stderr) lines.push(step.stderr);
+  }
+  if (data.test_result) {
+    lines.push('test output:');
+    lines.push(data.test_result.stdout || '');
+    lines.push(data.test_result.stderr || '');
+  }
+  const finalDiff = data.diff?.stdout || data.applied_diff || '';
+  if (finalDiff && el('code-ws-editor')) el('code-ws-editor').value = finalDiff;
+  setOutput(lines.filter(Boolean).join('\n'));
+  await loadTree('');
+}
+
+async function createSnapshot() {
+  if (!_selected) return;
+  const data = await api(`/${encodeURIComponent(_selected)}/snapshots`, {
+    method: 'POST',
+    body: JSON.stringify({ label: 'Manual snapshot' }),
+  });
+  setOutput(`Created snapshot ${data.snapshot.id}`);
+}
+
+async function restoreLatestSnapshot() {
+  if (!_selected) return;
+  const data = await api(`/${encodeURIComponent(_selected)}/snapshots`);
+  const snap = (data.snapshots || [])[0];
+  if (!snap) {
+    setOutput('No snapshots found.');
+    return;
+  }
+  await api(`/${encodeURIComponent(_selected)}/snapshots/${encodeURIComponent(snap.id)}/restore`, { method: 'POST' });
+  setOutput(`Restored snapshot ${snap.id}`);
+  _currentFile = '';
+  await loadTree('');
+}
+
+function exportWorkspace() {
+  if (!_selected) return;
+  window.location.href = `${API}/${encodeURIComponent(_selected)}/export`;
+}
+
+async function showChecks() {
+  const res = await fetch('/api/operator/checks', { credentials: 'same-origin' });
+  const data = await res.json();
+  if (!res.ok || data.ok === false) throw new Error(data.detail || data.error || 'Checks failed');
+  const lines = [`ok=${data.summary?.ok || 0} warn=${data.summary?.warn || 0} fail=${data.summary?.fail || 0}`];
+  for (const check of data.checks || []) {
+    lines.push(`[${check.status}] ${check.label}: ${check.detail}`);
+  }
+  setOutput(lines.join('\n'));
+}
+
 async function showStatus() {
   if (!_selected) return;
   const data = await api(`/${encodeURIComponent(_selected)}/status`);
@@ -292,6 +378,7 @@ function guarded(fn) {
 function wireControls() {
   el('code-ws-create')?.addEventListener('click', guarded(createWorkspace));
   el('code-ws-refresh')?.addEventListener('click', guarded(refresh));
+  el('code-ws-checks')?.addEventListener('click', guarded(showChecks));
   el('code-ws-import')?.addEventListener('click', () => el('code-ws-import-file')?.click());
   el('code-ws-import-file')?.addEventListener('change', e => guarded(importArchive)(e.target.files && e.target.files[0]));
   el('code-ws-save-model-key')?.addEventListener('click', guarded(async () => {
@@ -302,6 +389,10 @@ function wireControls() {
   el('code-ws-save-file')?.addEventListener('click', guarded(saveFile));
   el('code-ws-apply-patch')?.addEventListener('click', guarded(applyPatch));
   el('code-ws-run')?.addEventListener('click', guarded(runCommand));
+  el('code-ws-agent-run')?.addEventListener('click', guarded(runAgent));
+  el('code-ws-snapshot')?.addEventListener('click', guarded(createSnapshot));
+  el('code-ws-restore-latest')?.addEventListener('click', guarded(restoreLatestSnapshot));
+  el('code-ws-export')?.addEventListener('click', exportWorkspace);
   el('code-ws-status')?.addEventListener('click', guarded(showStatus));
   el('code-ws-diff')?.addEventListener('click', guarded(showDiff));
   el('code-ws-commit')?.addEventListener('click', guarded(commit));

@@ -299,7 +299,7 @@ function Start-Cleverly {
     }
 
     Write-Step "Starting Cleverly offline runtime"
-    docker compose @ComposeArgs up -d --no-deps --no-build --pull never ollama cleverly cleverly_proxy
+    docker compose @ComposeArgs up -d --no-deps --no-build --pull never ollama cleverly_code_worker cleverly cleverly_proxy
     if ($LASTEXITCODE -ne 0) { Fail "Docker Compose failed to start Cleverly." }
 
     Write-Step "Waiting for Cleverly health check"
@@ -391,6 +391,11 @@ function Invoke-Doctor {
         Write-DoctorOk "Compose has an internal-only private network"
     } else {
         Write-DoctorFail "Compose internal-only private network was not found"
+    }
+    if ((Test-FileHasText "docker-compose.yml" "cleverly_code_worker:") -and (Test-FileHasText "docker-compose.yml" 'network_mode: "none"')) {
+        Write-DoctorOk "Code Workspace worker is configured with no Docker network"
+    } else {
+        Write-DoctorFail "Code Workspace worker no-network mode was not found"
     }
     if (Test-FileHasText "docker\entrypoint.sh" "I_ACCEPT_NETWORK_RISK") {
         Write-DoctorOk "Entrypoint requires explicit network break-glass"

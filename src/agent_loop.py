@@ -228,10 +228,14 @@ Actions:
   {"action":"write","workspace_id":"...","path":"src/app.py","content":"..."}
   {"action":"patch","workspace_id":"...","diff":"unified diff"}
   {"action":"run","workspace_id":"...","command":"pytest -q","timeout_seconds":120}
+  {"action":"agent","workspace_id":"...","task":"Fix failing tests","test_command":"pytest -q","max_rounds":2}
   {"action":"status","workspace_id":"..."}
   {"action":"diff","workspace_id":"..."}
   {"action":"commit","workspace_id":"...","message":"..."}
-Use this instead of broad read_file/write_file/bash for imported repos. It is confined to DATA_DIR/code-workspaces and blocks network install/fetch commands.""",
+  {"action":"snapshot","workspace_id":"...","label":"before risky edit"}
+  {"action":"snapshots","workspace_id":"..."}
+  {"action":"restore_snapshot","workspace_id":"...","snapshot_id":"..."}
+Use this instead of broad read_file/write_file/bash for imported repos. It is confined to DATA_DIR/code-workspaces, snapshots before agent edits, and blocks network install/fetch commands.""",
 
     "create_document": """\
 ```create_document

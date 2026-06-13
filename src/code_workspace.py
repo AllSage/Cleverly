@@ -28,6 +28,10 @@ MAX_READ_BYTES = 200_000
 MAX_PATCH_BYTES = 2_000_000
 MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
 MAX_COMMAND_SECONDS = 300
+MAX_AGENT_FILES = 12
+MAX_AGENT_FILE_BYTES = 20_000
+MAX_AGENT_TREE_ENTRIES = 600
+WORKER_POLL_SECONDS = 0.2
 
 SKIP_DIRS = {
     ".git",
@@ -43,6 +47,12 @@ SKIP_DIRS = {
     "dist",
     "build",
     "target",
+}
+TEXT_SUFFIXES = {
+    ".c", ".cc", ".cfg", ".conf", ".cpp", ".cs", ".css", ".csv", ".go",
+    ".h", ".hpp", ".html", ".ini", ".java", ".js", ".json", ".jsx", ".md",
+    ".mjs", ".py", ".rb", ".rs", ".sh", ".sql", ".toml", ".ts", ".tsx",
+    ".txt", ".xml", ".yaml", ".yml",
 }
 
 DENIED_COMMAND_RE = re.compile(
@@ -70,6 +80,25 @@ def _index_path(root: Path) -> Path:
     return root / "workspaces.json"
 
 
+def _snapshots_root(root: Path) -> Path:
+    path = root / ".snapshots"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _exports_root(root: Path) -> Path:
+    path = root / ".exports"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _worker_root(root: Path) -> Path:
+    path = Path(os.getenv("CODE_WORKSPACE_WORKER_DIR") or (root / ".worker"))
+    for child in ("pending", "running", "results"):
+        (path / child).mkdir(parents=True, exist_ok=True)
+    return path.resolve()
+
+
 def _load_index(root: Path) -> dict[str, dict[str, Any]]:
     path = _index_path(root)
     if not path.exists():
@@ -85,6 +114,12 @@ def _save_index(root: Path, data: dict[str, dict[str, Any]]) -> None:
     tmp = _index_path(root).with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
     tmp.replace(_index_path(root))
+
+
+def _atomic_write_json(path: Path, data: Any) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(path)
 
 
 def _slug(name: str) -> str:
@@ -166,6 +201,42 @@ def _run(cmd: list[str], cwd: Path, *, input_text: str | None = None, timeout: i
         }
 
 
+def _run_workspace_shell(workspace: Path, command: str, timeout: int) -> dict[str, Any]:
+    return _run(_shell_command(command), workspace, timeout=timeout)
+
+
+def _run_via_worker(root: Path, workspace: Path, command: str, timeout: int) -> dict[str, Any]:
+    queue = _worker_root(root)
+    job_id = uuid.uuid4().hex
+    result_path = queue / "results" / f"{job_id}.json"
+    job_path = queue / "pending" / f"{job_id}.json"
+    _atomic_write_json(job_path, {
+        "id": job_id,
+        "root": str(root),
+        "workspace": str(workspace),
+        "command": command,
+        "timeout": timeout,
+        "created_at": time.time(),
+    })
+    deadline = time.time() + timeout + 15
+    while time.time() < deadline:
+        if result_path.exists():
+            try:
+                data = json.loads(result_path.read_text(encoding="utf-8"))
+            finally:
+                try:
+                    result_path.unlink()
+                except OSError:
+                    pass
+            return data if isinstance(data, dict) else {"stdout": "", "stderr": "Invalid worker result", "exit_code": 1}
+        time.sleep(WORKER_POLL_SECONDS)
+    return {
+        "stdout": "",
+        "stderr": "Code workspace worker did not return a result before timeout",
+        "exit_code": 124,
+    }
+
+
 def _truncate(text: str, limit: int = 20_000) -> str:
     if len(text or "") > limit:
         return text[:limit] + f"\n... (truncated, {len(text)} chars total)"
@@ -190,6 +261,64 @@ def _shell_command(command: str) -> list[str]:
     if os.name == "nt":
         return ["powershell", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command]
     return ["/bin/sh", "-lc", command]
+
+
+def _iter_workspace_files(workspace: Path, *, include_large: bool = False):
+    for path in sorted(workspace.rglob("*"), key=lambda p: p.relative_to(workspace).as_posix().lower()):
+        rel_parts = path.relative_to(workspace).parts
+        if any(part in SKIP_DIRS for part in rel_parts):
+            continue
+        if path.is_dir():
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        if not include_large and stat.st_size > MAX_FILE_BYTES:
+            continue
+        yield path, stat
+
+
+def _zip_workspace(workspace: Path, target: Path) -> int:
+    count = 0
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path, stat in _iter_workspace_files(workspace, include_large=True):
+            if stat.st_size > MAX_ARCHIVE_BYTES:
+                continue
+            zf.write(path, path.relative_to(workspace).as_posix())
+            count += 1
+    return count
+
+
+def _clear_workspace_content(workspace: Path) -> None:
+    for item in workspace.iterdir():
+        if item.name == ".git":
+            continue
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+
+
+def _snapshot_meta_path(root: Path, workspace_id: str) -> Path:
+    path = _snapshots_root(root) / workspace_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path / "snapshots.json"
+
+
+def _load_snapshots(root: Path, workspace_id: str) -> list[dict[str, Any]]:
+    path = _snapshot_meta_path(root, workspace_id)
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _save_snapshots(root: Path, workspace_id: str, items: list[dict[str, Any]]) -> None:
+    _atomic_write_json(_snapshot_meta_path(root, workspace_id), items)
 
 
 def _init_git(path: Path) -> None:
@@ -357,6 +486,108 @@ def delete_workspace(workspace_id: str, *, owner: str = "", root: str | Path | N
     return {"deleted": True, "id": workspace_id}
 
 
+def create_snapshot(workspace_id: str, label: str = "", *, owner: str = "", root: str | Path | None = None) -> dict[str, Any]:
+    base = workspace_root(root)
+    workspace, meta = _require_workspace(workspace_id, owner=owner, root=root)
+    snapshot_id = uuid.uuid4().hex
+    ws_snapshots = _snapshots_root(base) / workspace_id
+    ws_snapshots.mkdir(parents=True, exist_ok=True)
+    zip_path = ws_snapshots / f"{snapshot_id}.zip"
+    file_count = _zip_workspace(workspace, zip_path)
+    item = {
+        "id": snapshot_id,
+        "workspace_id": workspace_id,
+        "workspace_name": meta.get("name", workspace_id),
+        "label": (label or "Snapshot").strip()[:120],
+        "path": str(zip_path),
+        "file_count": file_count,
+        "size": zip_path.stat().st_size if zip_path.exists() else 0,
+        "created_at": time.time(),
+    }
+    items = _load_snapshots(base, workspace_id)
+    items.append(item)
+    _save_snapshots(base, workspace_id, items[-50:])
+    return dict(item)
+
+
+def list_snapshots(workspace_id: str, *, owner: str = "", root: str | Path | None = None) -> list[dict[str, Any]]:
+    base = workspace_root(root)
+    _require_workspace(workspace_id, owner=owner, root=root)
+    items = _load_snapshots(base, workspace_id)
+    return sorted(items, key=lambda x: x.get("created_at", 0), reverse=True)
+
+
+def _require_snapshot(workspace_id: str, snapshot_id: str, *, owner: str = "", root: str | Path | None = None) -> tuple[Path, dict[str, Any]]:
+    base = workspace_root(root)
+    _require_workspace(workspace_id, owner=owner, root=root)
+    for item in _load_snapshots(base, workspace_id):
+        if item.get("id") == snapshot_id:
+            path = Path(item.get("path") or "")
+            if not path.exists() or not path.is_file():
+                raise CodeWorkspaceError("Snapshot archive is missing")
+            if _snapshots_root(base) not in path.resolve().parents:
+                raise CodeWorkspaceError("Snapshot path escaped snapshot root")
+            return path, item
+    raise CodeWorkspaceError("Snapshot not found")
+
+
+def restore_snapshot(workspace_id: str, snapshot_id: str, *, owner: str = "", root: str | Path | None = None) -> dict[str, Any]:
+    workspace, _ = _require_workspace(workspace_id, owner=owner, root=root)
+    zip_path, item = _require_snapshot(workspace_id, snapshot_id, owner=owner, root=root)
+    _clear_workspace_content(workspace)
+    with zipfile.ZipFile(zip_path) as zf:
+        for info in zf.infolist():
+            target = _archive_member_path(workspace, info.filename)
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as src, target.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)
+    _touch_workspace(workspace_id, owner=owner, root=root)
+    return {"restored": True, "snapshot": item, "exit_code": 0}
+
+
+def diff_snapshot(workspace_id: str, snapshot_id: str, *, owner: str = "", root: str | Path | None = None) -> dict[str, Any]:
+    workspace, _ = _require_workspace(workspace_id, owner=owner, root=root)
+    zip_path, item = _require_snapshot(workspace_id, snapshot_id, owner=owner, root=root)
+    with tempfile.TemporaryDirectory(dir=str(workspace_root(root))) as tmp_name:
+        tmp = Path(tmp_name)
+        snapshot_dir = tmp / "snapshot"
+        current_dir = tmp / "current"
+        snapshot_dir.mkdir()
+        current_dir.mkdir()
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(snapshot_dir)
+        for path, _stat in _iter_workspace_files(workspace, include_large=True):
+            target = current_dir / path.relative_to(workspace)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+        result = _run(["git", "diff", "--no-index", "--", str(snapshot_dir), str(current_dir)], workspace, timeout=30)
+    if result.get("exit_code") == 1:
+        result["exit_code"] = 0
+    return {"snapshot": item, **result}
+
+
+def export_workspace(workspace_id: str, *, owner: str = "", root: str | Path | None = None) -> dict[str, Any]:
+    base = workspace_root(root)
+    workspace, meta = _require_workspace(workspace_id, owner=owner, root=root)
+    exports = _exports_root(base)
+    export_id = uuid.uuid4().hex[:12]
+    name = _slug(meta.get("name") or workspace_id)
+    path = exports / f"{name}-{export_id}.zip"
+    file_count = _zip_workspace(workspace, path)
+    return {
+        "id": export_id,
+        "workspace_id": workspace_id,
+        "filename": path.name,
+        "path": str(path),
+        "file_count": file_count,
+        "size": path.stat().st_size if path.exists() else 0,
+        "created_at": time.time(),
+    }
+
+
 def list_tree(workspace_id: str, rel_path: str = "", *, owner: str = "", root: str | Path | None = None, max_entries: int = 250) -> dict[str, Any]:
     workspace, _ = _require_workspace(workspace_id, owner=owner, root=root)
     path = _safe_path(workspace, rel_path)
@@ -424,9 +655,15 @@ def run_command(workspace_id: str, command: str, *, owner: str = "", root: str |
         raise CodeWorkspaceError("Command is too long")
     if DENIED_COMMAND_RE.search(command):
         raise CodeWorkspaceError("Command is blocked in offline code workspace mode")
+    base = workspace_root(root)
     workspace, _ = _require_workspace(workspace_id, owner=owner, root=root)
     timeout = max(1, min(int(timeout_seconds or 120), MAX_COMMAND_SECONDS))
-    result = _run(_shell_command(command), workspace, timeout=timeout)
+    if (os.getenv("CODE_WORKSPACE_RUNNER") or "").strip().lower() == "worker":
+        result = _run_via_worker(base, workspace, command, timeout)
+        result.setdefault("runner", "worker")
+    else:
+        result = _run_workspace_shell(workspace, command, timeout)
+        result.setdefault("runner", "in-process")
     _touch_workspace(workspace_id, owner=owner, root=root)
     return result
 

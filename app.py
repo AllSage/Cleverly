@@ -627,6 +627,8 @@ app.include_router(setup_training_routes())
 # Sealed local code workspaces
 from routes.code_workspace_routes import setup_code_workspace_routes
 app.include_router(setup_code_workspace_routes())
+from routes.operator_routes import setup_operator_routes
+app.include_router(setup_operator_routes())
 
 # Hardware model fitting (cookbook "What Fits?" tab)
 from routes.hwfit_routes import setup_hwfit_routes

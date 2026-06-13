@@ -161,6 +161,8 @@ container has no internet egress.
 
 For the full air-gap checklist, use
 [docs/offline-release.md](docs/offline-release.md).
+For operator green/red checks on the target machine, use
+[docs/airgap-operator-checklist.md](docs/airgap-operator-checklist.md).
 
 To check a local install without downloading anything:
 
@@ -262,9 +264,21 @@ fetch/install commands such as `curl`, `wget`, `git pull`, `pip install`, and
 `npm install` are blocked in workspace command runs. Archive imports reject path
 traversal, symlinks, `.git` internals, and oversized expansion.
 
+The Code panel also includes a coding-agent workflow. Give it a task, choose a
+local test command such as `pytest -q`, and it will snapshot the repo, read a
+bounded set of files, ask the configured model for a unified diff, apply it,
+run the test command, and show the final diff. You can manually create
+snapshots, restore the latest snapshot, or export the patched repo archive.
+
 The Code Workspace model key is intentionally blank by default. Set it in the
 Code panel or with `manage_settings` before expecting an agent to use a specific
 coding model, for example `GLM-5.2`.
+
+In Docker, workspace test/build commands run through the `cleverly-code-worker`
+sidecar by default. That worker has `network_mode: none` and communicates with
+the app through the sealed Docker data volume. Native/development runs use the
+in-process runner unless `CODE_WORKSPACE_RUNNER=worker` is set and the worker is
+started manually.
 
 ## Docker Notes
 
@@ -278,6 +292,11 @@ for `/tmp`, `/run`, and `/var/tmp`. Runtime state is written to Docker named
 volumes by default. The Docker entrypoint also refuses to start with
 `CLEVERLY_OFFLINE` disabled unless `CLEVERLY_ALLOW_NETWORK=I_ACCEPT_NETWORK_RISK`
 is explicitly set.
+
+Code Workspace commands run in the `cleverly-code-worker` sidecar by default.
+That container is read-only, drops Linux capabilities, uses `no-new-privileges`,
+has process limits, mounts only the sealed data/cache volumes it needs, and uses
+`network_mode: none`.
 
 Sealed Docker volumes are not encryption. A host administrator, anyone with
 Docker access, or anyone with access to Docker's data root can inspect them.
@@ -325,6 +344,7 @@ tokens, and webhooks. Treat it like an admin console.
 - Keep shell/Python/file read-write, MCP management, API tokens, webhooks, model serving, backup/vault, and app settings admin-only.
 - Rotate any API keys or tokens that were ever pasted into shared chats, screenshots, demos, or logs.
 - Prefer binding manual development runs to `127.0.0.1`; bind to `0.0.0.0` only when you intentionally want LAN/reverse-proxy access.
+- Review dependency changes with [docs/dependency-audit.md](docs/dependency-audit.md); `requirements.lock` is an audit snapshot, while `requirements.txt` remains the portable install input.
 
 For HTTPS, put a TLS-terminating reverse proxy in front. Minimal Caddy example:
 
@@ -358,6 +378,8 @@ for deployment-level defaults and secrets you want present before first boot.
 | `CLEVERLY_OFFLINE_EMBEDDINGS` | `0` in Docker | Allow local FastEmbed only after its cache is pre-seeded |
 | `CLEVERLY_HOST_DATA` | unset | Set to `1` only to make `Cleverly.ps1` use visible `./data` and `./logs` bind mounts |
 | `CODE_WORKSPACE_DIR` | unset | Optional override for sealed code workspace storage; defaults to `DATA_DIR/code-workspaces` |
+| `CODE_WORKSPACE_RUNNER` | `worker` in Docker | Use the networkless worker sidecar for Code Workspace commands; native runs default to in-process |
+| `CODE_WORKSPACE_WORKER_DIR` | unset | Optional worker queue override; defaults to `DATA_DIR/code-workspaces/.worker` |
 | `AUTH_ENABLED` | `true` | Enable/disable login |
 | `LOCALHOST_BYPASS` | `false` | Development-only auth bypass for direct loopback requests |
 | `DATABASE_URL` | `sqlite:///./data/app.db` | Database connection string |

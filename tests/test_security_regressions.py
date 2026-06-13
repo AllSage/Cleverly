@@ -121,6 +121,8 @@ def test_docker_compose_exposes_only_local_proxy_by_default():
     assert "ports:" not in app_service
     assert "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000" in compose
     assert "container_name: ${CLEVERLY_PROXY_CONTAINER_NAME:-cleverly-proxy}" in compose
+    assert "container_name: ${CLEVERLY_CODE_WORKER_CONTAINER_NAME:-cleverly-code-worker}" in compose
+    assert 'network_mode: "none"' in compose
     assert '"${APP_PORT:-7000}:7000"' not in compose
     assert "host.docker.internal:host-gateway" not in compose
     assert "offline_private:" in compose
@@ -206,6 +208,8 @@ def test_windows_app_launcher_uses_offline_docker_runtime():
     assert '--project-name", "cleverly"' in launcher
     assert "--pull never" in launcher
     assert "docker/ollama-offline.yml" in launcher
+    assert "cleverly_code_worker" in launcher
+    assert "Code Workspace worker is configured with no Docker network" in launcher
     assert "cleverly:local" in launcher
     assert "cleverly-ollama:local" in launcher
     assert '"doctor"' in launcher

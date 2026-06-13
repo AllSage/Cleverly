@@ -1512,12 +1512,36 @@ async def do_code_workspace(content: str, owner: Optional[str] = None) -> Dict:
                 owner=owner or "",
                 timeout_seconds=int(args.get("timeout_seconds") or 120),
             )
+        if action == "agent":
+            from src import code_workspace_agent
+            return await code_workspace_agent.run_agent(
+                workspace_id,
+                args.get("task") or "",
+                owner=owner or "",
+                model_key=args.get("model_key") or "",
+                test_command=args.get("test_command") or "",
+                max_rounds=int(args.get("max_rounds") or 2),
+                selected_paths=args.get("selected_paths") or [],
+            )
         if action == "status":
             return code_workspace.git_status(workspace_id, owner=owner or "")
         if action == "diff":
             return code_workspace.git_diff(workspace_id, owner=owner or "", staged=bool(args.get("staged")))
         if action == "commit":
             return code_workspace.git_commit(workspace_id, args.get("message") or "", owner=owner or "")
+        if action == "snapshots":
+            items = code_workspace.list_snapshots(workspace_id, owner=owner or "")
+            lines = [f"- {item.get('label') or 'Snapshot'} (`{item.get('id')}`)" for item in items]
+            return {"response": "\n".join(lines) or "No snapshots yet.", "snapshots": items, "exit_code": 0}
+        if action == "snapshot":
+            item = code_workspace.create_snapshot(workspace_id, args.get("label") or "Manual snapshot", owner=owner or "")
+            return {"response": f"Created snapshot `{item['id']}`.", "snapshot": item, "exit_code": 0}
+        if action == "restore_snapshot":
+            result = code_workspace.restore_snapshot(workspace_id, args.get("snapshot_id") or "", owner=owner or "")
+            return {"response": f"Restored snapshot `{args.get('snapshot_id')}`.", **result}
+        if action == "export":
+            result = code_workspace.export_workspace(workspace_id, owner=owner or "")
+            return {"response": f"Exported workspace archive: {result['filename']}", "export": result, "exit_code": 0}
         return {"error": f"Unknown code_workspace action '{action}'", "exit_code": 1}
     except code_workspace.CodeWorkspaceError as exc:
         return {"error": str(exc), "exit_code": 1}
