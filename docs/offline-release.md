@@ -21,8 +21,10 @@ on `127.0.0.1:${APP_PORT:-7000}`.
   and trainable local model weights were pre-baked on a connected prep machine.
 - Lists external agent/security study packs as reference metadata only; Cleverly
   does not clone, install, or run them during offline runtime.
-- Leaves model, embedding, Chroma, and npm caches under mounted `./data`
-  directories so they can be pre-seeded.
+- Stores runtime app data, logs, caches, and bundled Ollama models in Docker
+  named volumes by default.
+- Supports explicit host-folder bind mounts only with `-HostData`,
+  `CLEVERLY_HOST_DATA=1`, or `docker/host-data.yml`.
 
 ## Connected Build Machine
 
@@ -46,7 +48,7 @@ On Windows, the easiest connected-prep path is the bundle command:
 
 It builds the local images, pulls support service images, pulls the configured
 Ollama model, copies prepared model caches, saves Docker images to
-`cleverly-images.tar`, and writes helper scripts under
+`cleverly-images.tar`, and writes load, seal, and start helper scripts under
 `dist\cleverly-offline-bundle`.
 
 To bundle an offline chat model with Ollama, pull it into `./data/ollama` on
@@ -105,6 +107,7 @@ offline machine, then run:
 
 ```text
 load-cleverly.cmd
+seal-data.cmd
 start-cleverly.cmd
 ```
 
@@ -116,13 +119,14 @@ Load the images:
 docker load -i cleverly-offline-images.tar
 ```
 
-Create writable runtime directories:
+If you intentionally want visible host-folder storage instead of sealed Docker
+volumes, create writable runtime directories and use the host-data overlay:
 
 ```bash
 mkdir -p data logs data/ssh data/cache data/huggingface data/local data/npm-cache
 ```
 
-On Linux, make the bind mounts writable by the container UID/GID:
+On Linux, make those bind mounts writable by the container UID/GID:
 
 ```bash
 chown -R "$(id -u):$(id -g)" data logs
@@ -134,6 +138,7 @@ Start without pulling or building:
 docker compose --env-file .env \
   -f docker-compose.yml \
   -f docker/ollama-offline.yml \
+  -f docker/sealed-data.yml \
   up -d --no-build --pull never
 ```
 
@@ -143,6 +148,7 @@ If you transferred `cleverly:finetune`, include the fine-tune overlay:
 docker compose --env-file .env \
   -f docker-compose.yml \
   -f docker/ollama-offline.yml \
+  -f docker/sealed-data.yml \
   -f docker/finetune.yml \
   up -d --no-build --pull never
 ```
@@ -157,6 +163,20 @@ For the optional fine-tune image on Windows:
 
 ```powershell
 .\Cleverly.ps1 start -FineTune
+```
+
+If you copied prepared `data/` or `logs/` folders to the offline machine, run
+this once after loading images and before starting:
+
+```powershell
+.\Cleverly.ps1 seal-data -FineTune
+```
+
+Use `-HostData` only when you intentionally want the old visible-folder bind
+mounts:
+
+```powershell
+.\Cleverly.ps1 start -FineTune -HostData
 ```
 
 Do not run connected prep on the offline/sensitive machine. If you need the
@@ -190,13 +210,13 @@ curl http://127.0.0.1:7000/api/health
 Check the Compose state:
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml ps
+docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml -f docker/sealed-data.yml ps
 ```
 
 Confirm the app container has no internet egress:
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml exec cleverly \
+docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml -f docker/sealed-data.yml exec cleverly \
   python -c "import socket; socket.create_connection(('1.1.1.1', 80), 3)"
 ```
 
@@ -215,22 +235,24 @@ loaded before startup. If the image is missing and you use `--pull never`,
 Compose will refuse to start that service.
 
 FastEmbed is disabled by default in offline mode to avoid first-boot downloads.
-To enable local embeddings, pre-seed `data/cache/fastembed` and set:
+To enable local embeddings, pre-seed `data/cache/fastembed`, run
+`.\Cleverly.ps1 seal-data`, and set:
 
 ```env
 CLEVERLY_OFFLINE_EMBEDDINGS=1
 ```
 
-Local model files should be copied into `data/huggingface` or another mounted
-path before startup. Offline mode does not download models.
+Local model files should be copied into `data/huggingface` before running
+`seal-data`, or loaded into the matching Docker volume another way before
+startup. Offline mode does not download models.
 
 For the bundled Ollama path, copy `data/ollama` from the connected machine and
-include `docker/ollama-offline.yml` when starting Compose. The offline Ollama
-overlay does not run `ollama pull`; it only serves models that are already
-present in that directory.
+run `seal-data` before starting Compose with `docker/sealed-data.yml`. The
+offline Ollama overlay does not run `ollama pull`; it only serves models that
+are already present in the sealed Docker volume.
 
 ## Stop
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml down
+docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml -f docker/sealed-data.yml down
 ```

@@ -1,0 +1,43 @@
+# Sealed-data overlay.
+#
+# This keeps Cleverly runtime state in Docker-managed named volumes instead of
+# the repository's ./data and ./logs folders, including the bundled Ollama model
+# store used by the offline launcher. It is useful when you do not want chats,
+# models, training data, caches, or logs written into the visible project
+# directory.
+#
+# This is not encryption. A host administrator or anyone with Docker access can
+# still inspect Docker volumes. For stronger local-at-rest protection, combine
+# this with full-disk encryption or an encrypted Docker data-root.
+services:
+  cleverly:
+    volumes:
+      - cleverly-data:/app/data
+      - cleverly-logs:/app/logs
+      - cleverly-ssh:/app/.ssh
+      - cleverly-cache:/app/.cache
+      - cleverly-huggingface:/app/.cache/huggingface
+      - cleverly-local:/app/.local
+      - cleverly-npm-cache:/app/.npm
+
+  ollama:
+    volumes:
+      - cleverly-ollama:/root/.ollama
+
+volumes:
+  cleverly-data:
+    name: cleverly-data
+  cleverly-logs:
+    name: cleverly-logs
+  cleverly-ssh:
+    name: cleverly-ssh
+  cleverly-cache:
+    name: cleverly-cache
+  cleverly-huggingface:
+    name: cleverly-huggingface
+  cleverly-local:
+    name: cleverly-local
+  cleverly-npm-cache:
+    name: cleverly-npm-cache
+  cleverly-ollama:
+    name: cleverly-ollama

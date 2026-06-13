@@ -1,0 +1,16 @@
+# Host-data overlay.
+#
+# Use this only when you intentionally want Cleverly runtime state written to
+# the repository's ./data and ./logs folders instead of Docker-managed named
+# volumes. The normal launcher does not use this overlay unless -HostData is
+# passed or CLEVERLY_HOST_DATA=1 is set.
+services:
+  cleverly:
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./data/ssh:/app/.ssh
+      - ./data/cache:/app/.cache
+      - ./data/huggingface:/app/.cache/huggingface
+      - ./data/local:/app/.local
+      - ./data/npm-cache:/app/.npm

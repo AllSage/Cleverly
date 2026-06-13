@@ -24,21 +24,21 @@ services:
     networks:
       - offline_private
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - cleverly-data:/app/data
+      - cleverly-logs:/app/logs
       # Cookbook remote-server SSH identity. Cleverly can generate a key here;
       # add the shown public key to each remote server's authorized_keys.
-      - ./data/ssh:/app/.ssh
+      - cleverly-ssh:/app/.ssh
       # General runtime cache for fastembed, browser/MCP helpers, and packages.
-      - ./data/cache:/app/.cache
+      - cleverly-cache:/app/.cache
       # Cookbook local model cache. Inside Docker, "Local" means the Cleverly
-      # container, so persist its HuggingFace cache under ./data/huggingface.
-      - ./data/huggingface:/app/.cache/huggingface
+      # container, so persist its HuggingFace cache in a Docker volume.
+      - cleverly-huggingface:/app/.cache/huggingface
       # Cookbook-installed Python CLIs/packages (vLLM, llama-cpp-python, etc.)
       # land under /app/.local for the cleverly user.
-      - ./data/local:/app/.local
+      - cleverly-local:/app/.local
       # npm/npx cache for optional MCP helpers without writing to the image.
-      - ./data/npm-cache:/app/.npm
+      - cleverly-npm-cache:/app/.npm
     env_file:
       - path: .env
         required: false
@@ -168,6 +168,20 @@ networks:
     driver: bridge
 
 volumes:
+  cleverly-data:
+    name: cleverly-data
+  cleverly-logs:
+    name: cleverly-logs
+  cleverly-ssh:
+    name: cleverly-ssh
+  cleverly-cache:
+    name: cleverly-cache
+  cleverly-huggingface:
+    name: cleverly-huggingface
+  cleverly-local:
+    name: cleverly-local
+  cleverly-npm-cache:
+    name: cleverly-npm-cache
   searxng-data:
   chromadb-data:
   ntfy-cache:

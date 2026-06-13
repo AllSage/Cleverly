@@ -15,19 +15,22 @@
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 status
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 doctor
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 logs
+    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 seal-data -FineTune
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 prep -AllowConnectedPrep
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 bundle -AllowConnectedPrep -FineTune
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 start -FineTune
+    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 start -FineTune -HostData
 #>
 param(
-    [ValidateSet("start", "stop", "restart", "status", "open", "logs", "prep", "doctor", "bundle")]
+    [ValidateSet("start", "stop", "restart", "status", "open", "logs", "prep", "doctor", "bundle", "seal-data")]
     [string]$Action = "start",
     [string]$Url = "http://127.0.0.1:7000",
     [string]$Model = "llama3.2:3b",
     [string]$BundleDir = "dist\cleverly-offline-bundle",
     [switch]$NoOpen,
     [switch]$AllowConnectedPrep,
-    [switch]$FineTune
+    [switch]$FineTune,
+    [switch]$HostData
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,10 +42,28 @@ $UseFineTune = $FineTune -or ($env:CLEVERLY_ENABLE_FINETUNE -eq "1")
 if ($UseFineTune) {
     $env:CLEVERLY_FINETUNE_IMAGE = if ($env:CLEVERLY_FINETUNE_IMAGE) { $env:CLEVERLY_FINETUNE_IMAGE } else { "cleverly:finetune" }
 }
+$UseSealedData = -not $HostData -and ($env:CLEVERLY_HOST_DATA -ne "1") -and ($env:CLEVERLY_USE_HOST_DATA -ne "1")
+$SealedDataOverlay = "docker/sealed-data.yml"
+$HostDataOverlay = "docker/host-data.yml"
 $SupportImages = @(
     "docker.io/chromadb/chroma:latest",
     "docker.io/searxng/searxng:latest",
     "docker.io/binwiederhier/ntfy:latest"
+)
+$SealedCopyPlan = @(
+    @{
+        Source = "data"
+        Volume = "cleverly-data"
+        Label = "app data"
+        Exclude = @("ollama", "ssh", "cache", "huggingface", "local", "npm-cache")
+    },
+    @{ Source = "logs"; Volume = "cleverly-logs"; Label = "logs" },
+    @{ Source = "data\ssh"; Volume = "cleverly-ssh"; Label = "SSH keys" },
+    @{ Source = "data\cache"; Volume = "cleverly-cache"; Label = "runtime cache" },
+    @{ Source = "data\huggingface"; Volume = "cleverly-huggingface"; Label = "Hugging Face cache" },
+    @{ Source = "data\local"; Volume = "cleverly-local"; Label = "local packages" },
+    @{ Source = "data\npm-cache"; Volume = "cleverly-npm-cache"; Label = "npm cache" },
+    @{ Source = "data\ollama"; Volume = "cleverly-ollama"; Label = "Ollama models"; Owner = "0:0" }
 )
 
 $ComposeArgs = @(
@@ -51,6 +72,11 @@ $ComposeArgs = @(
     "-f", "docker-compose.yml",
     "-f", "docker/ollama-offline.yml"
 )
+if ($UseSealedData) {
+    $ComposeArgs += @("-f", $SealedDataOverlay)
+} else {
+    $ComposeArgs += @("-f", $HostDataOverlay)
+}
 if ($UseFineTune) {
     $ComposeArgs += @("-f", "docker/finetune.yml")
 }
@@ -88,6 +114,17 @@ function Test-Image([string]$Image) {
     $ErrorActionPreference = "SilentlyContinue"
     try {
         docker image inspect $Image 1>$null 2>$null
+        return ($LASTEXITCODE -eq 0)
+    } finally {
+        $ErrorActionPreference = $oldPreference
+    }
+}
+
+function Test-Volume([string]$Name) {
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try {
+        docker volume inspect $Name 1>$null 2>$null
         return ($LASTEXITCODE -eq 0)
     } finally {
         $ErrorActionPreference = $oldPreference
@@ -154,6 +191,80 @@ function Test-TrainableModelFiles {
     return $false
 }
 
+function Copy-HostPathToVolume {
+    param(
+        [string]$Source,
+        [string]$Volume,
+        [string]$Label,
+        [string[]]$Exclude = @(),
+        [string]$Owner = ""
+    )
+
+    $puid = if ($env:PUID) { $env:PUID } else { "1000" }
+    $pgid = if ($env:PGID) { $env:PGID } else { "1000" }
+    $ownerSpec = if ([string]::IsNullOrWhiteSpace($Owner)) { "${puid}:${pgid}" } else { $Owner }
+
+    docker volume create `
+        --label "com.docker.compose.project=cleverly" `
+        --label "com.docker.compose.volume=$Volume" `
+        $Volume 1>$null
+    if ($LASTEXITCODE -ne 0) { Fail "Could not create Docker volume $Volume." }
+
+    $sourceExists = Test-Path -LiteralPath $Source
+    $dockerArgs = @("run", "--rm", "--network", "none", "--entrypoint", "/bin/sh")
+    if ($sourceExists) {
+        $sourcePath = (Resolve-Path -LiteralPath $Source).ProviderPath
+        $dockerArgs += @("-v", "${sourcePath}:/from:ro")
+        $excludeArgs = ""
+        if ($Exclude.Count -gt 0) {
+            $excludeArgs = ($Exclude | ForEach-Object { "--exclude='./$_'" }) -join " "
+        }
+        $copyCommand = "set -eu; mkdir -p /to; tar cf - $excludeArgs -C /from . | tar xf - -C /to; chown -R $ownerSpec /to"
+    } else {
+        $copyCommand = "set -eu; mkdir -p /to; chown -R $ownerSpec /to"
+    }
+    $dockerArgs += @("-v", "${Volume}:/to", "cleverly:local", "-c", $copyCommand)
+
+    docker @dockerArgs
+    if ($LASTEXITCODE -ne 0) { Fail "Failed to prepare Docker volume $Volume for $Label." }
+
+    if ($sourceExists) {
+        Write-Host ("Copied " + $Label + " into Docker volume " + $Volume)
+    } else {
+        Write-Host ("Prepared empty Docker volume " + $Volume + " for " + $Label)
+    }
+}
+
+function Seal-Data {
+    Require-Docker
+    if (-not (Test-Path -LiteralPath $SealedDataOverlay)) {
+        Fail "Missing $SealedDataOverlay. Cannot start sealed data mode without the sealed-volume overlay."
+    }
+    if (-not (Test-Image "cleverly:local")) {
+        Fail "Missing image cleverly:local. Load or build prepared images before sealing data."
+    }
+
+    $running = Get-CleverlyContainers
+    if ($running.Count -gt 0) {
+        Fail ("Stop Cleverly before sealing data to avoid an inconsistent copy. Running containers: " + ($running -join ", "))
+    }
+
+    Write-Step "Copying host data into sealed Docker volumes"
+    foreach ($item in $SealedCopyPlan) {
+        $exclude = @()
+        if ($item.ContainsKey("Exclude")) { $exclude = @($item.Exclude) }
+        $owner = ""
+        if ($item.ContainsKey("Owner")) { $owner = [string]$item.Owner }
+        Copy-HostPathToVolume -Source $item.Source -Volume $item.Volume -Label $item.Label -Exclude $exclude -Owner $owner
+    }
+
+    $nextStart = if ($UseFineTune) { ".\Cleverly.ps1 start -FineTune" } else { ".\Cleverly.ps1 start" }
+    Write-Host ""
+    Write-Host "Sealed Docker volumes are ready." -ForegroundColor Green
+    Write-Host "Start sealed Cleverly with: $nextStart"
+    Write-Host "Host folders were not deleted. Use -HostData only when you intentionally want visible host bind mounts."
+}
+
 function Start-Cleverly {
     Require-Docker
     if (-not (Test-Image "cleverly:local")) {
@@ -164,6 +275,27 @@ function Start-Cleverly {
     }
     if ($UseFineTune -and -not (Test-Image $env:CLEVERLY_FINETUNE_IMAGE)) {
         Fail "Missing image $env:CLEVERLY_FINETUNE_IMAGE. Build it on a connected prep machine with 'docker compose --project-name cleverly -f docker-compose.yml -f docker/finetune.yml build cleverly', then start with '.\Cleverly.ps1 start -FineTune'."
+    }
+    if ($UseSealedData) {
+        if (-not (Test-Path -LiteralPath $SealedDataOverlay)) {
+            Fail "Missing $SealedDataOverlay. Cannot start sealed data mode without the sealed-volume overlay."
+        }
+        $unsealedSources = @()
+        foreach ($item in $SealedCopyPlan) {
+            if ((Test-DirectoryHasFiles $item.Source) -and -not (Test-Volume $item.Volume)) {
+                $unsealedSources += $item.Source
+            }
+        }
+        if ($unsealedSources.Count -gt 0) {
+            $sealCommand = if ($UseFineTune) { ".\Cleverly.ps1 seal-data -FineTune" } else { ".\Cleverly.ps1 seal-data" }
+            Write-Host ""
+            Write-Host ("WARNING: Host data exists but sealed volumes are missing for: " + ($unsealedSources -join ", ")) -ForegroundColor Yellow
+            Write-Host "Run '$sealCommand' before start if you want that data copied into Docker volumes." -ForegroundColor Yellow
+        }
+    } else {
+        if (-not (Test-Path -LiteralPath $HostDataOverlay)) {
+            Fail "Missing $HostDataOverlay. Cannot start host data mode without the host-data overlay."
+        }
     }
 
     Write-Step "Starting Cleverly offline runtime"
@@ -178,6 +310,11 @@ function Start-Cleverly {
 
     Write-Host ""
     Write-Host "Cleverly is running: $Url" -ForegroundColor Green
+    if ($UseSealedData) {
+        Write-Host "Sealed Docker volume data is enabled." -ForegroundColor Green
+    } else {
+        Write-Host "Host folder data mode is enabled by explicit opt-out." -ForegroundColor Yellow
+    }
     if ($UseFineTune) {
         Write-Host "Advanced LoRA fine-tuning image enabled." -ForegroundColor Green
     }
@@ -238,7 +375,7 @@ function Invoke-Doctor {
         if ($LASTEXITCODE -eq 0) { Write-DoctorOk "Docker Compose plugin is available" } else { Write-DoctorFail "Docker Compose plugin is not available" }
     }
 
-    foreach ($file in @("docker-compose.yml", "docker\ollama-offline.yml", "Cleverly.ps1", "Cleverly.cmd", ".env.example")) {
+    foreach ($file in @("docker-compose.yml", "docker\ollama-offline.yml", "docker\sealed-data.yml", "docker\host-data.yml", "Cleverly.ps1", "Cleverly.cmd", ".env.example")) {
         if (Test-Path -LiteralPath $file) { Write-DoctorOk "Found $file" } else { Write-DoctorFail "Missing $file" }
     }
     if ($UseFineTune) {
@@ -260,6 +397,15 @@ function Invoke-Doctor {
     } else {
         Write-DoctorFail "Entrypoint network break-glass guard was not found"
     }
+    if ($UseSealedData) {
+        if (Test-FileHasText $SealedDataOverlay "cleverly-data:/app/data") {
+            Write-DoctorOk "Sealed data mode is enabled by default"
+        } else {
+            Write-DoctorFail "Sealed data overlay is missing the app data volume"
+        }
+    } else {
+        Write-DoctorWarn "Host folder data mode is enabled by explicit opt-out"
+    }
 
     if ($script:DoctorFailures -eq 0) {
         if (Test-Image "cleverly:local") { Write-DoctorOk "Image cleverly:local is loaded" } else { Write-DoctorFail "Missing image cleverly:local" }
@@ -270,18 +416,37 @@ function Invoke-Doctor {
         foreach ($image in $SupportImages) {
             if (Test-Image $image) { Write-DoctorOk "Support image $image is loaded" } else { Write-DoctorWarn "Support image $image is not loaded; full Compose startup may need it" }
         }
+        if ($UseSealedData) {
+            foreach ($item in $SealedCopyPlan) {
+                if (Test-Volume $item.Volume) {
+                    Write-DoctorOk ("Sealed Docker volume " + $item.Volume + " exists")
+                } else {
+                    Write-DoctorWarn ("Sealed Docker volume " + $item.Volume + " is not created yet; run '.\Cleverly.ps1 seal-data' or start once")
+                }
+            }
+        }
     }
 
-    foreach ($dir in @("data", "logs", "data\ollama", "data\training")) {
-        if (Test-Path -LiteralPath $dir) { Write-DoctorOk "Found $dir" } else { Write-DoctorWarn "Missing $dir; Docker can create it, but prepared bundles should include needed model data" }
-    }
-    if (Test-DirectoryHasFiles "data\ollama\models") {
-        Write-DoctorOk "Ollama model data is present under data\ollama"
+    if ($UseSealedData) {
+        if ($script:DoctorFailures -eq 0) {
+            foreach ($item in $SealedCopyPlan) {
+                if ((Test-DirectoryHasFiles $item.Source) -and -not (Test-Volume $item.Volume)) {
+                    Write-DoctorWarn ("Host " + $item.Source + " has files but sealed volume " + $item.Volume + " is missing; run '.\Cleverly.ps1 seal-data' before relying on sealed startup")
+                }
+            }
+        }
     } else {
-        Write-DoctorWarn "No Ollama model files found under data\ollama\models"
-    }
-    if ($UseFineTune) {
-        if (Test-TrainableModelFiles) { Write-DoctorOk "Trainable HF-format model files were found" } else { Write-DoctorWarn "No HF-format trainable model config.json found for fine-tuning" }
+        foreach ($dir in @("data", "logs", "data\ollama", "data\training")) {
+            if (Test-Path -LiteralPath $dir) { Write-DoctorOk "Found $dir" } else { Write-DoctorWarn "Missing $dir; Docker can create it, but prepared bundles should include needed model data" }
+        }
+        if (Test-DirectoryHasFiles "data\ollama\models") {
+            Write-DoctorOk "Ollama model data is present under data\ollama"
+        } else {
+            Write-DoctorWarn "No Ollama model files found under data\ollama\models"
+        }
+        if ($UseFineTune) {
+            if (Test-TrainableModelFiles) { Write-DoctorOk "Trainable HF-format model files were found" } else { Write-DoctorWarn "No HF-format trainable model config.json found for fine-tuning" }
+        }
     }
 
     $containers = @()
@@ -420,11 +585,18 @@ function New-CleverlyBundle {
     docker save -o $archive @images
     if ($LASTEXITCODE -ne 0) { Fail "Failed to save Docker images." }
 
+    $sealArgs = if ($UseFineTune) { "seal-data -FineTune" } else { "seal-data" }
     $startArgs = if ($UseFineTune) { "start -FineTune" } else { "start" }
     Set-Content -LiteralPath (Join-Path $bundlePath "load-cleverly.cmd") -Encoding ASCII -Value @"
 @echo off
 setlocal
 docker load -i "%~dp0cleverly-images.tar"
+if errorlevel 1 pause
+"@
+    Set-Content -LiteralPath (Join-Path $bundlePath "seal-data.cmd") -Encoding ASCII -Value @"
+@echo off
+setlocal
+powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0Cleverly.ps1" $sealArgs
 if errorlevel 1 pause
 "@
     Set-Content -LiteralPath (Join-Path $bundlePath "start-cleverly.cmd") -Encoding ASCII -Value @"
@@ -446,11 +618,14 @@ Use it on the offline machine:
 
 1. Install Docker Desktop.
 2. Run `load-cleverly.cmd`.
-3. Run `start-cleverly.cmd`.
-4. Open $Url.
+3. Run `seal-data.cmd` once to copy bundled data into Docker volumes.
+4. Run `start-cleverly.cmd`.
+5. Open $Url.
 
 The start script uses `--no-build` and `--pull never` through `Cleverly.ps1`.
 Normal startup does not download images, packages, models, or study packs.
+Runtime data is stored in Docker named volumes by default. Use `-HostData`
+only when you intentionally want visible host-folder bind mounts.
 
 Run a local check with:
 
@@ -461,7 +636,7 @@ Run a local check with:
 
     Write-Host ""
     Write-Host ("Offline bundle written to: " + $bundlePath) -ForegroundColor Green
-    Write-Host "Copy that folder to the offline machine, then run load-cleverly.cmd and start-cleverly.cmd."
+    Write-Host "Copy that folder to the offline machine, then run load-cleverly.cmd, seal-data.cmd, and start-cleverly.cmd."
 }
 
 switch ($Action) {
@@ -474,4 +649,5 @@ switch ($Action) {
     "prep" { Prep-Cleverly }
     "doctor" { Invoke-Doctor }
     "bundle" { New-CleverlyBundle }
+    "seal-data" { Seal-Data }
 }

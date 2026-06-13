@@ -42,6 +42,14 @@ If you did not build the optional fine-tune image, use:
 .\Cleverly.ps1 start
 ```
 
+The launcher uses sealed Docker named volumes by default. If you are migrating
+prepared files from `data/` and `logs/`, stop Cleverly and copy them into the
+sealed volumes once:
+
+```powershell
+.\Cleverly.ps1 seal-data -FineTune
+```
+
 Open:
 
 ```text
@@ -53,6 +61,7 @@ Common commands:
 ```powershell
 .\Cleverly.ps1 start
 .\Cleverly.ps1 start -FineTune
+.\Cleverly.ps1 seal-data -FineTune
 .\Cleverly.ps1 stop
 .\Cleverly.ps1 status
 .\Cleverly.ps1 doctor -FineTune
@@ -78,7 +87,15 @@ To make that transfer easier, build a portable offline bundle:
 ```
 
 It writes `dist\cleverly-offline-bundle`. Copy that folder to the offline
-machine, then run `load-cleverly.cmd` once and `start-cleverly.cmd` to launch.
+machine, then run `load-cleverly.cmd`, `seal-data.cmd`, and
+`start-cleverly.cmd` to launch.
+
+Use `-HostData` only when you intentionally want Docker to write runtime state
+to visible `./data` and `./logs` folders:
+
+```powershell
+.\Cleverly.ps1 start -FineTune -HostData
+```
 
 ### First Login
 
@@ -100,13 +117,13 @@ Use this for a normal connected development machine:
 git clone https://github.com/AllSage/Cleverly.git
 cd Cleverly
 cp .env.example .env
-mkdir -p data logs data/ssh data/cache data/huggingface data/local data/npm-cache
 docker compose up -d --build
 ```
 
 Open `http://127.0.0.1:7000`.
 
-Docker uses the Compose stack name `cleverly`. The main containers default to:
+Docker uses the Compose stack name `cleverly` and Docker named volumes for app
+runtime state by default. The main containers default to:
 
 ```text
 cleverly
@@ -122,6 +139,7 @@ Use this after images and model data have already been built or loaded:
 docker compose --env-file .env \
   -f docker-compose.yml \
   -f docker/ollama-offline.yml \
+  -f docker/sealed-data.yml \
   up -d --no-build --pull never
 ```
 
@@ -131,6 +149,7 @@ With the optional fine-tune image:
 docker compose --env-file .env \
   -f docker-compose.yml \
   -f docker/ollama-offline.yml \
+  -f docker/sealed-data.yml \
   -f docker/finetune.yml \
   up -d --no-build --pull never
 ```
@@ -158,8 +177,9 @@ docker build -f docker/ollama-local.Dockerfile -t cleverly-ollama:local .
 OLLAMA_MODEL=llama3.2:3b docker compose -f docker-compose.yml -f docker/ollama.yml up -d --build
 ```
 
-This stores Ollama models under `./data/ollama`. Copy that directory with the
-Docker images to the offline machine.
+This stores Ollama models under `./data/ollama` for transfer. Run
+`.\Cleverly.ps1 seal-data` on the offline machine after loading images to copy
+that model store into the sealed Docker volume.
 
 ### Native Linux / macOS
 
@@ -237,22 +257,28 @@ default. Only the proxy publishes a host port, and it binds to `127.0.0.1`.
 
 The Cleverly service runs as a non-root UID/GID, drops Linux capabilities, uses
 `no-new-privileges`, mounts the application filesystem read-only, and uses tmpfs
-for `/tmp`, `/run`, and `/var/tmp`. Runtime state is written only to mounted
-paths under `./data` and `./logs`. The Docker entrypoint also refuses to start
-with `CLEVERLY_OFFLINE` disabled unless `CLEVERLY_ALLOW_NETWORK=I_ACCEPT_NETWORK_RISK`
+for `/tmp`, `/run`, and `/var/tmp`. Runtime state is written to Docker named
+volumes by default. The Docker entrypoint also refuses to start with
+`CLEVERLY_OFFLINE` disabled unless `CLEVERLY_ALLOW_NETWORK=I_ACCEPT_NETWORK_RISK`
 is explicitly set.
 
-On Linux, make sure the bind-mounted directories are writable by the configured
-`PUID`/`PGID` before first boot:
+Sealed Docker volumes are not encryption. A host administrator, anyone with
+Docker access, or anyone with access to Docker's data root can inspect them. For
+stronger at-rest protection, use full-disk encryption or an encrypted Docker
+data root.
+
+To use the old visible host-folder layout, add `-f docker/host-data.yml` to
+manual Compose commands or pass `-HostData` to `Cleverly.ps1`. On Linux, make
+sure those bind-mounted directories are writable by the configured `PUID`/`PGID`
+before first boot:
 
 ```bash
 mkdir -p data logs data/ssh data/cache data/huggingface data/local data/npm-cache
 chown -R "$(id -u):$(id -g)" data logs
 ```
 
-Cookbook downloads live in `./data/huggingface`, and Cookbook-installed Python
-CLIs and serve engines live in `./data/local`, so they survive container
-recreation.
+In sealed mode, Cookbook downloads, local package installs, npm cache, logs,
+and app data live in Docker named volumes so they survive container recreation.
 
 To use Ollama from Docker, prefer the bundled Ollama overlay documented above.
 It keeps inference traffic inside Docker's internal-only network.
@@ -309,6 +335,7 @@ for deployment-level defaults and secrets you want present before first boot.
 | `CLEVERLY_PIDS_LIMIT` | `4096` | Process limit for the Cleverly container |
 | `CLEVERLY_OFFLINE` | `1` in Docker | Disable internet-facing features and startup network warmups |
 | `CLEVERLY_OFFLINE_EMBEDDINGS` | `0` in Docker | Allow local FastEmbed only after its cache is pre-seeded |
+| `CLEVERLY_HOST_DATA` | unset | Set to `1` only to make `Cleverly.ps1` use visible `./data` and `./logs` bind mounts |
 | `AUTH_ENABLED` | `true` | Enable/disable login |
 | `LOCALHOST_BYPASS` | `false` | Development-only auth bypass for direct loopback requests |
 | `DATABASE_URL` | `sqlite:///./data/app.db` | Database connection string |
@@ -342,8 +369,10 @@ docs/       landing page and preview media
 
 ## Data
 
-All user data lives in `data/` and is gitignored: `app.db`, `memory.json`,
-`presets.json`, uploads, personal docs, ChromaDB data, and settings.
+With the Docker launcher, user data lives in Docker named volumes by default.
+With `-HostData` or native runs, user data lives in `data/` and is gitignored:
+`app.db`, `memory.json`, `presets.json`, uploads, personal docs, ChromaDB data,
+and settings.
 
 ## License
 

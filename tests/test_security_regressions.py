@@ -139,6 +139,31 @@ def test_cleverly_container_has_baseline_hardening():
     assert 'CLEVERLY_OFFLINE: "1"' in service
 
 
+def test_docker_storage_defaults_to_sealed_named_volumes():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    launcher = Path("Cleverly.ps1").read_text(encoding="utf-8")
+    sealed = Path("docker/sealed-data.yml").read_text(encoding="utf-8")
+    host_data = Path("docker/host-data.yml").read_text(encoding="utf-8")
+    app_service = compose.split("  cleverly_proxy:", 1)[0]
+
+    assert "cleverly-data:/app/data" in app_service
+    assert "cleverly-logs:/app/logs" in app_service
+    assert "./data:/app/data" not in app_service
+    assert "./logs:/app/logs" not in app_service
+    assert "name: cleverly-data" in compose
+    assert "docker/sealed-data.yml" in launcher
+    assert "docker/host-data.yml" in launcher
+    assert "$UseSealedData = -not $HostData" in launcher
+    assert '"seal-data"' in launcher
+    assert "Seal-Data" in launcher
+    assert "seal-data.cmd" in launcher
+    assert "CLEVERLY_HOST_DATA" in launcher
+    assert "cleverly-ollama:/root/.ollama" in sealed
+    assert "This is not encryption" in sealed
+    assert "./data:/app/data" in host_data
+    assert "./logs:/app/logs" in host_data
+
+
 def test_offline_compose_overlay_reinforces_container_egress_block():
     overlay = Path("docker/offline.yml").read_text(encoding="utf-8")
     assert "CLEVERLY_OFFLINE:" in overlay
@@ -164,10 +189,15 @@ def test_windows_app_launcher_uses_offline_docker_runtime():
     assert "cleverly-ollama:local" in launcher
     assert '"doctor"' in launcher
     assert '"bundle"' in launcher
+    assert '"seal-data"' in launcher
+    assert "HostData" in launcher
+    assert "docker/sealed-data.yml" in launcher
+    assert "docker/host-data.yml" in launcher
     assert "SupportImages" in launcher
     assert "docker save -o" in launcher
     assert "cleverly-images.tar" in launcher
     assert "load-cleverly.cmd" in launcher
+    assert "seal-data.cmd" in launcher
     assert "start-cleverly.cmd" in launcher
     assert "README-OFFLINE.md" in launcher
     assert "AllowConnectedPrep" in launcher
