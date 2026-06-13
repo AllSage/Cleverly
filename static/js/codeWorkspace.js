@@ -29,12 +29,12 @@ function ensureStyles() {
     .code-ws-pane{border:1px solid var(--border);background:color-mix(in srgb,var(--panel) 72%,transparent);border-radius:8px;min-height:0;overflow:hidden;display:flex;flex-direction:column;}
     .code-ws-head{display:flex;gap:6px;align-items:center;padding:8px;border-bottom:1px solid var(--border);}
     .code-ws-list,.code-ws-tree{overflow:auto;padding:6px;min-height:0;}
-    .code-ws-item{width:100%;border:0;background:transparent;color:var(--fg);display:flex;gap:6px;align-items:center;text-align:left;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:12px;}
+    .code-ws-item{width:100%;height:auto!important;min-height:32px;margin:0!important;border:0;background:transparent;color:var(--fg);display:flex;gap:6px;align-items:center;text-align:left;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12px;line-height:1.25;}
     .code-ws-item:hover,.code-ws-item.active{background:color-mix(in srgb,var(--accent, #7aa2ff) 18%,transparent);}
     .code-ws-main{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:8px;height:100%;min-height:0;}
     .code-ws-toolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
     .code-ws-input{background:var(--input-bg,var(--panel));color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 8px;font:inherit;font-size:12px;min-width:0;}
-    .code-ws-btn{border:1px solid var(--border);background:var(--panel);color:var(--fg);border-radius:6px;padding:7px 9px;font-size:12px;cursor:pointer;white-space:nowrap;}
+    .code-ws-btn{height:auto!important;min-height:32px;margin:0!important;border:1px solid var(--border);background:var(--panel);color:var(--fg);border-radius:6px;padding:0 9px;font-size:12px;line-height:1.2;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;}
     .code-ws-btn.primary{background:var(--accent,var(--red));color:white;border-color:transparent;}
     .code-ws-editor{width:100%;height:100%;resize:none;box-sizing:border-box;background:#0f1117;color:#e7eaf0;border:1px solid var(--border);border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;min-height:220px;}
     .code-ws-task{width:100%;height:78px;resize:vertical;box-sizing:border-box;background:var(--input-bg,var(--panel));color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:8px;font:12px/1.35 system-ui,sans-serif;}

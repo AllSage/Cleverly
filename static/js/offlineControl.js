@@ -29,7 +29,7 @@ function ensureStyles() {
     .offline-control-body{height:calc(100% - 46px);padding:12px;box-sizing:border-box;overflow:hidden;}
     .offline-shell{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr);gap:10px;}
     .offline-tabs{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
-    .offline-tab{border:1px solid var(--border);background:var(--panel);color:var(--fg);border-radius:6px;padding:7px 10px;font-size:12px;cursor:pointer;}
+    .offline-tab{height:auto!important;min-height:32px;margin:0!important;border:1px solid var(--border);background:var(--panel);color:var(--fg);border-radius:6px;padding:0 10px;font-size:12px;line-height:1.2;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
     .offline-tab.active{background:var(--accent,var(--red));border-color:transparent;color:#fff;}
     .offline-panel{min-height:0;overflow:auto;border:1px solid var(--border);background:color-mix(in srgb,var(--panel) 70%,transparent);border-radius:8px;padding:12px;box-sizing:border-box;}
     .offline-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px;}
@@ -43,7 +43,7 @@ function ensureStyles() {
     .offline-mini-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;}
     .offline-mini-check{display:flex;gap:7px;align-items:flex-start;font-size:12px;border-top:1px solid color-mix(in srgb,var(--border) 65%,transparent);padding-top:6px;}
     .offline-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;}
-    .offline-btn{border:1px solid var(--border);background:var(--panel);color:var(--fg);border-radius:6px;padding:7px 10px;font-size:12px;cursor:pointer;white-space:nowrap;}
+    .offline-btn{height:auto!important;min-height:32px;margin:0!important;border:1px solid var(--border);background:var(--panel);color:var(--fg);border-radius:6px;padding:0 10px;font-size:12px;line-height:1.2;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;}
     .offline-btn.primary{background:var(--accent,var(--red));color:#fff;border-color:transparent;}
     .offline-input{background:var(--input-bg,var(--panel));color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 8px;font:inherit;font-size:12px;min-width:0;}
     .offline-check{display:grid;grid-template-columns:64px minmax(120px,220px) 1fr;gap:8px;align-items:start;border-top:1px solid var(--border);padding:8px 0;font-size:12px;}

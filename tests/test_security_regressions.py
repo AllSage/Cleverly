@@ -415,6 +415,35 @@ def test_focus_cards_are_local_waiting_ui_only():
     assert "focusCardsModule.mount(bodyDiv, { mode: 'reconnect' })" in sessions_js
     assert ".focus-card-waiting" in css
     assert "focus-card-dismiss" in css
+    assert ".focus-card-dismiss {\n  height: auto !important;" in css
+
+
+def test_recent_tool_surfaces_opt_out_of_global_button_height():
+    css = Path("static/style.css").read_text(encoding="utf-8")
+    setup_js = Path("static/js/setupWizard.js").read_text(encoding="utf-8")
+    offline_js = Path("static/js/offlineControl.js").read_text(encoding="utf-8")
+    code_js = Path("static/js/codeWorkspace.js").read_text(encoding="utf-8")
+    tutorials_js = Path("static/js/tutorials.js").read_text(encoding="utf-8")
+
+    for token in (
+        ".welcome-action-btn {\n      height: auto !important;",
+        ".incognito-btn {\n      height: auto !important;",
+        ".cookbook-btn {\n  height: auto !important;",
+        ".cookbook-actions { display: flex; gap: 6px; margin-top: 2px; align-items: center; flex-wrap: wrap; }",
+    ):
+        assert token in css
+
+    for source, token in (
+        (setup_js, ".setup-wizard-step{height:auto!important"),
+        (setup_js, ".setup-wizard-btn{height:auto!important"),
+        (offline_js, ".offline-tab{height:auto!important"),
+        (offline_js, ".offline-btn{height:auto!important"),
+        (code_js, ".code-ws-item{width:100%;height:auto!important"),
+        (code_js, ".code-ws-btn{height:auto!important"),
+        (tutorials_js, ".tutorials-card{width:100%;height:auto!important"),
+        (tutorials_js, ".tutorials-btn{height:auto!important"),
+    ):
+        assert token in source
 
 
 def test_encrypted_app_backup_uses_password_kdf():
