@@ -17318,6 +17318,9 @@ body.gallery-selecting .gallery-dl-btn,
 .training-lab-finetune-card {
   grid-column: 1 / -1;
 }
+.training-lab-study-card {
+  grid-column: 1 / -1;
+}
 .training-lab-textarea,
 .training-lab-prompt {
   resize: vertical;
@@ -17382,15 +17385,60 @@ body.gallery-selecting .gallery-dl-btn,
   margin-top: 6px;
   max-height: 120px;
 }
+.training-study-list {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.training-study-pack {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+}
+.training-study-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.training-study-main strong {
+  font-size: 12px;
+}
+.training-study-main span,
+.training-study-meta {
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.training-study-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.training-study-meta code {
+  color: var(--fg-muted);
+  font-size: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 768px) {
   .training-lab-grid {
     grid-template-columns: 1fr;
   }
   .training-lab-generate-card,
-  .training-lab-finetune-card {
+  .training-lab-finetune-card,
+  .training-lab-study-card {
     grid-column: auto;
   }
   .training-lab-finetune-fields {
+    grid-template-columns: 1fr;
+  }
+  .training-study-list {
     grid-template-columns: 1fr;
   }
 }

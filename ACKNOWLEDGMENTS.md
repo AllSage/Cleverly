@@ -56,6 +56,19 @@ just composed.
 | [ChromaDB](https://github.com/chroma-core/chroma) | `chromadb/chroma:latest` | Vector store for memory / RAG | Apache-2.0 |
 | [ntfy](https://github.com/binwiederhier/ntfy) | `binwiederhier/ntfy` | Push notifications (self-hosted reminders) | Apache-2.0 / GPL-2.0 |
 
+## Reference-only study packs
+
+These upstream repositories are listed in Cleverly documentation or UI as
+learning/reference material only. Their code is not vendored, installed, or
+executed by this repository.
+
+| Project | Use |
+|---|---|
+| [FareedKhan-dev/train-llm-from-scratch](https://github.com/FareedKhan-dev/train-llm-from-scratch) | Training fundamentals and small-model learning path. |
+| [Sumanth077/Hands-On-AI-Engineering](https://github.com/Sumanth077/Hands-On-AI-Engineering) | Practical AI engineering reference material. |
+| [elementalsouls/Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter) | Authorized security-assessment methodology and skill-pack structure reference. |
+| [ConardLi/easy-agent](https://github.com/ConardLi/easy-agent) | Coding-agent architecture and implementation roadmap reference. |
+
 ## Bundled front-end libraries
 
 Vendored in `static/lib/` and served directly:

@@ -112,6 +112,9 @@ uses pasted local text and writes datasets/artifacts under `./data/training`;
 it does not download datasets or call model endpoints. Advanced LoRA
 fine-tuning is available only when its optional dependencies and a trainable
 local model directory are already baked into the image.
+External AI/security references are tracked as
+[study packs](docs/external-agent-study-packs.md) only; Cleverly does not pull
+or execute those repositories during offline runtime.
 
 ### Docker With Bundled Ollama
 

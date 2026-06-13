@@ -19,6 +19,8 @@ on `127.0.0.1:${APP_PORT:-7000}`.
   `./data/training`.
 - Enables Advanced LoRA fine-tuning only when optional training dependencies
   and trainable local model weights were pre-baked on a connected prep machine.
+- Lists external agent/security study packs as reference metadata only; Cleverly
+  does not clone, install, or run them during offline runtime.
 - Leaves model, embedding, Chroma, and npm caches under mounted `./data`
   directories so they can be pre-seeded.
 

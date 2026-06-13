@@ -214,6 +214,9 @@ def test_training_lab_is_local_only_and_wired_to_ui():
     assert "tool-training-btn" in index_html
     assert "training-lab-modal" in index_html
     assert "Advanced LoRA" in training_js
+    assert "Claude-BugHunter" in training_js
+    assert "easy-agent" in training_js
+    assert "Offline references" in training_js
     assert "trainingLabModule.open" in app_js
     assert "'/training'" in app_js
     assert "/api/training/status" in training_js
@@ -239,6 +242,39 @@ def test_training_lab_is_local_only_and_wired_to_ui():
     ]
     for token in forbidden:
         assert token not in combined
+
+
+def test_external_agent_study_packs_are_reference_only():
+    doc = Path("docs/external-agent-study-packs.md").read_text(encoding="utf-8")
+    training_js = Path("static/js/trainingLab.js").read_text(encoding="utf-8")
+    acknowledgments = Path("ACKNOWLEDGMENTS.md").read_text(encoding="utf-8")
+
+    for token in (
+        "FareedKhan-dev/train-llm-from-scratch",
+        "Sumanth077/Hands-On-AI-Engineering",
+        "elementalsouls/Claude-BugHunter",
+        "ConardLi/easy-agent",
+    ):
+        assert token in doc
+        assert token in acknowledgments
+
+    assert "Claude-BugHunter" in training_js
+    assert "easy-agent" in training_js
+    assert "Reference only" in training_js
+    assert "Manual import only" in training_js
+    assert "not cloned, installed, fetched, or executed" in doc
+    assert "written authorization" in doc
+
+    ui_forbidden = [
+        "git clone",
+        "npm install",
+        "scripts/install.sh",
+        "/plugin install",
+        "fetch('https://",
+        'fetch("https://',
+    ]
+    for token in ui_forbidden:
+        assert token not in training_js
 
 
 def test_ollama_overlays_use_persistent_model_cache_and_auto_seed():

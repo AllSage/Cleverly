@@ -18,6 +18,37 @@ let _state = {
 let _dragWired = false;
 let _modalWired = false;
 
+const STUDY_PACKS = [
+  {
+    name: 'train-llm-from-scratch',
+    source: 'github.com/FareedKhan-dev/train-llm-from-scratch',
+    category: 'Training',
+    posture: 'Reference only',
+    summary: 'Conceptual path for tokenization, model loops, and small offline experiments.',
+  },
+  {
+    name: 'Hands-On-AI-Engineering',
+    source: 'github.com/Sumanth077/Hands-On-AI-Engineering',
+    category: 'AI Engineering',
+    posture: 'Reference only',
+    summary: 'Applied workflow examples for practical model and agent engineering.',
+  },
+  {
+    name: 'Claude-BugHunter',
+    source: 'github.com/elementalsouls/Claude-BugHunter',
+    category: 'Security',
+    posture: 'Manual import only',
+    summary: 'Authorized security assessment methodology; keep scoped to owned, lab, or written-authorized targets.',
+  },
+  {
+    name: 'easy-agent',
+    source: 'github.com/ConardLi/easy-agent',
+    category: 'Agents',
+    posture: 'Reference only',
+    summary: 'Layered coding-agent architecture notes for orchestration, tools, permissions, context, and sessions.',
+  },
+];
+
 function _escape(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -129,6 +160,22 @@ function _jobRows() {
       </div>
     `;
   }).join('');
+}
+
+function _studyPackRows() {
+  return STUDY_PACKS.map((pack) => `
+    <div class="training-study-pack">
+      <div class="training-study-main">
+        <strong>${_escape(pack.name)}</strong>
+        <span>${_escape(pack.summary)}</span>
+      </div>
+      <div class="training-study-meta">
+        <span class="memory-cat-badge">${_escape(pack.category)}</span>
+        <span class="memory-cat-badge">${_escape(pack.posture)}</span>
+        <code>${_escape(pack.source)}</code>
+      </div>
+    </div>
+  `).join('');
 }
 
 function _render() {
@@ -260,6 +307,16 @@ function _render() {
           <span class="training-lab-meter">${_escape(_state.finetune?.base_models_dir || '')}</span>
         </div>
         <div class="training-lab-jobs">${_jobRows()}</div>
+      </section>
+
+      <section class="cookbook-card training-lab-card training-lab-study-card">
+        <div class="cookbook-card-header">
+          <div>
+            <div class="cookbook-card-title">Study Packs</div>
+            <div class="cookbook-card-desc">Offline references; no automatic downloads or installers.</div>
+          </div>
+        </div>
+        <div class="training-study-list">${_studyPackRows()}</div>
       </section>
     </div>
     <div id="training-lab-status" class="training-lab-status">${_escape(_state.status)}</div>

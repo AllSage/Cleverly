@@ -52,6 +52,19 @@ This is intentionally a small, safe first integration inspired by practical AI
 engineering and from-scratch training repos. No code from those external repos
 is vendored into Cleverly.
 
+## External Study Packs
+
+The Training Lab lists these upstream projects as offline study material:
+
+- [FareedKhan-dev/train-llm-from-scratch](https://github.com/FareedKhan-dev/train-llm-from-scratch)
+- [Sumanth077/Hands-On-AI-Engineering](https://github.com/Sumanth077/Hands-On-AI-Engineering)
+- [elementalsouls/Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter)
+- [ConardLi/easy-agent](https://github.com/ConardLi/easy-agent)
+
+They are not downloaded, installed, or executed by Cleverly. See
+[External Agent Study Packs](external-agent-study-packs.md) for the offline
+intake policy, especially the authorized-use boundary for security material.
+
 ## Suggested Next Steps
 
 Useful follow-ups are local file import from already-mounted folders, adapter
