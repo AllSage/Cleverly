@@ -23,6 +23,7 @@ services:
         condition: service_completed_successfully
 
   ollama:
+    container_name: ${CLEVERLY_OLLAMA_CONTAINER_NAME:-cleverly-ollama}
     image: ${OLLAMA_IMAGE:-cleverly-ollama:local}
     init: true
     networks:

@@ -116,8 +116,10 @@ def test_secret_storage_key_created_with_safe_mode(tmp_path, monkeypatch):
 def test_docker_compose_exposes_only_local_proxy_by_default():
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     app_service = compose.split("  cleverly_proxy:", 1)[0]
+    assert "container_name: ${CLEVERLY_CONTAINER_NAME:-cleverly}" in app_service
     assert "ports:" not in app_service
     assert "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000" in compose
+    assert "container_name: ${CLEVERLY_PROXY_CONTAINER_NAME:-cleverly-proxy}" in compose
     assert '"${APP_PORT:-7000}:7000"' not in compose
     assert "host.docker.internal:host-gateway" not in compose
     assert "offline_private:" in compose
@@ -159,6 +161,8 @@ def test_ollama_overlays_use_persistent_model_cache_and_auto_seed():
     assert "./data/ollama:/root/.ollama" in offline
     assert "cleverly-ollama:local" in connected
     assert "cleverly-ollama:local" in offline
+    assert "container_name: ${CLEVERLY_OLLAMA_CONTAINER_NAME:-cleverly-ollama}" in connected
+    assert "container_name: ${CLEVERLY_OLLAMA_CONTAINER_NAME:-cleverly-ollama}" in offline
     assert "ollama.com/install.sh" in local_image
     assert "ollama pull" in connected
     assert "CLEVERLY_AUTO_ADD_OLLAMA" in connected

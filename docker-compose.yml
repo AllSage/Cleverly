@@ -1,5 +1,6 @@
 services:
   cleverly:
+    container_name: ${CLEVERLY_CONTAINER_NAME:-cleverly}
     image: ${CLEVERLY_IMAGE:-cleverly:local}
     build:
       context: .
@@ -71,6 +72,7 @@ services:
     restart: unless-stopped
 
   cleverly_proxy:
+    container_name: ${CLEVERLY_PROXY_CONTAINER_NAME:-cleverly-proxy}
     image: ${CLEVERLY_IMAGE:-cleverly:local}
     user: "${PUID:-1000}:${PGID:-1000}"
     init: true

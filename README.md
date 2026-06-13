@@ -51,6 +51,10 @@ egress. If the port is taken, set `APP_PORT=7001` in `.env` and recreate the
 container. Keep `APP_BIND=127.0.0.1` unless you are deliberately placing a
 trusted reverse proxy in front of it.
 
+The main Docker container is named `cleverly` by default, so common checks work
+with commands like `docker logs cleverly`. The proxy and bundled Ollama
+containers default to `cleverly-proxy` and `cleverly-ollama`.
+
 ### Offline Docker
 
 Docker is offline-by-default. For a no-internet runtime, build or load the
@@ -225,6 +229,9 @@ for deployment-level defaults and secrets you want present before first boot.
 | `SEARXNG_SECRET` | generated on first Docker boot | Optional SearXNG cookie/CSRF secret |
 | `APP_BIND` | `127.0.0.1` | Docker Compose local proxy bind address |
 | `APP_PORT` | `7000` | Docker Compose host port |
+| `CLEVERLY_CONTAINER_NAME` | `cleverly` | Main Cleverly Docker container name |
+| `CLEVERLY_PROXY_CONTAINER_NAME` | `cleverly-proxy` | Local proxy Docker container name |
+| `CLEVERLY_OLLAMA_CONTAINER_NAME` | `cleverly-ollama` | Bundled Ollama Docker container name |
 | `PUID` / `PGID` | `1000` / `1000` | UID/GID used by the hardened Docker container |
 | `CLEVERLY_TMPFS_SIZE` | `1g` | Size of the Cleverly `/tmp` tmpfs in Docker |
 | `CLEVERLY_PIDS_LIMIT` | `4096` | Process limit for the Cleverly container |
