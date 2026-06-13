@@ -84,6 +84,7 @@ let _senderFilter = null;       // email address (lowercased) to filter by, or n
 let _senderFilterLabel = null;  // display label for the active filter chip
 
 export function init(documentModule) {
+  if (window._cleverlyFeatures && window._cleverlyFeatures.email === false) return;
   _docModule = documentModule;
   _bindEvents();
   // Init the library popup with a callback to open emails

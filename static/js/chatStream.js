@@ -155,6 +155,7 @@ export function handleUIControl(uiData) {
           if (fn) fn();
         }).catch(function(){});
       } else if (panel === 'email') {
+        if (window._cleverlyFeatures && window._cleverlyFeatures.email === false) return;
         import('./emailLibrary.js').then(function(mod) {
           var fn = mod.openEmailLibrary || (mod.default && mod.default.openEmailLibrary);
           if (fn) fn();
@@ -183,6 +184,7 @@ export function handleUIControl(uiData) {
       }
 
     } else if (uiEvent === 'open_email_reply' || uiData.ui_event === 'open_email_reply') {
+      if (window._cleverlyFeatures && window._cleverlyFeatures.email === false) return;
       import('./emailInbox.js').then(function(mod) {
         var fn = mod.openReplyDraft || (mod.default && mod.default.openReplyDraft);
         if (fn) fn(uiData.uid, uiData.folder || 'INBOX', uiData.mode || 'reply');

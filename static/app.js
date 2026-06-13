@@ -1299,6 +1299,14 @@ function initializeEventListeners() {
       ],
       document_editor: ['#overflow-doc-btn', '#rail-documents'],
       gallery: ['#tool-gallery-btn', '#rail-gallery'],
+      email: [
+        '#email-section',
+        '#rail-email',
+        '#email-compose-btn',
+        '[data-settings-tab="email"]',
+        '[data-settings-panel="email"]',
+        '[data-online-feature="email"]',
+      ],
     };
 
     Object.entries(hideSelectors).forEach(([key, selectors]) => {
@@ -1313,6 +1321,7 @@ function initializeEventListeners() {
     const hiddenUiKeys = [];
     if (features.web_search === false) hiddenUiKeys.push('web-toggle-btn');
     if (features.deep_research === false) hiddenUiKeys.push('tool-research', 'research-btn');
+    if (features.email === false) hiddenUiKeys.push('email-section');
     hiddenUiKeys.forEach(key => {
       document.querySelectorAll(`[data-ui-key="${key}"]`).forEach(node => {
         const row = node.closest('.vis-row') || node;

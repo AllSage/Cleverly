@@ -169,12 +169,22 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     index_html = Path("static/index.html").read_text(encoding="utf-8")
     compare_selector = Path("static/js/compare/selector.js").read_text(encoding="utf-8")
+    chat_js = Path("static/js/chat.js").read_text(encoding="utf-8")
+    inbox_js = Path("static/js/emailInbox.js").read_text(encoding="utf-8")
+    settings_js = Path("static/js/settings.js").read_text(encoding="utf-8")
     assert "window._cleverlyFeatures" in app_js
     assert '[data-settings-tab="search"]' in app_js
     assert '[data-settings-panel="search"]' in app_js
     assert "data-ui-key" in app_js
     assert 'data-online-feature="deep_research"' in index_html
     assert 'data-online-feature="web_search"' in index_html
+    assert 'data-online-feature="email"' in index_html
+    assert '[data-settings-tab="email"]' in app_js
+    assert '[data-settings-panel="email"]' in app_js
+    assert "features.email === false" in app_js
+    assert "features.email !== false" in chat_js
+    assert "window._cleverlyFeatures.email === false" in inbox_js
+    assert "emailEnabled" in settings_js
     assert "_features.web_search !== false" in compare_selector
     assert "_features.deep_research !== false" in compare_selector
 
@@ -211,6 +221,7 @@ def test_offline_mode_disables_internet_features(monkeypatch):
         assert features["web_search"] is False
         assert features["web_fetch"] is False
         assert features["deep_research"] is False
+        assert features["email"] is False
     finally:
         settings._invalidate_caches()
 

@@ -2112,8 +2112,10 @@ function initAll() {
   initShortcuts();
   initAccount();
   initIntegrations();
-  initEmailSettings();
-  initEmailAccountsSettings();
+  if (!window._cleverlyFeatures || window._cleverlyFeatures.email !== false) {
+    initEmailSettings();
+    initEmailAccountsSettings();
+  }
   initReminderSettings();
   initUnifiedIntegrations();
 }
@@ -2127,6 +2129,7 @@ function notifyIntegrationsChanged() {
 async function initReminderSettings() {
   const root = el('settings-modal');
   if (!root || !root.querySelector('[data-settings-panel="reminders"]')) return;
+  const emailEnabled = !window._cleverlyFeatures || window._cleverlyFeatures.email !== false;
 
   // Public URL field (used for deep-links in outgoing alert emails)
   const pubUrlIn = el('set-app-public-url');
@@ -2243,8 +2246,12 @@ async function initReminderSettings() {
 
   function applyReminderChannelAvailability() {
     if (emailOpt) {
-      emailOpt.disabled = !smtpConfigured;
-      emailOpt.textContent = smtpConfigured ? 'Email' : 'Email (add an account in Integrations)';
+      emailOpt.disabled = !emailEnabled || !smtpConfigured;
+      emailOpt.hidden = !emailEnabled;
+      emailOpt.style.display = emailEnabled ? '' : 'none';
+      emailOpt.textContent = emailEnabled
+        ? (smtpConfigured ? 'Email' : 'Email (add an account in Integrations)')
+        : 'Email';
     }
     if (ntfyOpt) {
       ntfyOpt.disabled = !ntfyConfigured;
@@ -2255,13 +2262,17 @@ async function initReminderSettings() {
   async function refreshReminderChannelAvailability() {
     const currentChannel = channelSel.value || 'browser';
     const currentEmailAccount = emailAcctSel?.value || '';
-    try {
-      const res = await fetch('/api/email/accounts', { credentials: 'same-origin' });
-      if (res.ok) {
-        const d = await res.json();
-        emailAccounts = (d.accounts || []).filter(a => a.smtp_host && a.smtp_user && a.has_smtp_password);
-      }
-    } catch (_) {}
+    if (emailEnabled) {
+      try {
+        const res = await fetch('/api/email/accounts', { credentials: 'same-origin' });
+        if (res.ok) {
+          const d = await res.json();
+          emailAccounts = (d.accounts || []).filter(a => a.smtp_host && a.smtp_user && a.has_smtp_password);
+        }
+      } catch (_) {}
+    } else {
+      emailAccounts = [];
+    }
     smtpConfigured = emailAccounts.length > 0;
 
     ntfyConfigured = false;
@@ -2284,7 +2295,7 @@ async function initReminderSettings() {
 
     applyReminderChannelAvailability();
     populateReminderEmailAccounts(currentEmailAccount);
-    if (currentChannel === 'email' && !smtpConfigured) channelSel.value = 'browser';
+    if (currentChannel === 'email' && (!emailEnabled || !smtpConfigured)) channelSel.value = 'browser';
     else if (currentChannel === 'ntfy' && !ntfyConfigured) channelSel.value = 'browser';
     else channelSel.value = currentChannel;
     if (hint) hint.textContent = CHANNEL_HINTS[channelSel.value] || '';

@@ -139,6 +139,7 @@ DEFAULT_FEATURES = {
     "rag": True,
     "sensitive_filter": True,
     "gallery": True,
+    "email": True,
 }
 
 
@@ -229,6 +230,7 @@ def load_features() -> dict:
         merged["web_search"] = False
         merged["web_fetch"] = False
         merged["deep_research"] = False
+        merged["email"] = False
     _features_cache = (now, merged)
     return merged
 

@@ -154,8 +154,12 @@ import createResearchSynapse from './researchSynapse.js';
   export function init(apiBase) {
     API_BASE = apiBase;
     initSlashCommands({ apiBase, isStreaming: () => isStreaming });
-    // Initialize email inbox
-    emailInbox.init(documentModule);
+    // Initialize email inbox only when the deployment allows networked email.
+    Promise.resolve(window._initFeaturesReady || window._cleverlyFeatures || {})
+      .then((features) => {
+        if (!features || features.email !== false) emailInbox.init(documentModule);
+      })
+      .catch(() => {});
   }
 
   // addMessage, createMsgFooter, displayMetrics, hideWelcomeScreen, showWelcomeScreen
