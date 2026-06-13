@@ -543,6 +543,9 @@ def test_offline_tutorials_are_bundled_and_wired_to_ui():
     assert "tool-tutorials" in index_html
     assert "tutorials-modal" in modal_manager
     assert "tutorials: ['tool-tutorials-btn', 'rail-tutorials']" in slash_commands
+    assert ".tutorials-card{width:100%;height:auto!important" in tutorials_js
+    assert ".tutorials-image-btn{display:flex;width:100%;height:auto!important" in tutorials_js
+    assert "aspect-ratio:16/9" in tutorials_js
 
     assets = [
         "static/tutorials/first-run.svg",
