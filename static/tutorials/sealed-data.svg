@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">Sealed data mode guide</title>
+  <desc id="desc">A container boundary showing data stored inside the offline runtime.</desc>
+  <rect width="800" height="450" fill="#080d12"/>
+  <path d="M76 70h648M76 140h648M76 210h648M76 280h648M76 350h648M154 42v366M250 42v366M346 42v366M442 42v366M538 42v366M634 42v366" stroke="#173044" stroke-width="1" opacity=".5"/>
+  <rect x="72" y="48" width="656" height="354" rx="18" fill="#0e1620" stroke="#34d399" stroke-opacity=".55"/>
+  <text x="108" y="104" fill="#effff7" font-family="Arial, sans-serif" font-size="34" font-weight="700">Sealed data mode</text>
+  <text x="110" y="136" fill="#86efac" font-family="Arial, sans-serif" font-size="17">Default storage can remain inside the container unless you export it.</text>
+  <rect x="174" y="184" width="452" height="150" rx="14" fill="#0b1118" stroke="#34d399" stroke-width="3"/>
+  <rect x="216" y="226" width="128" height="66" rx="8" fill="#10251d" stroke="#34d399" stroke-opacity=".55"/>
+  <rect x="456" y="226" width="128" height="66" rx="8" fill="#10251d" stroke="#34d399" stroke-opacity=".55"/>
+  <text x="280" y="263" fill="#d7ffe9" font-family="Arial, sans-serif" font-size="17" font-weight="700" text-anchor="middle">Chats</text>
+  <text x="520" y="263" fill="#d7ffe9" font-family="Arial, sans-serif" font-size="17" font-weight="700" text-anchor="middle">Models</text>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M400 203v112" stroke="#34d399" stroke-width="2" stroke-dasharray="7 7"/>
+    <path d="M380 250h40v40h-40zM390 250v-13a10 10 0 0 1 20 0v13" stroke="#fbbf24" stroke-width="4"/>
+    <path d="M142 260h-54M658 260h54" stroke="#ef4444" stroke-width="4" stroke-dasharray="9 9"/>
+    <path d="M108 244l-20 16 20 16M692 244l20 16-20 16" stroke="#ef4444" stroke-width="4"/>
+  </g>
+  <text x="400" y="364" fill="#d1fae5" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">No network export path is enabled in offline mode.</text>
+</svg>

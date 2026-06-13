@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">Code workspace guide</title>
+  <desc id="desc">A code editing workspace with review, test, and apply gates.</desc>
+  <rect width="800" height="450" fill="#071018"/>
+  <rect x="52" y="44" width="696" height="362" rx="16" fill="#0c1320" stroke="#38bdf8" stroke-opacity=".55"/>
+  <text x="90" y="98" fill="#e8f7ff" font-family="Arial, sans-serif" font-size="34" font-weight="700">Code workspace</text>
+  <text x="92" y="130" fill="#7dd3fc" font-family="Arial, sans-serif" font-size="17">Mount a repo, ask for edits, review the diff, then run tests locally.</text>
+  <rect x="92" y="168" width="184" height="188" rx="8" fill="#101827" stroke="#1f6feb" stroke-opacity=".55"/>
+  <rect x="304" y="168" width="404" height="188" rx="8" fill="#080d16" stroke="#334155"/>
+  <g font-family="Consolas, monospace" font-size="13">
+    <text x="116" y="205" fill="#a7f3d0">repo/</text>
+    <text x="134" y="232" fill="#dbeafe">static/</text>
+    <text x="154" y="257" fill="#dbeafe">app.js</text>
+    <text x="154" y="282" fill="#dbeafe">tutorials.js</text>
+    <text x="134" y="307" fill="#dbeafe">tests/</text>
+    <text x="154" y="332" fill="#dbeafe">test_ui.py</text>
+    <text x="332" y="205" fill="#94a3b8">diff -- cleverly</text>
+    <text x="332" y="235" fill="#fca5a5">- old button layout</text>
+    <text x="332" y="264" fill="#86efac">+ cleaner tutorial panel</text>
+    <text x="332" y="293" fill="#86efac">+ local image assets</text>
+    <text x="332" y="322" fill="#7dd3fc">pytest: pass</text>
+  </g>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="4">
+    <path d="M258 112l24 24-24 24M218 160l-24-24 24-24" stroke="#38bdf8"/>
+    <path d="M585 120h74M585 136h74M585 152h48" stroke="#c4b5fd"/>
+    <path d="m632 315 18 18 34-48" stroke="#34d399"/>
+  </g>
+  <rect x="472" y="360" width="236" height="30" rx="7" fill="#122033" stroke="#38bdf8" stroke-opacity=".45"/>
+  <text x="590" y="380" fill="#dff7ff" font-family="Arial, sans-serif" font-size="13" text-anchor="middle">Review before apply</text>
+</svg>

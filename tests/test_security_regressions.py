@@ -528,6 +528,43 @@ def test_training_lab_is_local_only_and_wired_to_ui():
         assert token not in combined
 
 
+def test_offline_tutorials_are_bundled_and_wired_to_ui():
+    app_js = Path("static/app.js").read_text(encoding="utf-8")
+    index_html = Path("static/index.html").read_text(encoding="utf-8")
+    tutorials_js = Path("static/js/tutorials.js").read_text(encoding="utf-8")
+    modal_manager = Path("static/js/modalManager.js").read_text(encoding="utf-8")
+    slash_commands = Path("static/js/slashCommands.js").read_text(encoding="utf-8")
+
+    assert "tutorialsModule" in app_js
+    assert "'/tutorials'" in app_js
+    assert "tool-tutorials-btn" in index_html
+    assert "rail-tutorials" in index_html
+    assert "tutorials-modal" in index_html
+    assert "tool-tutorials" in index_html
+    assert "tutorials-modal" in modal_manager
+    assert "tutorials: ['tool-tutorials-btn', 'rail-tutorials']" in slash_commands
+
+    assets = [
+        "static/tutorials/first-run.svg",
+        "static/tutorials/offline-readiness.svg",
+        "static/tutorials/model-onboarding.svg",
+        "static/tutorials/code-workspace.svg",
+        "static/tutorials/sealed-data.svg",
+        "static/tutorials/backup-export.svg",
+        "static/tutorials/training.svg",
+    ]
+    for rel in assets:
+        source = Path(rel).read_text(encoding="utf-8")
+        assert "<svg" in source
+        assert rel.replace("static/", "/static/") in tutorials_js
+        assert "https://" not in source
+        assert 'href="http' not in source
+        assert "xlink:href=\"http" not in source
+
+    for token in ("fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket", "https://", "http://"):
+        assert token not in tutorials_js
+
+
 def test_external_agent_study_packs_are_reference_only():
     doc = Path("docs/external-agent-study-packs.md").read_text(encoding="utf-8")
     training_js = Path("static/js/trainingLab.js").read_text(encoding="utf-8")

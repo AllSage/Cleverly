@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">First run setup guide</title>
+  <desc id="desc">A local setup flow showing setup, model choice, offline check, and start chatting.</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#151827"/>
+      <stop offset="1" stop-color="#0b111c"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="450" fill="#070b12"/>
+  <path d="M0 68h800M0 136h800M0 204h800M0 272h800M0 340h800M74 0v450M148 0v450M222 0v450M296 0v450M370 0v450M444 0v450M518 0v450M592 0v450M666 0v450M740 0v450" stroke="#112436" stroke-width="1" opacity=".55"/>
+  <rect x="56" y="48" width="688" height="354" rx="16" fill="url(#panel)" stroke="#3b82f6" stroke-opacity=".55"/>
+  <text x="92" y="104" fill="#e8f0ff" font-family="Arial, sans-serif" font-size="34" font-weight="700">First-run checklist</text>
+  <text x="94" y="136" fill="#77e7ff" font-family="Arial, sans-serif" font-size="17">Everything stays local after setup is complete.</text>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M142 225h516" stroke="#24384e" stroke-width="10"/>
+    <path d="M142 225h516" stroke="#16c8d8" stroke-width="4"/>
+    <circle cx="142" cy="225" r="32" fill="#0f172a" stroke="#16c8d8" stroke-width="4"/>
+    <circle cx="314" cy="225" r="32" fill="#0f172a" stroke="#a855f7" stroke-width="4"/>
+    <circle cx="486" cy="225" r="32" fill="#0f172a" stroke="#34d399" stroke-width="4"/>
+    <circle cx="658" cy="225" r="32" fill="#0f172a" stroke="#fbbf24" stroke-width="4"/>
+    <path d="m130 224 8 8 18-22" stroke="#16c8d8" stroke-width="5"/>
+    <path d="M303 236h22M303 224h22M303 212h22" stroke="#a855f7" stroke-width="5"/>
+    <path d="M486 206v38M467 225h38" stroke="#34d399" stroke-width="5"/>
+    <path d="M644 215h28v22h-28zM651 215v-9a7 7 0 0 1 14 0v9" stroke="#fbbf24" stroke-width="4"/>
+  </g>
+  <g font-family="Arial, sans-serif" font-size="15" fill="#c8d6ea" text-anchor="middle">
+    <text x="142" y="294">Open Setup</text>
+    <text x="314" y="294">Pick model</text>
+    <text x="486" y="294">Offline check</text>
+    <text x="658" y="294">Start chat</text>
+  </g>
+  <rect x="94" y="326" width="612" height="40" rx="8" fill="#0f172a" stroke="#1f6feb" stroke-opacity=".55"/>
+  <text x="116" y="352" fill="#dce8ff" font-family="Arial, sans-serif" font-size="15">Tip: run the offline check before using Cleverly on sensitive machines.</text>
+</svg>

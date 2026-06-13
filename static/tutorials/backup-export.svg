@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">Backup and export guide</title>
+  <desc id="desc">A local backup workflow showing export, verify, and store offline.</desc>
+  <rect width="800" height="450" fill="#10100b"/>
+  <rect x="58" y="48" width="684" height="354" rx="16" fill="#17150f" stroke="#fbbf24" stroke-opacity=".6"/>
+  <text x="94" y="104" fill="#fff7db" font-family="Arial, sans-serif" font-size="34" font-weight="700">Backups and exports</text>
+  <text x="96" y="136" fill="#fde68a" font-family="Arial, sans-serif" font-size="17">Create local backups only when you choose to move data out.</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="110" y="188" width="150" height="126" rx="10" fill="#211b10" stroke="#fbbf24" stroke-opacity=".6"/>
+    <rect x="325" y="188" width="150" height="126" rx="10" fill="#181f17" stroke="#34d399" stroke-opacity=".55"/>
+    <rect x="540" y="188" width="150" height="126" rx="10" fill="#171a24" stroke="#60a5fa" stroke-opacity=".55"/>
+    <text x="185" y="238" fill="#fff1b8" font-size="18" font-weight="700" text-anchor="middle">Export</text>
+    <text x="400" y="238" fill="#dcfce7" font-size="18" font-weight="700" text-anchor="middle">Verify</text>
+    <text x="615" y="238" fill="#dbeafe" font-size="18" font-weight="700" text-anchor="middle">Store</text>
+    <text x="185" y="270" fill="#e5e7eb" font-size="13" text-anchor="middle">Save local file</text>
+    <text x="400" y="270" fill="#e5e7eb" font-size="13" text-anchor="middle">Check manifest</text>
+    <text x="615" y="270" fill="#e5e7eb" font-size="13" text-anchor="middle">Offline media</text>
+  </g>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="4">
+    <path d="M185 202v50M166 232l19 20 19-20" stroke="#fbbf24"/>
+    <path d="m383 252 13 13 28-38" stroke="#34d399"/>
+    <path d="M595 221h40v42h-40zM604 221v-10h22v10" stroke="#60a5fa"/>
+    <path d="M265 252h54M480 252h54" stroke="#64748b"/>
+  </g>
+  <rect x="132" y="348" width="536" height="34" rx="8" fill="#0d1117" stroke="#fbbf24" stroke-opacity=".38"/>
+  <text x="400" y="370" fill="#fde68a" font-family="Arial, sans-serif" font-size="14" text-anchor="middle">Backups are deliberate, visible actions. Nothing uploads automatically.</text>
+</svg>

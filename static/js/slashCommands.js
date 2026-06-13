@@ -1187,7 +1187,7 @@ async function _cmdMode(args, ctx) {
 async function _cmdOpen(args, ctx) {
   const target = (args[0] || '').trim().toLowerCase();
   if (!target) {
-    slashReply('Open what? Try /open Cookbook, /open Settings, /open Gallery, /open Notes, /open Tasks, /open Library, /open Research, or /open Compare.');
+    slashReply('Open what? Try /open Tutorials, /open Cookbook, /open Settings, /open Gallery, /open Notes, /open Tasks, /open Library, /open Research, or /open Compare.');
     return true;
   }
   const clickFirst = (...ids) => {
@@ -1210,6 +1210,9 @@ async function _cmdOpen(args, ctx) {
     }
     const targets = {
       gallery: ['tool-gallery-btn', 'rail-gallery'],
+      tutorials: ['tool-tutorials-btn', 'rail-tutorials'],
+      tutorial: ['tool-tutorials-btn', 'rail-tutorials'],
+      help: ['tool-tutorials-btn', 'rail-tutorials'],
       notes: ['tool-notes-btn', 'rail-notes'],
       tasks: ['tool-tasks-btn', 'rail-tasks'],
       library: ['tool-library-btn', 'rail-archive'],
@@ -5551,7 +5554,7 @@ const COMMANDS = {
     hidden: true,
     help: 'Open a tool panel',
     handler: _cmdOpen,
-    usage: '/open Cookbook'
+    usage: '/open Tutorials'
   },
   models: {
     alias: ['model'],

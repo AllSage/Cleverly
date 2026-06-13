@@ -40,6 +40,7 @@ import trainingLabModule from './js/trainingLab.js';
 import codeWorkspaceModule from './js/codeWorkspace.js';
 import offlineControlModule from './js/offlineControl.js';
 import setupWizardModule from './js/setupWizard.js';
+import tutorialsModule from './js/tutorials.js';
 import groupModule from './js/group.js';
 import * as researchPanelModule from './js/research/panel.js';
 import ttsModule from './js/tts-ai.js';
@@ -57,6 +58,7 @@ window.cookbookModule = cookbookModule;
 window.trainingLabModule = trainingLabModule;
 window.offlineControlModule = offlineControlModule;
 window.setupWizardModule = setupWizardModule;
+window.tutorialsModule = tutorialsModule;
 
 // Redirect to login on 401 from any fetch
 const _origFetch = window.fetch;
@@ -823,6 +825,17 @@ function initializeEventListeners() {
     });
   }
 
+  const toolTutorialsBtn = el('tool-tutorials-btn');
+  if (toolTutorialsBtn) {
+    toolTutorialsBtn.addEventListener('click', async () => {
+      if (!tutorialsModule) return;
+      const Modals = await import('./js/modalManager.js');
+      if (!Modals.toggle('tutorials-modal')) {
+        tutorialsModule.open();
+      }
+    });
+  }
+
   const toolCodeWorkspaceBtn = el('tool-code-workspace-btn');
   if (toolCodeWorkspaceBtn) {
     toolCodeWorkspaceBtn.addEventListener('click', async () => {
@@ -1023,6 +1036,7 @@ function initializeEventListeners() {
     '/calendar': () => calendarModule && calendarModule.openCalendar(),
     '/cookbook': () => document.getElementById('tool-cookbook-btn')?.click(),
     '/training': () => document.getElementById('tool-training-btn')?.click(),
+    '/tutorials': () => document.getElementById('tool-tutorials-btn')?.click(),
     '/code': () => document.getElementById('tool-code-workspace-btn')?.click(),
     '/offline': () => document.getElementById('tool-offline-btn')?.click(),
     '/setup': () => document.getElementById('welcome-setup-btn')?.click(),
@@ -2478,6 +2492,7 @@ function initializeEventListeners() {
     'tool-compare':        '#tool-compare-btn',
     'tool-cookbook':       '#tool-cookbook-btn',
     'tool-training':       '#tool-training-btn',
+    'tool-tutorials':      '#tool-tutorials-btn',
     'tool-code-workspace': '#tool-code-workspace-btn',
     'tool-offline':        '#tool-offline-btn',
     'tool-research':       '#tool-research-btn',
@@ -3582,6 +3597,7 @@ function startCleverlyApp() {
     'rail-research':  'tool-research-btn',
     'rail-cookbook':   'tool-cookbook-btn',
     'rail-training':   'tool-training-btn',
+    'rail-tutorials':  'tool-tutorials-btn',
     'rail-offline':    'tool-offline-btn',
     'rail-archive':   'tool-library-btn',
     'rail-gallery':   'tool-gallery-btn',

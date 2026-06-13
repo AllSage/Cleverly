@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">Local training guide</title>
+  <desc id="desc">A local fine tuning workflow using datasets, LoRA, and offline artifacts.</desc>
+  <rect width="800" height="450" fill="#0c0f16"/>
+  <rect x="56" y="48" width="688" height="354" rx="16" fill="#111722" stroke="#22c55e" stroke-opacity=".55"/>
+  <text x="94" y="104" fill="#ecfff2" font-family="Arial, sans-serif" font-size="34" font-weight="700">Local training</text>
+  <text x="96" y="136" fill="#86efac" font-family="Arial, sans-serif" font-size="17">Prepare datasets and train adapters without leaving the machine.</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="106" y="188" width="140" height="138" rx="10" fill="#102018" stroke="#22c55e" stroke-opacity=".55"/>
+    <rect x="330" y="172" width="140" height="170" rx="10" fill="#111827" stroke="#a78bfa" stroke-opacity=".55"/>
+    <rect x="554" y="188" width="140" height="138" rx="10" fill="#111827" stroke="#38bdf8" stroke-opacity=".55"/>
+    <text x="176" y="238" fill="#dcfce7" font-size="18" font-weight="700" text-anchor="middle">Dataset</text>
+    <text x="400" y="238" fill="#ede9fe" font-size="18" font-weight="700" text-anchor="middle">Adapter</text>
+    <text x="624" y="238" fill="#e0f7ff" font-size="18" font-weight="700" text-anchor="middle">Test</text>
+    <text x="176" y="272" fill="#d1d5db" font-size="13" text-anchor="middle">JSONL files</text>
+    <text x="400" y="272" fill="#d1d5db" font-size="13" text-anchor="middle">LoRA output</text>
+    <text x="624" y="272" fill="#d1d5db" font-size="13" text-anchor="middle">Local eval</text>
+  </g>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="4">
+    <path d="M162 212h28M162 236h28M162 260h28" stroke="#22c55e"/>
+    <path d="M388 206h24M400 194v24M382 302h36" stroke="#a78bfa"/>
+    <path d="M610 224h28M610 248h28M610 272h18" stroke="#38bdf8"/>
+    <path d="M250 258h74M474 258h74" stroke="#64748b"/>
+  </g>
+  <rect x="110" y="354" width="580" height="30" rx="7" fill="#0d151c" stroke="#22c55e" stroke-opacity=".4"/>
+  <text x="400" y="374" fill="#bbf7d0" font-family="Arial, sans-serif" font-size="13" text-anchor="middle">Reference packs are documentation only unless you import files manually.</text>
+</svg>
