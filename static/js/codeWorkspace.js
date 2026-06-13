@@ -26,6 +26,7 @@ function ensureStyles() {
   style.textContent = `
     .code-workspace-body{height:calc(100% - 46px);padding:12px;box-sizing:border-box;overflow:hidden;}
     .code-ws-grid{display:grid;grid-template-columns:minmax(210px,280px) 1fr;gap:10px;height:100%;min-height:0;}
+    .code-ws-editor-grid{grid-template-columns:minmax(210px,260px) 1fr;gap:8px;min-height:0;}
     .code-ws-pane{border:1px solid var(--border);background:color-mix(in srgb,var(--panel) 72%,transparent);border-radius:8px;min-height:0;overflow:hidden;display:flex;flex-direction:column;}
     .code-ws-head{display:flex;gap:6px;align-items:center;padding:8px;border-bottom:1px solid var(--border);}
     .code-ws-list,.code-ws-tree{overflow:auto;padding:6px;min-height:0;}
@@ -49,7 +50,28 @@ function ensureStyles() {
     .code-ws-btn:disabled{opacity:.45;cursor:not-allowed;}
     .code-ws-output{height:138px;overflow:auto;background:#0f1117;color:#e7eaf0;border:1px solid var(--border);border-radius:8px;padding:9px;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;}
     .code-ws-path{font-size:12px;opacity:.75;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-    @media(max-width:760px){.code-ws-grid{grid-template-columns:1fr;grid-template-rows:220px 1fr}.code-ws-review-meta{grid-template-columns:1fr}.code-workspace-body{overflow:auto}.code-ws-main{min-height:640px}}
+    @media(max-width:760px){
+      .code-workspace-body{overflow:auto;}
+      .code-ws-shell{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto;min-height:100%;}
+      .code-ws-pane{overflow:visible;}
+      .code-ws-list{min-height:76px;max-height:180px;}
+      .code-ws-main{display:flex;flex-direction:column;height:auto;min-height:0;}
+      .code-ws-editor-grid{grid-template-columns:1fr;grid-template-rows:auto minmax(260px,42vh);height:auto;}
+      .code-ws-tree{max-height:170px;border:1px solid var(--border);border-radius:6px;}
+      .code-ws-review-meta{grid-template-columns:1fr;}
+      .code-ws-toolbar{align-items:stretch;}
+      .code-ws-toolbar .code-ws-input{flex:1 1 150px;}
+      #code-ws-current{flex:1 1 100%;width:100%;min-width:0;}
+      #code-ws-command,#code-ws-commit-msg{flex:1 1 100%!important;width:100%;}
+    }
+    @media(max-width:420px){
+      .code-workspace-body{padding:8px;}
+      .code-ws-head{padding:7px;flex-wrap:wrap;}
+      .code-ws-head .code-ws-input{flex:1 1 150px!important;}
+      .code-ws-toolbar{gap:5px;}
+      .code-ws-btn{padding:0 8px;}
+      .code-ws-output{height:160px;}
+    }
   `;
   document.head.appendChild(style);
 }
@@ -92,7 +114,7 @@ function renderShell() {
   const host = body();
   if (!host) return;
   host.innerHTML = `
-    <div class="code-ws-grid">
+    <div class="code-ws-grid code-ws-shell">
       <section class="code-ws-pane">
         <div class="code-ws-head">
           <input class="code-ws-input" id="code-ws-new-name" placeholder="Workspace name" style="flex:1">
@@ -142,7 +164,7 @@ function renderShell() {
             <input class="code-ws-input" id="code-ws-command" placeholder="pytest -q" style="flex:1">
             <button class="code-ws-btn" id="code-ws-run">Run</button>
           </div>
-          <div class="code-ws-grid" style="grid-template-columns:minmax(210px,260px) 1fr;gap:8px;min-height:0;">
+          <div class="code-ws-grid code-ws-editor-grid">
             <div class="code-ws-tree" id="code-ws-tree"></div>
             <textarea class="code-ws-editor" id="code-ws-editor" spellcheck="false" placeholder="Select a file or paste a unified diff."></textarea>
           </div>
