@@ -24,18 +24,67 @@ It runs on your hardware, with your data.
 - **Calendar**: local-first calendar with CalDAV sync and `.ics` import/export.
 - **Mobile / PWA**: responsive interface with installable app behavior.
 
-## Quick Start
+## Start Here
 
-Defaults work out of the box: clone, run, then configure models/search/email
-inside **Settings**. Only edit `.env` for deployment-level overrides like
-`APP_BIND`, `APP_PORT`, `AUTH_ENABLED`, `DATABASE_URL`, or a pre-seeded admin password.
+Pick the path that matches your machine.
 
-On first setup, Cleverly creates an admin account (`admin` unless
-`CLEVERLY_ADMIN_USER` is set) and prints a temporary password in the terminal.
-For Docker installs, the same line is in `docker compose logs cleverly`.
-Use that for the first login, then change it in **Settings**.
+### Windows Offline App
 
-### Docker
+Use this after the Docker images and local model have already been prepared:
+
+```powershell
+.\Cleverly.ps1 start -FineTune
+```
+
+If you did not build the optional fine-tune image, use:
+
+```powershell
+.\Cleverly.ps1 start
+```
+
+Open:
+
+```text
+http://127.0.0.1:7000
+```
+
+Common commands:
+
+```powershell
+.\Cleverly.ps1 start
+.\Cleverly.ps1 start -FineTune
+.\Cleverly.ps1 stop
+.\Cleverly.ps1 status
+.\Cleverly.ps1 logs
+```
+
+Double-clicking `Cleverly.cmd` also starts the offline app and opens the
+browser. The Windows launcher does not pull, build, or download during normal
+start.
+
+If images or models are missing, run prep on a connected, non-sensitive machine:
+
+```powershell
+.\Cleverly.ps1 prep -AllowConnectedPrep -FineTune
+```
+
+Then move the prepared images/data to the offline machine and start again.
+
+### First Login
+
+On first boot, Cleverly creates an admin account named `admin` unless
+`CLEVERLY_ADMIN_USER` is set. The temporary password is printed in the terminal.
+For Docker, get it with:
+
+```bash
+docker compose logs cleverly
+```
+
+Log in, then change the password in **Settings**.
+
+### Docker Quick Start
+
+Use this for a normal connected development machine:
 
 ```bash
 git clone https://github.com/AllSage/Cleverly.git
@@ -45,98 +94,56 @@ mkdir -p data logs data/ssh data/cache data/huggingface data/local data/npm-cach
 docker compose up -d --build
 ```
 
-Open `http://localhost:7000` when the containers are healthy. Docker Compose
-publishes only a localhost proxy on `127.0.0.1` by default. The Cleverly app
-container itself runs on an internal-only Docker network with no internet
-egress. If the port is taken, set `APP_PORT=7001` in `.env` and recreate the
-container. Keep `APP_BIND=127.0.0.1` unless you are deliberately placing a
-trusted reverse proxy in front of it.
+Open `http://127.0.0.1:7000`.
 
-The Compose project/stack is named `cleverly`. The main Docker container is
-also named `cleverly` by default, so common checks work with commands like
-`docker logs cleverly`. The proxy and bundled Ollama containers default to
-`cleverly-proxy` and `cleverly-ollama`.
+Docker uses the Compose stack name `cleverly`. The main containers default to:
 
-On Windows, the app-style Docker launcher starts at the offline runtime step
-after the images and model are already prepared:
-
-```powershell
-.\Cleverly.ps1 start
-.\Cleverly.ps1 stop
-.\Cleverly.ps1 status
+```text
+cleverly
+cleverly-proxy
+cleverly-ollama
 ```
 
-Double-clicking `Cleverly.cmd` runs the same offline `start` path and opens the
-browser. It does not pull, build, or download.
+### Offline Docker Start
 
-If the optional `cleverly:finetune` image and trainable local model files are
-already prepared, start the offline runtime with Advanced LoRA enabled:
-
-```powershell
-.\Cleverly.ps1 start -FineTune
-```
-
-Connected prep is intentionally opt-in and should be run only on a non-sensitive
-connected prep machine:
-
-```powershell
-.\Cleverly.ps1 prep -AllowConnectedPrep
-```
-
-### Offline Docker
-
-Docker is offline-by-default. For a no-internet runtime, build or load the
-images first, then start without pulling or building:
+Use this after images and model data have already been built or loaded:
 
 ```bash
-docker compose --env-file .env.example up -d --no-build --pull never
+docker compose --env-file .env \
+  -f docker-compose.yml \
+  -f docker/ollama-offline.yml \
+  up -d --no-build --pull never
 ```
 
-The default Compose stack puts the Cleverly app container on an internal-only
-Docker network, so the app cannot reach the internet. A tiny no-data proxy sidecar
-publishes `127.0.0.1:7000` and forwards only to the app container, so the UI
-still works in your browser. Compose also sets `CLEVERLY_OFFLINE=1`, which
-disables web search/fetch/deep-research defaults and skips startup network
-warmups.
+With the optional fine-tune image:
 
-If you need to move this to an air-gapped machine, build and pull images on a
-connected machine, then transfer them with `docker save` / `docker load`.
-Pre-seed `./data/huggingface` and `./data/cache/fastembed` if you want local
-models or embeddings available without downloads.
+```bash
+docker compose --env-file .env \
+  -f docker-compose.yml \
+  -f docker/ollama-offline.yml \
+  -f docker/finetune.yml \
+  up -d --no-build --pull never
+```
 
-See [docs/offline-release.md](docs/offline-release.md) for the full offline
-release and verification checklist.
+The app container runs on an internal-only Docker network. Only the local proxy
+binds to `127.0.0.1:7000`, so your browser can use the app while the app
+container has no internet egress.
 
-The built-in [Training Lab](docs/local-training-lab.md) also runs offline. It
-uses pasted local text and writes datasets/artifacts under `./data/training`;
-it does not download datasets or call model endpoints. Advanced LoRA
-fine-tuning is available only when its optional dependencies and a trainable
-local model directory are already baked into the image.
-External AI/security references are tracked as
-[study packs](docs/external-agent-study-packs.md) only; Cleverly does not pull
-or execute those repositories during offline runtime.
+For the full air-gap checklist, use
+[docs/offline-release.md](docs/offline-release.md).
 
-### Docker With Bundled Ollama
+### Pull A Local Model
 
-To have Docker pull a local model on a connected machine, add the Ollama
-overlay. The default model is `llama3.2:3b`; override `OLLAMA_MODEL` for a
-different Ollama tag.
+Run this only on a connected prep machine. The default model is
+`llama3.2:3b`; set `OLLAMA_MODEL` to another Ollama tag if needed.
 
 ```bash
 docker build -f docker/ollama-local.Dockerfile -t cleverly-ollama:local .
 OLLAMA_MODEL=llama3.2:3b docker compose -f docker-compose.yml -f docker/ollama.yml up -d --build
 ```
 
-This stores Ollama models under `./data/ollama`, registers
-`http://ollama:11434/v1` as a Cleverly endpoint, and sets the pulled model as
-the default if no default model is already configured.
-
-For offline use, pull the model on a connected machine first, transfer
-`./data/ollama` with the Docker images, then start with:
-
-```bash
-docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.yml up -d --no-build --pull never
-```
+This stores Ollama models under `./data/ollama`. Copy that directory with the
+Docker images to the offline machine.
 
 ### Native Linux / macOS
 
@@ -154,23 +161,6 @@ Use `--host 0.0.0.0` only when you intentionally want LAN or reverse-proxy acces
 
 Requirements: Python 3.11+. Cookbook also needs `tmux` for background model
 downloads and serves.
-
-### Apple Silicon
-
-Docker on macOS cannot use the Metal GPU. For GPU-accelerated Cookbook on an
-M-series Mac, run Cleverly natively:
-
-```bash
-git clone https://github.com/AllSage/Cleverly.git
-cd Cleverly
-./start-macos.sh
-```
-
-It launches at `http://127.0.0.1:7860`. To build a clickable app wrapper:
-
-```bash
-./build-macos-app.sh
-```
 
 ### Native Windows
 
@@ -193,6 +183,35 @@ python -m uvicorn app:app --host 127.0.0.1 --port 7000
 For full Cookbook background downloads and the agent shell tool on Windows,
 install [Git for Windows](https://git-scm.com/download/win) so `bash.exe` is
 available.
+
+### Apple Silicon
+
+Docker on macOS cannot use the Metal GPU. For GPU-accelerated Cookbook on an
+M-series Mac, run Cleverly natively:
+
+```bash
+git clone https://github.com/AllSage/Cleverly.git
+cd Cleverly
+./start-macos.sh
+```
+
+It launches at `http://127.0.0.1:7860`. To build a clickable app wrapper:
+
+```bash
+./build-macos-app.sh
+```
+
+### Training Lab
+
+The built-in [Training Lab](docs/local-training-lab.md) runs offline. It uses
+pasted local text and writes datasets/artifacts under `./data/training`; it does
+not download datasets or call model endpoints. Advanced LoRA fine-tuning works
+only when its optional dependencies and a trainable local model directory are
+already baked into the image.
+
+External AI/security references are tracked as
+[study packs](docs/external-agent-study-packs.md) only. Cleverly does not pull
+or execute those repositories during offline runtime.
 
 ## Docker Notes
 
