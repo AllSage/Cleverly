@@ -1,4 +1,4 @@
-# Encrypted Docker Data Root
+# Optional Encrypted Docker Data Root
 
 Cleverly sealed mode stores app data and models in Docker named volumes. On
 Docker Desktop for Windows, those volumes live inside Docker Desktop's Linux
@@ -11,6 +11,12 @@ C:\Users\<user>\AppData\Local\Docker\wsl\disk\docker_data.vhdx
 Encrypt the Windows volume that holds that VHDX to protect Cleverly data at
 rest. On Windows 10/11 Pro, the practical path is BitLocker.
 
+This is optional host hardening. It is not required to start or use Cleverly,
+and it requires Administrator rights. If the offline computer does not allow
+admin access, skip this step and run Cleverly in sealed offline mode. In that
+case, at-rest disk encryption must come from the organization's device policy or
+the machine's existing full-disk encryption.
+
 This protects against offline theft of the disk or copied VHDX. It does not
 protect against a logged-in Windows administrator, a user with Docker Desktop
 access, malware running in your session, or the app while the machine is
@@ -18,7 +24,7 @@ unlocked.
 
 ## Windows Check
 
-Run from an Administrator PowerShell session:
+Run from an Administrator PowerShell session when you have admin rights:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\windows-docker-data-root-bitlocker.ps1
@@ -26,7 +32,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows-docker-data-root-bitl
 
 The script finds Docker Desktop's data VHDX and reports the BitLocker status of
 the Windows volume that contains it. Some Windows policies deny BitLocker status
-to non-admin users. Use this stricter check in setup scripts:
+to non-admin users; in normal check mode the script will warn and exit without
+blocking Cleverly. Use this stricter check only in setup scripts where
+encryption is mandatory:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\windows-docker-data-root-bitlocker.ps1 -RequireEncrypted
@@ -34,8 +42,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\windows-docker-data-root-bitl
 
 ## Windows Enable
 
-Run PowerShell as Administrator and pass a recovery-key path on a removable
-drive or another secure location:
+This step is optional and requires Administrator rights. Run PowerShell as
+Administrator and pass a recovery-key path on a removable drive or another
+secure location:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\windows-docker-data-root-bitlocker.ps1 -Enable -RecoveryKeyPath E:\Cleverly-BitLocker-RecoveryKey.txt

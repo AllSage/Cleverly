@@ -61,7 +61,13 @@ function Get-BitLockerState([string]$MountPoint) {
         return Get-BitLockerVolume -MountPoint $MountPoint
     } catch {
         if (-not (Test-IsAdministrator)) {
-            Fail "BitLocker status requires an elevated PowerShell session. Re-run this script as Administrator."
+            if ($RequireEncrypted) {
+                Fail "BitLocker status requires Administrator rights, so encrypted Docker storage could not be verified." 2
+            }
+            Write-Host ""
+            Write-Host "WARNING: BitLocker status requires Administrator rights on this computer." -ForegroundColor Yellow
+            Write-Host "Skipping optional encrypted data-root verification. Cleverly can still run in sealed offline mode without this host hardening."
+            exit 0
         }
         throw
     }

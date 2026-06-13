@@ -25,9 +25,9 @@ on `127.0.0.1:${APP_PORT:-7000}`.
   named volumes by default.
 - Supports explicit host-folder bind mounts only with `-HostData`,
   `CLEVERLY_HOST_DATA=1`, or `docker/host-data.yml`.
-- Treats Docker-volume sealing as storage isolation, not encryption. Use
-  [encrypted Docker data root](encrypted-docker-data-root.md) hardening for
-  at-rest protection.
+- Treats Docker-volume sealing as storage isolation, not encryption. Optional
+  [encrypted Docker data root](encrypted-docker-data-root.md) hardening can add
+  at-rest protection when the operator has host admin rights.
 
 ## Connected Build Machine
 

@@ -263,12 +263,13 @@ volumes by default. The Docker entrypoint also refuses to start with
 is explicitly set.
 
 Sealed Docker volumes are not encryption. A host administrator, anyone with
-Docker access, or anyone with access to Docker's data root can inspect them. For
-stronger at-rest protection, use full-disk encryption or an encrypted Docker
-data root. On Windows, use
+Docker access, or anyone with access to Docker's data root can inspect them.
+Optional stronger at-rest protection can come from full-disk encryption or an
+encrypted Docker data root. On Windows, use
 [docs/encrypted-docker-data-root.md](docs/encrypted-docker-data-root.md) to
-check or enable BitLocker protection for the drive holding Docker Desktop's data
-disk.
+check or enable BitLocker protection when you have Administrator rights. If the
+target computer does not allow admin access, skip that optional hardening and
+run the sealed offline container normally.
 
 To use the old visible host-folder layout, add `-f docker/host-data.yml` to
 manual Compose commands or pass `-HostData` to `Cleverly.ps1`. On Linux, make

@@ -172,8 +172,12 @@ def test_encrypted_docker_data_root_hardening_is_documented():
 
     assert "docker_data.vhdx" in doc
     assert "BitLocker" in doc
+    assert "optional host hardening" in doc
+    assert "not required to start or use Cleverly" in doc
     assert "logged-in Windows administrator" in doc
     assert "RecoveryKeyPath" in script
+    assert "Skipping optional encrypted data-root verification" in script
+    assert "RequireEncrypted" in script
     assert "Get-BitLockerVolume" in script
     assert "Enable-BitLocker" in script
     assert "XtsAes256" in script
