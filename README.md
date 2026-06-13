@@ -55,6 +55,24 @@ The main Docker container is named `cleverly` by default, so common checks work
 with commands like `docker logs cleverly`. The proxy and bundled Ollama
 containers default to `cleverly-proxy` and `cleverly-ollama`.
 
+On Windows, you can use the app-style Docker launcher after the images and
+model are prepared:
+
+```powershell
+.\Cleverly.ps1 start
+.\Cleverly.ps1 stop
+.\Cleverly.ps1 status
+```
+
+First-time connected prep can be run with:
+
+```powershell
+.\Cleverly.ps1 prep
+```
+
+Double-clicking `Cleverly.cmd` starts the same offline Docker runtime and opens
+the browser.
+
 ### Offline Docker
 
 Docker is offline-by-default. For a no-internet runtime, build or load the

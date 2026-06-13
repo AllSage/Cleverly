@@ -153,6 +153,16 @@ def test_docker_entrypoint_requires_explicit_network_break_glass():
     assert "exit 64" in entrypoint
 
 
+def test_windows_app_launcher_uses_offline_docker_runtime():
+    launcher = Path("Cleverly.ps1").read_text(encoding="utf-8")
+    cmd = Path("Cleverly.cmd").read_text(encoding="utf-8")
+    assert "--pull never" in launcher
+    assert "docker/ollama-offline.yml" in launcher
+    assert "cleverly:local" in launcher
+    assert "cleverly-ollama:local" in launcher
+    assert "Cleverly.ps1" in cmd
+
+
 def test_ollama_overlays_use_persistent_model_cache_and_auto_seed():
     connected = Path("docker/ollama.yml").read_text(encoding="utf-8")
     offline = Path("docker/ollama-offline.yml").read_text(encoding="utf-8")
