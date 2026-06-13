@@ -70,6 +70,9 @@ connected machine, then transfer them with `docker save` / `docker load`.
 Pre-seed `./data/huggingface` and `./data/cache/fastembed` if you want local
 models or embeddings available without downloads.
 
+See [docs/offline-release.md](docs/offline-release.md) for the full offline
+release and verification checklist.
+
 ### Native Linux / macOS
 
 ```bash
