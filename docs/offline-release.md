@@ -130,12 +130,24 @@ On Windows, the launcher uses that same offline start path:
 .\Cleverly.ps1 start
 ```
 
+For the optional fine-tune image on Windows:
+
+```powershell
+.\Cleverly.ps1 start -FineTune
+```
+
 Do not run connected prep on the offline/sensitive machine. If you need the
 Windows prep helper, run it only on a connected prep machine and pass the
 explicit opt-in:
 
 ```powershell
 .\Cleverly.ps1 prep -AllowConnectedPrep
+```
+
+To build the optional fine-tune image during connected prep:
+
+```powershell
+.\Cleverly.ps1 prep -AllowConnectedPrep -FineTune
 ```
 
 Open:

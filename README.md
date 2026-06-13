@@ -69,6 +69,13 @@ after the images and model are already prepared:
 Double-clicking `Cleverly.cmd` runs the same offline `start` path and opens the
 browser. It does not pull, build, or download.
 
+If the optional `cleverly:finetune` image and trainable local model files are
+already prepared, start the offline runtime with Advanced LoRA enabled:
+
+```powershell
+.\Cleverly.ps1 start -FineTune
+```
+
 Connected prep is intentionally opt-in and should be run only on a non-sensitive
 connected prep machine:
 

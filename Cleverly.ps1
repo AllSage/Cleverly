@@ -15,6 +15,7 @@
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 status
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 logs
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 prep -AllowConnectedPrep
+    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 start -FineTune
 #>
 param(
     [ValidateSet("start", "stop", "restart", "status", "open", "logs", "prep")]
@@ -22,7 +23,8 @@ param(
     [string]$Url = "http://127.0.0.1:7000",
     [string]$Model = "llama3.2:3b",
     [switch]$NoOpen,
-    [switch]$AllowConnectedPrep
+    [switch]$AllowConnectedPrep,
+    [switch]$FineTune
 )
 
 $ErrorActionPreference = "Stop"
@@ -30,6 +32,10 @@ Set-Location -Path $PSScriptRoot
 
 $env:OLLAMA_IMAGE = if ($env:OLLAMA_IMAGE) { $env:OLLAMA_IMAGE } else { "cleverly-ollama:local" }
 $env:OLLAMA_MODEL = if ($env:OLLAMA_MODEL) { $env:OLLAMA_MODEL } else { $Model }
+$UseFineTune = $FineTune -or ($env:CLEVERLY_ENABLE_FINETUNE -eq "1")
+if ($UseFineTune) {
+    $env:CLEVERLY_FINETUNE_IMAGE = if ($env:CLEVERLY_FINETUNE_IMAGE) { $env:CLEVERLY_FINETUNE_IMAGE } else { "cleverly:finetune" }
+}
 
 $ComposeArgs = @(
     "--project-name", "cleverly",
@@ -37,6 +43,9 @@ $ComposeArgs = @(
     "-f", "docker-compose.yml",
     "-f", "docker/ollama-offline.yml"
 )
+if ($UseFineTune) {
+    $ComposeArgs += @("-f", "docker/finetune.yml")
+}
 
 function Write-Step([string]$Message) {
     Write-Host ""
@@ -90,6 +99,9 @@ function Start-Cleverly {
     if (-not (Test-Image $env:OLLAMA_IMAGE)) {
         Fail "Missing image $env:OLLAMA_IMAGE. This launcher will not pull models during start. Load prepared images/models first, or run '.\Cleverly.ps1 prep -AllowConnectedPrep' only on a connected prep machine."
     }
+    if ($UseFineTune -and -not (Test-Image $env:CLEVERLY_FINETUNE_IMAGE)) {
+        Fail "Missing image $env:CLEVERLY_FINETUNE_IMAGE. Build it on a connected prep machine with 'docker compose --project-name cleverly -f docker-compose.yml -f docker/finetune.yml build cleverly', then start with '.\Cleverly.ps1 start -FineTune'."
+    }
 
     Write-Step "Starting Cleverly offline runtime"
     docker compose @ComposeArgs up -d --no-deps --no-build --pull never ollama cleverly cleverly_proxy
@@ -103,6 +115,9 @@ function Start-Cleverly {
 
     Write-Host ""
     Write-Host "Cleverly is running: $Url" -ForegroundColor Green
+    if ($UseFineTune) {
+        Write-Host "Advanced LoRA fine-tuning image enabled." -ForegroundColor Green
+    }
     Show-Status
     if (-not $NoOpen) {
         Start-Process $Url
@@ -132,6 +147,12 @@ function Prep-Cleverly {
     Write-Step "Pulling Ollama model into ./data/ollama"
     docker compose --project-name cleverly --env-file .env.example -f docker-compose.yml -f docker/ollama.yml run --rm ollama_pull
     if ($LASTEXITCODE -ne 0) { Fail "Failed to pull Ollama model $env:OLLAMA_MODEL." }
+
+    if ($FineTune) {
+        Write-Step "Building optional fine-tune image"
+        docker compose --project-name cleverly --env-file .env.example -f docker-compose.yml -f docker/finetune.yml build cleverly
+        if ($LASTEXITCODE -ne 0) { Fail "Failed to build cleverly:finetune." }
+    }
 }
 
 switch ($Action) {

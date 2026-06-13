@@ -8,6 +8,7 @@ behavior.
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import os
 import sys
@@ -74,6 +75,18 @@ def _force_offline_env() -> None:
 
 def _target_modules(value: str) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def _training_arguments(cls: type[Any], **kwargs: Any) -> Any:
+    signature = inspect.signature(cls.__init__)
+    supported = {
+        name
+        for name, parameter in signature.parameters.items()
+        if name != "self"
+        and parameter.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    }
+    return cls(**{name: value for name, value in kwargs.items() if name in supported})
 
 
 def main() -> int:
@@ -157,7 +170,8 @@ def main() -> int:
         )
         model = get_peft_model(model, lora)
 
-        training_args = TrainingArguments(
+        training_args = _training_arguments(
+            TrainingArguments,
             output_dir=str(output_dir),
             overwrite_output_dir=True,
             num_train_epochs=args.epochs,
@@ -209,4 +223,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

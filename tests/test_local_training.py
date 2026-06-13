@@ -86,3 +86,23 @@ def test_finetune_offline_environment_flags():
     assert env["TRANSFORMERS_OFFLINE"] == "1"
     assert env["HF_DATASETS_OFFLINE"] == "1"
     assert env["NO_PROXY"] == "*"
+
+
+def test_finetune_training_arguments_filter_unsupported_options():
+    from src.offline_finetune_runner import _training_arguments
+
+    class DummyTrainingArguments:
+        def __init__(self, output_dir=None, max_steps=-1):
+            self.output_dir = output_dir
+            self.max_steps = max_steps
+
+    args = _training_arguments(
+        DummyTrainingArguments,
+        output_dir="out",
+        max_steps=1,
+        overwrite_output_dir=True,
+    )
+
+    assert args.output_dir == "out"
+    assert args.max_steps == 1
+    assert not hasattr(args, "overwrite_output_dir")
