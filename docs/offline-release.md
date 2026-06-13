@@ -46,7 +46,7 @@ docker compose --env-file .env pull chromadb searxng ntfy
 On Windows, the easiest connected-prep path is the bundle command:
 
 ```powershell
-.\Cleverly.ps1 bundle -AllowConnectedPrep -FineTune
+.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen2.5:7b -FineTune
 ```
 
 It builds the local images, pulls support service images, pulls the configured
@@ -59,15 +59,15 @@ the connected machine:
 
 ```bash
 docker build -f docker/ollama-local.Dockerfile -t cleverly-ollama:local .
-OLLAMA_MODEL=llama3.2:3b docker compose --env-file .env \
+OLLAMA_MODEL=qwen2.5:7b docker compose --env-file .env \
   -f docker-compose.yml \
   -f docker/ollama.yml \
   up -d --build
 ```
 
-Set `OLLAMA_MODEL` to a different Ollama tag if needed. Cleverly will register
-`http://ollama:11434/v1` and make the pulled model the default when no default
-model is already configured.
+Set `OLLAMA_MODEL` to the exact tag you want as the primary offline model.
+Cleverly will register `http://ollama:11434/v1` and make the selected model the
+default when no default model is already configured.
 
 Save the images to a portable archive:
 
@@ -187,13 +187,13 @@ Windows prep helper, run it only on a connected prep machine and pass the
 explicit opt-in:
 
 ```powershell
-.\Cleverly.ps1 prep -AllowConnectedPrep
+.\Cleverly.ps1 prep -AllowConnectedPrep -Model qwen2.5:7b
 ```
 
 To build the optional fine-tune image during connected prep:
 
 ```powershell
-.\Cleverly.ps1 prep -AllowConnectedPrep -FineTune
+.\Cleverly.ps1 prep -AllowConnectedPrep -Model qwen2.5:7b -FineTune
 ```
 
 Open:

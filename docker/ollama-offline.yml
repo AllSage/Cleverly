@@ -16,7 +16,7 @@ services:
       EMBEDDING_URL: http://ollama:11434/v1/embeddings
       CLEVERLY_AUTO_ADD_OLLAMA: "1"
       CLEVERLY_OLLAMA_ENDPOINT_NAME: ${CLEVERLY_OLLAMA_ENDPOINT_NAME:-Bundled Ollama}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:?Set OLLAMA_MODEL to the prepared primary model tag before offline start}
     depends_on:
       ollama:
         condition: service_started

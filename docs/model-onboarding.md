@@ -27,6 +27,10 @@ Sources:
 
 ## Connected Prep Commands
 
+Choose exactly one primary model when you create the prepared runtime. The
+launcher records that tag in `data/cleverly-primary-model.json` and writes it
+into the offline bundle so startup does not guess.
+
 Baseline:
 
 ```powershell
@@ -47,11 +51,22 @@ Vision:
 
 To build a portable transfer bundle instead:
 
+Baseline:
+
 ```powershell
 .\Cleverly.ps1 bundle -AllowConnectedPrep -Model llama3.2:3b
 ```
 
-Swap the `-Model` value for the tag you want.
+Balanced:
+
+```powershell
+.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen2.5:7b
+```
+
+Swap the `-Model` value for the tag you want. If you want to replace the
+primary model later, run `prep` or `bundle` again on a connected, non-sensitive
+machine with the new `-Model` value, then move the new bundle to the offline
+machine.
 
 ## Offline Machine
 
@@ -73,10 +88,10 @@ Open **Setup** or **Offline** and register:
 ```text
 Name: Local Ollama
 Base URL: http://ollama:11434/v1
-Model: llama3.2:3b
+Model: qwen2.5:7b
 ```
 
-Use the tag you actually pulled if you chose another model.
+Use the tag recorded in the bundle if you chose another model.
 
 ## Code Workspace Model
 

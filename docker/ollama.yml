@@ -5,7 +5,7 @@
 # ./data/ollama plus the Docker images, then use docker/ollama-offline.yml.
 #
 # Example:
-#   OLLAMA_MODEL=llama3.2:3b docker compose \
+#   OLLAMA_MODEL=qwen2.5:7b docker compose \
 #     -f docker-compose.yml -f docker/ollama.yml up -d --build
 services:
   cleverly:
@@ -15,7 +15,7 @@ services:
       EMBEDDING_URL: http://ollama:11434/v1/embeddings
       CLEVERLY_AUTO_ADD_OLLAMA: "1"
       CLEVERLY_OLLAMA_ENDPOINT_NAME: ${CLEVERLY_OLLAMA_ENDPOINT_NAME:-Bundled Ollama}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:?Set OLLAMA_MODEL to the primary model tag before connected prep}
     depends_on:
       ollama:
         condition: service_started
@@ -41,7 +41,7 @@ services:
     volumes:
       - ./data/ollama:/root/.ollama
     environment:
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:?Set OLLAMA_MODEL to the primary model tag before connected prep}
     entrypoint:
       - /bin/sh
       - -c

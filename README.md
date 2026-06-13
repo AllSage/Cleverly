@@ -79,10 +79,11 @@ For a small desktop-style control window, double-click:
 Cleverly-App.cmd
 ```
 
-If images or models are missing, run prep on a connected, non-sensitive machine:
+If images or models are missing, run prep on a connected, non-sensitive machine.
+Pick the primary model at creation time:
 
 ```powershell
-.\Cleverly.ps1 prep -AllowConnectedPrep -FineTune
+.\Cleverly.ps1 prep -AllowConnectedPrep -Model qwen2.5:7b -FineTune
 ```
 
 Then move the prepared images/data to the offline machine and start again.
@@ -90,12 +91,13 @@ Then move the prepared images/data to the offline machine and start again.
 To make that transfer easier, build a portable offline bundle:
 
 ```powershell
-.\Cleverly.ps1 bundle -AllowConnectedPrep -FineTune
+.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen2.5:7b -FineTune
 ```
 
 It writes `dist\cleverly-offline-bundle`. Copy that folder to the offline
 machine, then run `load-cleverly.cmd`, `seal-data.cmd`, and
-`start-cleverly.cmd` to launch.
+`start-cleverly.cmd` to launch. The selected primary model is recorded in the
+bundle and used by the offline runtime.
 
 Use `-HostData` only when you intentionally want Docker to write runtime state
 to visible `./data` and `./logs` folders:
@@ -187,12 +189,13 @@ To check a local install without downloading anything:
 ### Choose And Pull A Local Model
 
 Run this only on a connected prep machine. The starter example uses
-`llama3.2:3b`; pass `-Model` or set `OLLAMA_MODEL` to the exact Ollama tag
-you want to carry offline.
+`qwen2.5:7b`; set `OLLAMA_MODEL` to the exact Ollama tag you want to carry
+offline. With the launcher, pass `-Model` explicitly:
+`.\Cleverly.ps1 prep -AllowConnectedPrep -Model <tag>`.
 
 ```bash
 docker build -f docker/ollama-local.Dockerfile -t cleverly-ollama:local .
-OLLAMA_MODEL=llama3.2:3b docker compose -f docker-compose.yml -f docker/ollama.yml up -d --build
+OLLAMA_MODEL=qwen2.5:7b docker compose -f docker-compose.yml -f docker/ollama.yml up -d --build
 ```
 
 This stores Ollama models under `./data/ollama` for transfer. Run

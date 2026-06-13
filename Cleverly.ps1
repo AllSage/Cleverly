@@ -16,8 +16,8 @@
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 doctor
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 logs
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 seal-data -FineTune
-    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 prep -AllowConnectedPrep
-    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 bundle -AllowConnectedPrep -FineTune
+    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 prep -AllowConnectedPrep -Model qwen2.5:7b
+    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen2.5:7b -FineTune
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 start -FineTune
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 start -FineTune -HostData
 #>
@@ -25,7 +25,7 @@ param(
     [ValidateSet("start", "stop", "restart", "status", "open", "logs", "prep", "doctor", "bundle", "seal-data")]
     [string]$Action = "start",
     [string]$Url = "http://127.0.0.1:7000",
-    [string]$Model = "llama3.2:3b",
+    [string]$Model = "",
     [string]$BundleDir = "dist\cleverly-offline-bundle",
     [switch]$NoOpen,
     [switch]$AllowConnectedPrep,
@@ -36,8 +36,113 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
+$PrimaryModelFile = "data\cleverly-primary-model.json"
+
+function Fail([string]$Message) {
+    Write-Host ""
+    Write-Host ("ERROR: " + $Message) -ForegroundColor Red
+    exit 1
+}
+
+function Normalize-PrimaryModel([string]$Value) {
+    $candidate = ([string]$Value).Trim()
+    if (-not $candidate) { return "" }
+    if ($candidate.Length -gt 220 -or $candidate -notmatch '^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$') {
+        Fail "Invalid model tag '$candidate'. Use an Ollama model tag such as 'llama3.2:3b', 'qwen2.5:7b', or 'hf.co/org/model:quant'."
+    }
+    return $candidate
+}
+
+function Read-SavedPrimaryModel {
+    if (-not (Test-Path -LiteralPath $PrimaryModelFile)) { return "" }
+    try {
+        $raw = Get-Content -LiteralPath $PrimaryModelFile -Raw
+        $payload = $raw | ConvertFrom-Json
+        return Normalize-PrimaryModel ([string]$payload.primary_model)
+    } catch {
+        try {
+            return Normalize-PrimaryModel (Get-Content -LiteralPath $PrimaryModelFile -Raw)
+        } catch {
+            return ""
+        }
+    }
+}
+
+function Read-SinglePreparedOllamaModel {
+    $manifestRoot = "data\ollama\models\manifests"
+    if (-not (Test-Path -LiteralPath $manifestRoot)) { return "" }
+    $manifests = @(Get-ChildItem -LiteralPath $manifestRoot -Recurse -File -ErrorAction SilentlyContinue)
+    if ($manifests.Count -ne 1) { return "" }
+    $manifest = $manifests[0]
+    $tag = $manifest.Name
+    $modelName = Split-Path -Leaf (Split-Path -Parent $manifest.FullName)
+    if (-not $tag -or -not $modelName) { return "" }
+    return Normalize-PrimaryModel ("${modelName}:${tag}")
+}
+
+function Resolve-PrimaryModel([switch]$Require) {
+    $explicitModel = Normalize-PrimaryModel $Model
+    $envModel = Normalize-PrimaryModel $env:OLLAMA_MODEL
+    $savedModel = Read-SavedPrimaryModel
+    $singlePreparedModel = Read-SinglePreparedOllamaModel
+
+    if ($explicitModel) {
+        $script:PrimaryModelSource = "-Model"
+        $script:PrimaryModel = $explicitModel
+    } elseif ($envModel) {
+        $script:PrimaryModelSource = "OLLAMA_MODEL"
+        $script:PrimaryModel = $envModel
+    } elseif ($savedModel) {
+        $script:PrimaryModelSource = $PrimaryModelFile
+        $script:PrimaryModel = $savedModel
+    } elseif ($singlePreparedModel) {
+        $script:PrimaryModelSource = "single prepared Ollama manifest"
+        $script:PrimaryModel = $singlePreparedModel
+    } else {
+        $script:PrimaryModelSource = ""
+        $script:PrimaryModel = ""
+    }
+
+    if ($script:PrimaryModel) {
+        $env:OLLAMA_MODEL = $script:PrimaryModel
+    } elseif ($Require) {
+        Fail "No primary model selected. Run connected prep or bundle with '-Model <ollama-tag>' on a non-sensitive connected machine, for example '.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen2.5:7b'."
+    }
+    return $script:PrimaryModel
+}
+
+function Save-PrimaryModelManifest([string]$Reason) {
+    if (-not $script:PrimaryModel) { return }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PrimaryModelFile) | Out-Null
+    [pscustomobject]@{
+        primary_model = $script:PrimaryModel
+        source = $script:PrimaryModelSource
+        reason = $Reason
+        written_at = (Get-Date).ToString("o")
+    } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $PrimaryModelFile -Encoding UTF8
+}
+
+function Set-BundlePrimaryModelEnv([string]$BundlePath) {
+    $envPath = Join-Path $BundlePath ".env.example"
+    if (-not (Test-Path -LiteralPath $envPath) -or -not $script:PrimaryModel) { return }
+    $lines = @(Get-Content -LiteralPath $envPath)
+    $updated = $false
+    $out = foreach ($line in $lines) {
+        if ($line -match '^\s*#?\s*OLLAMA_MODEL=') {
+            $updated = $true
+            "OLLAMA_MODEL=$script:PrimaryModel"
+        } else {
+            $line
+        }
+    }
+    if (-not $updated) {
+        $out += "OLLAMA_MODEL=$script:PrimaryModel"
+    }
+    Set-Content -LiteralPath $envPath -Encoding UTF8 -Value $out
+}
+
 $env:OLLAMA_IMAGE = if ($env:OLLAMA_IMAGE) { $env:OLLAMA_IMAGE } else { "cleverly-ollama:local" }
-$env:OLLAMA_MODEL = if ($env:OLLAMA_MODEL) { $env:OLLAMA_MODEL } else { $Model }
+Resolve-PrimaryModel | Out-Null
 $UseFineTune = $FineTune -or ($env:CLEVERLY_ENABLE_FINETUNE -eq "1")
 if ($UseFineTune) {
     $env:CLEVERLY_FINETUNE_IMAGE = if ($env:CLEVERLY_FINETUNE_IMAGE) { $env:CLEVERLY_FINETUNE_IMAGE } else { "cleverly:finetune" }
@@ -84,12 +189,6 @@ if ($UseFineTune) {
 function Write-Step([string]$Message) {
     Write-Host ""
     Write-Host ("==> " + $Message) -ForegroundColor Cyan
-}
-
-function Fail([string]$Message) {
-    Write-Host ""
-    Write-Host ("ERROR: " + $Message) -ForegroundColor Red
-    exit 1
 }
 
 function Require-Docker {
@@ -156,6 +255,33 @@ function Show-Status {
 
 function Get-CleverlyContainers {
     @(docker ps --filter "name=cleverly" --format "{{.Names}}")
+}
+
+function Test-OllamaModelAvailable {
+    param(
+        [string]$Model,
+        [int]$Seconds = 30
+    )
+    if (-not $Model) { return $false }
+    $containerName = if ($env:CLEVERLY_OLLAMA_CONTAINER_NAME) { $env:CLEVERLY_OLLAMA_CONTAINER_NAME } else { "cleverly-ollama" }
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $deadline) {
+        $oldPreference = $ErrorActionPreference
+        $ErrorActionPreference = "SilentlyContinue"
+        try {
+            $lines = @(docker exec $containerName ollama list 2>$null)
+            if ($LASTEXITCODE -eq 0) {
+                foreach ($line in $lines | Select-Object -Skip 1) {
+                    $name = (($line -split "\s+") | Select-Object -First 1)
+                    if ($name -eq $Model) { return $true }
+                }
+            }
+        } finally {
+            $ErrorActionPreference = $oldPreference
+        }
+        Start-Sleep -Seconds 2
+    }
+    return $false
 }
 
 function Write-DoctorOk([string]$Message) {
@@ -267,6 +393,10 @@ function Seal-Data {
 
 function Start-Cleverly {
     Require-Docker
+    Resolve-PrimaryModel -Require | Out-Null
+    if (-not (Test-Path -LiteralPath $PrimaryModelFile)) {
+        Save-PrimaryModelManifest "offline-start"
+    }
     if (-not (Test-Image "cleverly:local")) {
         Fail "Missing image cleverly:local. This launcher will not pull or build during start. Load prepared images first, or run '.\Cleverly.ps1 prep -AllowConnectedPrep' only on a connected prep machine."
     }
@@ -307,6 +437,9 @@ function Start-Cleverly {
         Show-Status
         Fail "Cleverly did not become healthy at $Url within the timeout."
     }
+    if (-not (Test-OllamaModelAvailable -Model $script:PrimaryModel -Seconds 30)) {
+        Fail "Primary model '$script:PrimaryModel' is not loaded in bundled Ollama. Re-run '.\Cleverly.ps1 prep -AllowConnectedPrep -Model $script:PrimaryModel' on a connected prep machine, then seal or bundle again."
+    }
 
     Write-Host ""
     Write-Host "Cleverly is running: $Url" -ForegroundColor Green
@@ -318,6 +451,7 @@ function Start-Cleverly {
     if ($UseFineTune) {
         Write-Host "Advanced LoRA fine-tuning image enabled." -ForegroundColor Green
     }
+    Write-Host ("Primary model: " + $script:PrimaryModel) -ForegroundColor Green
     Show-Status
     if (-not $NoOpen) {
         Start-Process $Url
@@ -333,6 +467,8 @@ function Stop-Cleverly {
 function Prep-Cleverly {
     Require-Docker
     Require-ConnectedPrep
+    Resolve-PrimaryModel -Require | Out-Null
+    Write-Host ("Primary model: " + $script:PrimaryModel + " (" + $script:PrimaryModelSource + ")") -ForegroundColor Green
     Write-Step "Building Cleverly image"
     docker compose --project-name cleverly --env-file .env.example build cleverly
     if ($LASTEXITCODE -ne 0) { Fail "Failed to build cleverly:local." }
@@ -348,6 +484,7 @@ function Prep-Cleverly {
     Write-Step "Pulling Ollama model into ./data/ollama"
     docker compose --project-name cleverly --env-file .env.example -f docker-compose.yml -f docker/ollama.yml run --rm ollama_pull
     if ($LASTEXITCODE -ne 0) { Fail "Failed to pull Ollama model $env:OLLAMA_MODEL." }
+    Save-PrimaryModelManifest "connected-prep"
 
     if ($FineTune) {
         Write-Step "Building optional fine-tune image"
@@ -360,6 +497,7 @@ function Invoke-Doctor {
     $script:DoctorFailures = 0
     $script:DoctorWarnings = 0
     Write-Step "Cleverly doctor"
+    Resolve-PrimaryModel | Out-Null
 
     if (Get-Command docker -ErrorAction SilentlyContinue) {
         Write-DoctorOk "Docker CLI found"
@@ -413,6 +551,11 @@ function Invoke-Doctor {
     }
 
     if ($script:DoctorFailures -eq 0) {
+        if ($script:PrimaryModel) {
+            Write-DoctorOk ("Primary model is set to " + $script:PrimaryModel + " via " + $script:PrimaryModelSource)
+        } else {
+            Write-DoctorWarn "No primary model is set; run connected prep or bundle with '-Model <ollama-tag>'"
+        }
         if (Test-Image "cleverly:local") { Write-DoctorOk "Image cleverly:local is loaded" } else { Write-DoctorFail "Missing image cleverly:local" }
         if (Test-Image $env:OLLAMA_IMAGE) { Write-DoctorOk "Image $env:OLLAMA_IMAGE is loaded" } else { Write-DoctorFail "Missing image $env:OLLAMA_IMAGE" }
         if ($UseFineTune) {
@@ -461,6 +604,13 @@ function Invoke-Doctor {
             Write-DoctorOk ("Running Cleverly containers: " + ($containers -join ", "))
         } else {
             Write-DoctorWarn "No Cleverly containers are currently running"
+        }
+        if (($containers -contains "cleverly-ollama") -and $script:PrimaryModel) {
+            if (Test-OllamaModelAvailable -Model $script:PrimaryModel -Seconds 5) {
+                Write-DoctorOk ("Primary model " + $script:PrimaryModel + " is loaded in bundled Ollama")
+            } else {
+                Write-DoctorWarn ("Primary model " + $script:PrimaryModel + " was not found in bundled Ollama")
+            }
         }
     }
 
@@ -544,6 +694,7 @@ function Copy-BundleItem {
 function New-CleverlyBundle {
     Require-Docker
     Require-ConnectedPrep
+    Resolve-PrimaryModel -Require | Out-Null
 
     Write-Step "Preparing images and model data"
     Prep-Cleverly
@@ -557,6 +708,7 @@ function New-CleverlyBundle {
     foreach ($file in @("Cleverly.ps1", "Cleverly.cmd", "docker-compose.yml", ".env.example", "README.md", "LICENSE", "ACKNOWLEDGMENTS.md")) {
         Copy-BundleItem $file (Join-Path $bundlePath $file) | Out-Null
     }
+    Set-BundlePrimaryModelEnv $bundlePath
     Copy-BundleItem "docker" (Join-Path $bundlePath "docker") | Out-Null
     Copy-BundleItem "config" (Join-Path $bundlePath "config") | Out-Null
     foreach ($doc in @("docs\offline-release.md", "docs\local-training-lab.md", "docs\external-agent-study-packs.md")) {
@@ -566,6 +718,7 @@ function New-CleverlyBundle {
     Write-Step "Copying prepared local model data"
     foreach ($dir in @(
         "data\ollama",
+        "data\cleverly-primary-model.json",
         "data\training\finetune\base-models",
         "data\huggingface",
         "data\cache\fastembed"
@@ -616,7 +769,13 @@ if errorlevel 1 pause
 This folder was created by:
 
 ````powershell
-.\Cleverly.ps1 bundle -AllowConnectedPrep$(if ($UseFineTune) { " -FineTune" } else { "" })
+.\Cleverly.ps1 bundle -AllowConnectedPrep -Model $script:PrimaryModel$(if ($UseFineTune) { " -FineTune" } else { "" })
+````
+
+Primary model:
+
+````text
+$script:PrimaryModel
 ````
 
 Use it on the offline machine:
