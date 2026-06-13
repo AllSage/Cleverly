@@ -1,13 +1,23 @@
 FROM python:3.12-slim
 
+ARG PUID=1000
+ARG PGID=1000
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HOME=/app \
+    DATA_DIR=/app/data \
+    XDG_CACHE_HOME=/app/data/cache \
+    HF_HOME=/app/.cache/huggingface \
+    FASTEMBED_CACHE_PATH=/app/data/cache/fastembed \
+    npm_config_cache=/app/.npm
+
 # System deps. tmux is required by Cookbook for background downloads/serves.
-# openssh-client is required for Cookbook remote server tests, setup, probes,
-# downloads, and serves from Docker installs.
-# git/cmake are required when Cookbook builds llama.cpp on first llama.cpp
-# launch inside Docker.
-# nodejs/npm provide npx for the optional built-in Browser MCP server.
-# gosu lets the entrypoint drop privileges cleanly so signals still reach
-# uvicorn directly (no extra shell layer like `su`/`sudo` would add).
+# openssh-client is required for Cookbook remote server tests and setup.
+# git/cmake are required when Cookbook builds llama.cpp inside Docker.
+# nodejs/npm provide npx for optional built-in MCP servers.
+# gosu supports legacy root startup that repairs bind-mount ownership.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -22,22 +32,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python deps first (layer cache)
+RUN if ! getent group "${PGID}" >/dev/null 2>&1; then groupadd -g "${PGID}" cleverly; fi \
+    && if ! getent passwd "${PUID}" >/dev/null 2>&1; then useradd -u "${PUID}" -g "${PGID}" -M -s /usr/sbin/nologin -d /app cleverly; fi
+
+# Install Python deps first for better layer caching.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
+# Copy app code.
 COPY . .
 
-# Create data directory (mount a volume here for persistence)
-RUN mkdir -p data logs services/cache/search
+# Create runtime directories. These are owned by the app UID so rootless,
+# read-only Compose runs can start without a privileged chown pass.
+RUN mkdir -p \
+        data \
+        logs \
+        .ssh \
+        .cache/huggingface \
+        .local \
+        .npm \
+        services/cache/search \
+        services/cache/content \
+    && chown -R "${PUID}:${PGID}" /app
 
-# Entrypoint that drops to PUID/PGID (default 1000:1000) and repairs
-# ownership on the bind-mounted /app/data and /app/logs. Without this,
-# the container runs as root and writes root-owned files into host
-# bind mounts — any later non-root run (or a host user trying to
-# update them) silently fails on EPERM, breaking skill extraction,
-# prefs persistence, mail attachments, etc.
+# Supports both hardened rootless Compose runs and legacy root runs that need a
+# one-time bind-mount ownership repair before dropping privileges.
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 

@@ -1,5 +1,8 @@
 # Cleverly
 
+Self-hosted AI workspace for chat, agents, documents, research, model serving,
+email, calendar, notes, tasks, memory, and local tools.
+
 ![Cleverly](docs/cleverly-icon.svg)
 
 Cleverly is a local-first interface for the kind of work people normally split
@@ -7,37 +10,18 @@ across ChatGPT, Claude, model servers, notes, documents, email, and task tools.
 It runs on your hardware, with your data.
 
 ## Features
-  - **Chat** -- chat with any local model or API; adding them is super simple.<br>　<sub>vLLM · llama.cpp · Ollama · OpenRouter · OpenAI</sub>
-  - **Agent** -- hand it tools and let it run the whole task itself.<br>　<sub>built on [opencode](https://github.com/anomalyco/opencode) · MCP · web · files · shell · skills · memory</sub>
-  - **Cookbook** -- Scans your hardware, recommends models, click to download and serve.. easy!<br>　<sub>built on [llmfit](https://github.com/AlexsJones/llmfit) · VRAM-aware · GGUF / FP8 / AWQ · fit scoring · vLLM / llama.cpp serving</sub>
-  - **Deep Research** -- multi-step runs that gather, read, and synthesize sources into a nice visual report.<br>　<sub>adapted from [Tongyi DeepResearch](https://github.com/Alibaba-NLP/DeepResearch)</sub>
-  - **Compare** -- a fun tool to compare models side by side. Test completely blind, no bias!<br>　<sub>multi-model · blind test · synthesis</sub>
-  - **Documents** -- YOU write the text, AI is there to assist, not the opposite.<br>　<sub>multi-tab editor · markdown · HTML · CSV · syntax highlighting · AI edits · suggestions</sub>
-  - **Memory / Skills** -- Persistent memory and skills, your agent evolves over time as it better understands you and your tasks!<br>　<sub>ChromaDB · fastembed (ONNX) · vector + keyword retrieval · import/export</sub>
-  - **Email** -- IMAP/SMTP inbox with AI triage built in: urgency reminders, auto-tag, auto-summary, auto-reply drafts, auto-spam.<br>　<sub>IMAP · SMTP · per-account routing · CalDAV-aware</sub>
-  - **Notes & Tasks** -- Quick notes with reminders, a todo list, and scheduled tasks the agent can act on.<br>　<sub>note pings · checklist · cron-style tasks · ntfy / browser / email channels</sub>
-  - **Calendar** -- Local-first calendar with CalDAV sync to Radicale / Nextcloud / Apple / Fastmail.<br>　<sub>CalDAV pull · .ics import/export · per-calendar colors · agent-aware</sub>
-  - **Works on mobile** -- looks and runs great on your phone, not just desktop.<br>　<sub>responsive · installable (PWA) · touch gestures</sub>
-  - **Extras** -- more to explore, happy if you give it a go!<br>　<sub>image editor · theme editor · file uploads (vision + PDF) · web search · presets · sessions · 2FA</sub>
 
-## Demo
-A full, hover-to-play tour lives on the landing page (`docs/index.html`).
-
-<details>
-<summary>Screenshots / clips</summary>
-
-### Chat & Agents
-![Chat & Agents](docs/chat.gif)
-### Deep Research
-![Deep Research](docs/research.gif)
-### Compare
-![Compare](docs/compare.gif)
-### Documents
-![Documents](docs/document.gif)
-### Notes & Tasks
-![Notes & Tasks](docs/notes.gif)
-
-</details>
+- **Chat**: local models and API providers, including Ollama, OpenAI-compatible endpoints, OpenRouter, and OpenAI.
+- **Agent tools**: MCP, web, files, shell, skills, memory, and task workflows.
+- **Cookbook**: hardware-aware model recommendations, downloads, and serving via vLLM, llama.cpp, and related engines.
+- **Deep Research**: multi-step source gathering and synthesis into visual reports.
+- **Compare**: blind side-by-side model comparison and synthesis.
+- **Documents**: multi-tab editor with markdown, HTML, CSV, syntax highlighting, AI edits, and suggestions.
+- **Memory / Skills**: persistent memory and reusable skills with ChromaDB and fastembed.
+- **Email**: IMAP/SMTP inbox with AI triage, reminders, tags, summaries, and reply drafts.
+- **Notes & Tasks**: notes, reminders, todos, scheduled tasks, ntfy/browser/email notification channels.
+- **Calendar**: local-first calendar with CalDAV sync and `.ics` import/export.
+- **Mobile / PWA**: responsive interface with installable app behavior.
 
 ## Quick Start
 
@@ -50,22 +34,44 @@ On first setup, Cleverly creates an admin account (`admin` unless
 For Docker installs, the same line is in `docker compose logs cleverly`.
 Use that for the first login, then change it in **Settings**.
 
-Contributing? See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, testing, and
-pull request guidelines.
+### Docker
 
-### Docker (recommended)
 ```bash
 git clone https://github.com/AllSage/Cleverly.git
 cd Cleverly
-cp .env.example .env       # optional, but recommended for explicit defaults
+cp .env.example .env
+mkdir -p data logs data/ssh data/cache data/huggingface data/local data/npm-cache
 docker compose up -d --build
 ```
+
 Open `http://localhost:7000` when the containers are healthy. Docker Compose
 binds the web UI to `127.0.0.1` by default. If the port is taken, set
 `APP_PORT=7001` in `.env` and recreate the container. Set `APP_BIND=0.0.0.0`
 only when you intentionally want LAN/reverse-proxy access.
 
+### Offline Docker
+
+For a no-internet runtime, build or load the images first, then start with the
+offline overlay:
+
+```bash
+docker compose --env-file .env.example -f docker-compose.yml -f docker/offline.yml up -d --no-build
+```
+
+The offline overlay puts the Cleverly app container on an internal-only Docker
+network, so the app cannot reach the internet. A tiny no-data proxy sidecar
+publishes `127.0.0.1:7000` and forwards only to the app container, so the UI
+still works in your browser. The overlay also sets `CLEVERLY_OFFLINE=1`, which
+disables web search/fetch/deep-research defaults and skips startup network
+warmups.
+
+If you need to move this to an air-gapped machine, build and pull images on a
+connected machine, then transfer them with `docker save` / `docker load`.
+Pre-seed `./data/huggingface` and `./data/cache/fastembed` if you want local
+models or embeddings available without downloads.
+
 ### Native Linux / macOS
+
 ```bash
 git clone https://github.com/AllSage/Cleverly.git
 cd Cleverly
@@ -75,11 +81,14 @@ pip install -r requirements.txt
 python setup.py
 python -m uvicorn app:app --host 127.0.0.1 --port 7000
 ```
+
+Use `--host 0.0.0.0` only when you intentionally want LAN or reverse-proxy access.
+
 Requirements: Python 3.11+. Cookbook also needs `tmux` for background model
-downloads and serves. Use `--host 0.0.0.0` only when you intentionally want
-LAN/reverse-proxy access.
+downloads and serves.
 
 ### Apple Silicon
+
 Docker on macOS cannot use the Metal GPU. For GPU-accelerated Cookbook on an
 M-series Mac, run Cleverly natively:
 
@@ -95,74 +104,7 @@ It launches at `http://127.0.0.1:7860`. To build a clickable app wrapper:
 ./build-macos-app.sh
 ```
 
-<details>
-<summary>Cookbook, GPU, Ollama, and troubleshooting notes</summary>
-
-**Docker bundled services.** Compose starts Cleverly, ChromaDB, SearXNG, and
-ntfy. Cleverly and the bundled service ports bind to `127.0.0.1` by default, so
-they are reachable from the host but not exposed to your LAN/public internet
-unless you opt in.
-
-**Cookbook storage in Docker.** Downloads live in `./data/huggingface`
-(`~/.cache/huggingface` in the container). Cookbook-installed Python CLIs and
-serve engines live in `./data/local` (`~/.local` in the container), so they
-survive container recreation.
-
-**Remote servers.** In **Cookbook -> Settings -> Servers**, generate the
-Cleverly SSH key and add the public key to the remote server's
-`~/.ssh/authorized_keys`. From the host you can also run:
-
-```bash
-ssh-copy-id -i data/ssh/id_ed25519.pub user@server
-```
-
-**NVIDIA / AMD Docker GPU overlays.** Install the host runtime first, then add
-one of these to `.env`:
-
-```bash
-COMPOSE_FILE=docker-compose.yml:docker/gpu.nvidia.yml
-COMPOSE_FILE=docker-compose.yml:docker/gpu.amd.yml
-```
-
-Verify with:
-
-```bash
-docker compose exec cleverly nvidia-smi -L
-docker compose exec cleverly rocm-smi
-```
-
-**Ollama with Docker.** If Ollama runs on the host, add this endpoint in
-Settings:
-
-```text
-http://host.docker.internal:11434/v1
-```
-
-Ollama must listen outside its own loopback interface:
-
-```bash
-OLLAMA_HOST=0.0.0.0:11434 ollama serve
-```
-
-**Useful checks.**
-
-```bash
-docker compose ps
-docker compose logs --tail=120 cleverly
-docker compose logs cleverly | grep -E 'ChromaDB|MemoryVectorStore|DEGRADED'
-```
-
-**macOS details.** `start-macos.sh` installs Homebrew deps, creates the venv,
-runs setup, and starts uvicorn on port `7860` because AirPlay often holds
-`7000`. It uses llama.cpp/Ollama for Metal. vLLM/SGLang are CUDA/ROCm-only and
-do not run on macOS. MLX-only models are not served by Cleverly.
-
-</details>
-
 ### Native Windows
-
-**One-command launcher** (creates the venv, installs deps, runs setup, starts the
-server; safe to re-run):
 
 ```powershell
 git clone https://github.com/AllSage/Cleverly.git
@@ -170,11 +112,9 @@ cd Cleverly
 powershell -ExecutionPolicy Bypass -File .\launch-windows.ps1
 ```
 
-Or do it by hand:
+Manual setup:
 
 ```powershell
-git clone https://github.com/AllSage/Cleverly.git
-cd Cleverly
 python -m venv venv
 venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -182,34 +122,61 @@ python setup.py
 python -m uvicorn app:app --host 127.0.0.1 --port 7000
 ```
 
-**Requirements:** Python 3.11+. The core app (chat, agent, memory, documents,
-email, calendar, deep research) runs fully native. For full **Cookbook** background
-model downloads and the agent shell tool, also install
-[Git for Windows](https://git-scm.com/download/win) (provides `bash.exe`).
-Local GPU *serving* of vLLM/SGLang needs Linux/WSL2; for a local model on Windows,
-[Ollama](https://ollama.com/download) is the easiest path — point Cleverly at
-`http://localhost:11434/v1` in Settings.
+For full Cookbook background downloads and the agent shell tool on Windows,
+install [Git for Windows](https://git-scm.com/download/win) so `bash.exe` is
+available.
 
-Open `http://localhost:7000`, log in with the generated admin password,
-and configure everything else inside **Settings**.
+## Docker Notes
+
+Compose starts Cleverly, ChromaDB, SearXNG, and ntfy. Cleverly and bundled
+service ports bind to `127.0.0.1` by default.
+
+The Cleverly service runs as a non-root UID/GID, drops Linux capabilities, uses
+`no-new-privileges`, mounts the application filesystem read-only, and uses tmpfs
+for `/tmp`, `/run`, and `/var/tmp`. Runtime state is written only to mounted
+paths under `./data` and `./logs`.
+
+On Linux, make sure the bind-mounted directories are writable by the configured
+`PUID`/`PGID` before first boot:
+
+```bash
+mkdir -p data logs data/ssh data/cache data/huggingface data/local data/npm-cache
+chown -R "$(id -u):$(id -g)" data logs
+```
+
+Cookbook downloads live in `./data/huggingface`, and Cookbook-installed Python
+CLIs and serve engines live in `./data/local`, so they survive container
+recreation.
+
+To use Ollama from Docker, add this endpoint in Settings:
+
+```text
+http://host.docker.internal:11434/v1
+```
+
+Useful checks:
+
+```bash
+docker compose ps
+docker compose logs --tail=120 cleverly
+docker compose logs cleverly | grep -E 'ChromaDB|MemoryVectorStore|DEGRADED'
+```
 
 ## Security Notes
-Cleverly is a self-hosted workspace with powerful local tools: shell access, file uploads, model downloads, web research, email/calendar integrations, and API tokens. Treat it like an admin console.
+
+Cleverly is a self-hosted workspace with powerful local tools: shell access,
+file uploads, model downloads, web research, email/calendar integrations, API
+tokens, and webhooks. Treat it like an admin console.
 
 - Keep `AUTH_ENABLED=true` for any network-accessible deployment.
 - Do not expose it directly to the public internet without HTTPS and a trusted reverse proxy.
-- Keep `data/`, `.env`, logs, databases, and uploaded/generated media out of Git. They are ignored by default.
-- Review `data/auth.json` after first boot: disable open signup unless you intentionally want it, make only your own account admin, and keep demo/test accounts non-admin.
-- Non-admin users do not get shell/Python/file read/write by default, and admin-only routes/tools such as MCP management, API tokens, webhooks, model/cookbook serving, backup/vault, and app settings are admin-gated. Other features are controlled by per-user privileges, so review each user's privileges before exposing a deployment.
-- Rotate any API keys or tokens that were ever pasted into a shared chat, demo, screenshot, or log.
-- If you enable API tokens or webhooks, create separate tokens per integration and delete unused ones.
+- Keep `data/`, `.env`, logs, databases, and uploaded/generated media out of Git.
+- Review `data/auth.json` after first boot: disable open signup unless you intentionally want it.
+- Keep shell/Python/file read-write, MCP management, API tokens, webhooks, model serving, backup/vault, and app settings admin-only.
+- Rotate any API keys or tokens that were ever pasted into shared chats, screenshots, demos, or logs.
 - Prefer binding manual development runs to `127.0.0.1`; bind to `0.0.0.0` only when you intentionally want LAN/reverse-proxy access.
-- Before publishing a fork, run `git status --short` and confirm no private files from `.env`, `data/`, `logs/`, uploads, backups, or local databases are staged.
 
-### Putting it behind HTTPS
-Cleverly serves plain HTTP on its port. That's fine for `localhost` and trusted LAN/VPN use, but browsers will warn ("Password fields present on an insecure page") and the login + API tokens travel in cleartext. For anything reachable outside your machine — including a Tailscale IP shared with other devices — put a TLS-terminating reverse proxy in front.
-
-Shortest path with [Caddy](https://caddyserver.com/) (auto-renews Let's Encrypt certs):
+For HTTPS, put a TLS-terminating reverse proxy in front. Minimal Caddy example:
 
 ```caddy
 cleverly.example.com {
@@ -217,62 +184,63 @@ cleverly.example.com {
 }
 ```
 
-For a LAN-only Tailscale deployment, Caddy + [tailscale-cert](https://caddyserver.com/docs/caddyfile/options#auto-https) or the built-in MagicDNS HTTPS feature both work. nginx/Traefik configs are similar — proxy `localhost:7000`, terminate TLS at the proxy. Once that's in place, the browser warning goes away and your login is encrypted.
-
-## Contributing
-Help is welcome. The best entry points are fresh-install testing, provider setup
-bugs, mobile/editor polish, docs, and small focused refactors. See
-[ROADMAP.md](ROADMAP.md) for the current help-wanted list.
-
 ## Configuration
+
 Most setup is done inside the app with `/setup` or **Settings**. Use `.env`
 for deployment-level defaults and secrets you want present before first boot.
-Key settings:
 
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_HOST` | `localhost` | Your LLM server (e.g. `llm-host.local:8000`) |
-| `LLM_HOSTS` | -- | Comma-separated list for model discovery |
-| `OPENAI_API_KEY` | -- | Optional OpenAI key. Prefer adding providers in the app unless pre-seeding. |
-| `SEARXNG_INSTANCE` | `http://localhost:8080` | SearXNG URL. Docker overrides this to `http://searxng:8080`. |
-| `SEARXNG_SECRET` | generated on first Docker boot | Optional SearXNG cookie/CSRF secret. Leave blank unless you need to pin it. |
-| `APP_BIND` | `127.0.0.1` | Docker Compose host bind address for the web UI. Use `0.0.0.0` only for intentional LAN/reverse-proxy access. |
-| `APP_PORT` | `7000` | Docker Compose host port for the web UI. |
+| `LLM_HOST` | `localhost` | Your LLM server |
+| `LLM_HOSTS` | unset | Comma-separated list for model discovery |
+| `OPENAI_API_KEY` | unset | Optional OpenAI key |
+| `SEARXNG_INSTANCE` | `http://localhost:8080` | SearXNG URL |
+| `SEARXNG_SECRET` | generated on first Docker boot | Optional SearXNG cookie/CSRF secret |
+| `APP_BIND` | `127.0.0.1` | Docker Compose host bind address |
+| `APP_PORT` | `7000` | Docker Compose host port |
+| `PUID` / `PGID` | `1000` / `1000` | UID/GID used by the hardened Docker container |
+| `CLEVERLY_TMPFS_SIZE` | `1g` | Size of the Cleverly `/tmp` tmpfs in Docker |
+| `CLEVERLY_PIDS_LIMIT` | `4096` | Process limit for the Cleverly container |
+| `CLEVERLY_OFFLINE` | unset | Disable internet-facing features and startup network warmups |
+| `CLEVERLY_OFFLINE_EMBEDDINGS` | `0` in offline overlay | Allow local FastEmbed only after its cache is pre-seeded |
 | `AUTH_ENABLED` | `true` | Enable/disable login |
-| `LOCALHOST_BYPASS` | `false` | Development-only auth bypass for loopback requests. Keep false for shared/network deployments. |
+| `LOCALHOST_BYPASS` | `false` | Development-only auth bypass for direct loopback requests |
 | `DATABASE_URL` | `sqlite:///./data/app.db` | Database connection string |
-| `CHROMADB_HOST` | `localhost` | ChromaDB host for vector memory. Docker overrides this to `chromadb`. |
-| `CHROMADB_PORT` | `8100` | ChromaDB port for manual host runs. Docker overrides this to `8000`. |
-| `EMBEDDING_URL` | -- | OpenAI-compatible embeddings endpoint |
+| `CHROMADB_HOST` | `localhost` | ChromaDB host |
+| `CHROMADB_PORT` | `8100` | ChromaDB port for manual host runs |
+| `EMBEDDING_URL` | unset | OpenAI-compatible embeddings endpoint |
 
-### Built-in MCP servers (optional setup)
+## Built-In MCP Servers
 
-Cleverly auto-registers a few built-in MCP servers at startup. The npx-based ones (currently the browser server, `@playwright/mcp`) only start when their npm package is already in the local npx cache. If a package isn't cached, that server is skipped with a startup log message explaining what to do, so a fresh install does not block on a multi-minute npm download or hang if Playwright system deps are missing.
-
-To enable the browser MCP (page navigation, screenshots, vision), run once:
+Cleverly auto-registers a few built-in MCP servers at startup. The npx-based
+ones only start when their npm package is already in the local npx cache. To
+enable the browser MCP server:
 
 ```bash
 npx -y @playwright/mcp@latest --version
 ```
 
-That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Cleverly and the server will register at startup.
+Restart Cleverly after the package is installed.
 
 ## Architecture
-```
-app.py                   # FastAPI entry point
-core/      auth, database, middleware, constants
-src/       llm_core, agent_loop, agent_tools, chat_processor, search/
-routes/    chat, session, document, memory, model … endpoints
-services/  docs, memory, search, hwfit (Cookbook) …
-static/    index.html + app.js + style.css + js/ (modular front-end)
-docs/      landing page (index.html) + preview clips
+
+```text
+app.py      FastAPI entry point
+core/       auth, database, middleware, constants
+src/        llm_core, agent loop, tools, chat processor, search
+routes/     chat, session, document, memory, model, email, calendar endpoints
+services/   docs, memory, search, hwfit
+static/     frontend HTML, CSS, and JS modules
+docs/       landing page and preview media
 ```
 
 ## Data
-All user data lives in `data/` (gitignored): `app.db` (sessions, messages, documents),
-`memory.json`, `presets.json`, `uploads/`, `personal_docs/`, `chroma/`, `settings.json`.
+
+All user data lives in `data/` and is gitignored: `app.db`, `memory.json`,
+`presets.json`, uploads, personal docs, ChromaDB data, and settings.
 
 ## License
+
 Cleverly is source-available under the [Cleverly Product License](LICENSE).
 Original upstream and third-party notices are preserved in
 [licenses/](licenses/) and [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md).

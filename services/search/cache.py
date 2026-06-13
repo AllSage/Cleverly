@@ -2,14 +2,17 @@
 
 import hashlib
 import logging
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict
 
 logger = logging.getLogger(__name__)
 
-# Cache directories
-CACHE_DIR = Path(__file__).resolve().parent.parent / "cache"
+# Cache directories. Keep runtime cache under data/ so Docker can run with a
+# read-only application filesystem.
+_DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
+CACHE_DIR = Path(os.environ.get("CLEVERLY_SEARCH_CACHE_DIR", str(_DATA_DIR / "search" / "cache")))
 SEARCH_CACHE_DIR = CACHE_DIR / "search"
 CONTENT_CACHE_DIR = CACHE_DIR / "content"
 CACHE_MAX_ENTRIES = 1000

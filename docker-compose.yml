@@ -1,41 +1,64 @@
 services:
-  odysseus:
-    build: .
+  cleverly:
+    image: ${CLEVERLY_IMAGE:-cleverly:local}
+    build:
+      context: .
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=${CLEVERLY_TMPFS_SIZE:-1g},mode=1777
+      - /run:size=64m,mode=755
+      - /var/tmp:size=256m,mode=1777
+    pids_limit: ${CLEVERLY_PIDS_LIMIT:-4096}
     ports:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-      # Cookbook remote-server SSH identity. Odysseus can generate a key here;
+      # Cookbook remote-server SSH identity. Cleverly can generate a key here;
       # add the shown public key to each remote server's authorized_keys.
       - ./data/ssh:/app/.ssh
-      # Cookbook local model cache. Inside Docker, "Local" means the Odysseus
+      # General runtime cache for fastembed, browser/MCP helpers, and packages.
+      - ./data/cache:/app/.cache
+      # Cookbook local model cache. Inside Docker, "Local" means the Cleverly
       # container, so persist its HuggingFace cache under ./data/huggingface.
       - ./data/huggingface:/app/.cache/huggingface
       # Cookbook-installed Python CLIs/packages (vLLM, llama-cpp-python, etc.)
-      # land under /app/.local for the odysseus user. Persist them so a
-      # container recreate does not silently remove installed serve engines.
+      # land under /app/.local for the cleverly user.
       - ./data/local:/app/.local
+      # npm/npx cache for optional MCP helpers without writing to the image.
+      - ./data/npm-cache:/app/.npm
     extra_hosts:
       # Lets the container reach local services on the Docker host, including
       # Ollama at http://host.docker.internal:11434.
       - "host.docker.internal:host-gateway"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
-      - SEARXNG_INSTANCE=http://searxng:8080
-      - CHROMADB_HOST=chromadb
-      - CHROMADB_PORT=8000
-      # PUID / PGID — the user/group the container drops to before
-      # running uvicorn (entrypoint also chowns /app/data + /app/logs
-      # to match, so bind-mounted files stay editable from the host).
-      # 1000 is the default first user on most Linux installs. If your
-      # host user has a different id, override here or via .env, e.g.:
+      SEARXNG_INSTANCE: http://searxng:8080
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: "8000"
+      DATA_DIR: /app/data
+      XDG_CACHE_HOME: /app/data/cache
+      HF_HOME: /app/.cache/huggingface
+      FASTEMBED_CACHE_PATH: /app/data/cache/fastembed
+      npm_config_cache: /app/.npm
+      PYTHONDONTWRITEBYTECODE: "1"
+      # PUID / PGID are the user/group the container runs as. 1000 is the
+      # default first user on most Linux installs. Override in .env if needed:
       #   PUID=1001
       #   PGID=1001
-      # Find yours with:  id -u  /  id -g
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
     depends_on:
       searxng:
         condition: service_healthy
@@ -45,6 +68,9 @@ services:
 
   chromadb:
     image: docker.io/chromadb/chroma:latest
+    init: true
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${CHROMADB_BIND:-127.0.0.1}:8100:8000"
     volumes:
@@ -55,12 +81,19 @@ services:
 
   searxng:
     image: docker.io/searxng/searxng:latest
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
     entrypoint:
       - /bin/sh
       - -c
       - |
         set -eu
-        if [ ! -s /etc/searxng/settings.yml ] || grep -q 'odysseus-local-searxng-json-2026-05-30\|__SEARXNG_SECRET__' /etc/searxng/settings.yml; then
+        if [ ! -s /etc/searxng/settings.yml ] || grep -q 'cleverly-local-searxng-json-2026-05-30\|__SEARXNG_SECRET__' /etc/searxng/settings.yml; then
           secret="$${SEARXNG_SECRET:-}"
           if [ -z "$$secret" ]; then
             secret="$$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
@@ -86,6 +119,9 @@ services:
 
   ntfy:
     image: docker.io/binwiederhier/ntfy
+    init: true
+    security_opt:
+      - no-new-privileges:true
     command: serve
     ports:
       - "${NTFY_BIND:-127.0.0.1}:8091:80"

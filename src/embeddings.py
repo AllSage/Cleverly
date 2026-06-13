@@ -203,6 +203,10 @@ def _load_persisted_endpoint() -> dict:
 _http_embed_down = False  # process-level latch: skip re-probing a dead endpoint
 
 
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def reset_http_embed_state():
     """Clear the 'HTTP embedding endpoint is down' latch so the next
     get_embedding_client() re-probes. Call this when the embedding endpoint
@@ -216,6 +220,15 @@ def reset_http_embed_state():
 def get_embedding_client():
     """Factory: try HTTP API first, fall back to local fastembed."""
     global _http_embed_down
+    offline = _truthy(os.getenv("CLEVERLY_OFFLINE"))
+    offline_embeddings = _truthy(os.getenv("CLEVERLY_OFFLINE_EMBEDDINGS"))
+
+    if offline and not offline_embeddings:
+        logger.warning(
+            "Offline mode: embeddings disabled to avoid model downloads. "
+            "Set CLEVERLY_OFFLINE_EMBEDDINGS=1 only after pre-seeding the FastEmbed cache."
+        )
+        return None
 
     # Check for a persisted custom endpoint (saved from admin panel)
     persisted = _load_persisted_endpoint()
@@ -229,7 +242,9 @@ def get_embedding_client():
 
     # Try the HTTP embedding API — unless we already found it down this process
     # (avoids paying the connect timeout again on every RAG/memory/tool probe).
-    if not _http_embed_down:
+    if offline:
+        logger.info("Offline mode: skipping HTTP embedding endpoint probe")
+    elif not _http_embed_down:
         try:
             client = EmbeddingClient()
             client.get_sentence_embedding_dimension()  # health check

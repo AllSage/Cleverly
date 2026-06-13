@@ -8,11 +8,21 @@ All modules should import from here instead of accessing files directly.
 import json
 import time
 import logging
+import os
 from typing import Any
 
 from src.constants import SETTINGS_FILE, FEATURES_FILE
 
 logger = logging.getLogger(__name__)
+
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def offline_mode() -> bool:
+    """Return True when the deployment intentionally blocks internet egress."""
+    return _truthy(os.getenv("CLEVERLY_OFFLINE"))
 
 # Tiny TTL cache for settings/features. get_setting() is called on hot paths
 # (every chat, every preprocess); without this it re-parses the JSON each call.
@@ -146,6 +156,10 @@ def load_settings() -> dict:
         merged = {**DEFAULT_SETTINGS, **saved}
     except (FileNotFoundError, json.JSONDecodeError):
         merged = dict(DEFAULT_SETTINGS)
+    if offline_mode():
+        merged["search_provider"] = "disabled"
+        merged["search_fallback_chain"] = []
+        merged["research_search_provider"] = "disabled"
     _settings_cache = (now, merged)
     return merged
 
@@ -211,6 +225,10 @@ def load_features() -> dict:
         merged = {**DEFAULT_FEATURES, **saved}
     except (FileNotFoundError, json.JSONDecodeError):
         merged = dict(DEFAULT_FEATURES)
+    if offline_mode():
+        merged["web_search"] = False
+        merged["web_fetch"] = False
+        merged["deep_research"] = False
     _features_cache = (now, merged)
     return merged
 

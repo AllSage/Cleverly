@@ -47,6 +47,7 @@ from core.exceptions import (
 import bcrypt as _bcrypt
 
 from src.app_helpers import abs_join
+from src.compat import getenv, request_header
 from starlette.responses import RedirectResponse
 
 # ========= LOGGING =========
@@ -56,10 +57,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+CLEVERLY_OFFLINE = _truthy(getenv("CLEVERLY_OFFLINE", ""))
+
 # ========= APP =========
 app = FastAPI(
-    title="AI Chat Application",
-    description="Comprehensive AI chat with memory, research, and multi-modal capabilities",
+    title="Cleverly",
+    description="Self-hosted AI workspace with chat, memory, research, documents, and local tools",
     version="1.0.0",
 )
 
@@ -225,13 +233,13 @@ if AUTH_ENABLED:
             # loopback clients + matching token to keep it locked down.
             try:
                 from core.middleware import INTERNAL_TOOL_HEADER, INTERNAL_TOOL_TOKEN as _ITT
-                _hdr = request.headers.get(INTERNAL_TOOL_HEADER)
+                _hdr = request_header(request.headers, INTERNAL_TOOL_HEADER)
                 if _hdr and secrets.compare_digest(_hdr, _ITT) and _is_trusted_loopback(request):
                     # Impersonation: when the agent's loopback call sets
                     # X-Cleverly-Owner, attribute the request to that user only
                     # if they exist. Authorization checks remain separate; this
                     # is just owner attribution for notes/calendar/etc.
-                    _impersonate = (request.headers.get("X-Cleverly-Owner") or "").strip()
+                    _impersonate = request_header(request.headers, "X-Cleverly-Owner").strip()
                     _auth_mgr = getattr(request.app.state, "auth_manager", None) or auth_manager
                     if _impersonate and _impersonate in getattr(_auth_mgr, "users", {}):
                         request.state.current_user = _impersonate
@@ -836,7 +844,10 @@ async def startup_event():
         except Exception as e:
             logger.warning(f"Tool index warmup failed (non-critical): {type(e).__name__}: {e}")
 
-    _startup_tasks.append(asyncio.create_task(_warmup_tool_index()))
+    if CLEVERLY_OFFLINE:
+        logger.info("[startup] Offline mode: skipping tool-index embedding warmup")
+    else:
+        _startup_tasks.append(asyncio.create_task(_warmup_tool_index()))
     # Warmup: ping all known LLM endpoints to prime connections
     async def _warmup_endpoints():
         try:
@@ -854,7 +865,10 @@ async def startup_event():
         except Exception as e:
             logger.debug(f"Warmup ping skipped: {e}")
 
-    _startup_tasks.append(asyncio.create_task(_warmup_endpoints()))
+    if CLEVERLY_OFFLINE:
+        logger.info("[startup] Offline mode: skipping LLM endpoint warmup")
+    else:
+        _startup_tasks.append(asyncio.create_task(_warmup_endpoints()))
 
     # Keep-alive: ping endpoints every 60 seconds to prevent cold starts
     async def _keepalive_loop():
@@ -866,7 +880,10 @@ async def startup_event():
                 logger.warning(f"Keepalive loop error: {e}")
                 await asyncio.sleep(300)  # Back off on error
 
-    _startup_tasks.append(asyncio.create_task(_keepalive_loop()))
+    if CLEVERLY_OFFLINE:
+        logger.info("[startup] Offline mode: skipping endpoint keepalive loop")
+    else:
+        _startup_tasks.append(asyncio.create_task(_keepalive_loop()))
 
     async def _ensure_default_tasks():
         # Create/reconcile default automation tasks + personal assistant for every user.
@@ -940,7 +957,7 @@ async def startup_event():
     # Start scheduled task runner — skip when running under a cron-driven
     # deployment where an external worker drives task firing. Mirrors
     # `CLEVERLY_INPROCESS_POLLERS` from the email pollers.
-    _tasks_inprocess = os.environ.get("CLEVERLY_INPROCESS_TASKS", "1").strip().lower()
+    _tasks_inprocess = (getenv("CLEVERLY_INPROCESS_TASKS", "1") or "1").strip().lower()
     if _tasks_inprocess not in ("0", "false", "no", "off", ""):
         await task_scheduler.start()
     else:

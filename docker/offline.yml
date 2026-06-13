@@ -1,0 +1,64 @@
+# Offline runtime overlay. Use with:
+#   docker compose -f docker-compose.yml -f docker/offline.yml up -d
+#
+# Offline runtime overlay. Cleverly runs only on an internal Docker network
+# with no internet egress. A tiny no-data proxy publishes localhost:7000 to the
+# host and forwards only to the Cleverly app container.
+services:
+  cleverly:
+    ports: !reset []
+    networks:
+      - offline_private
+    environment:
+      CLEVERLY_OFFLINE: "1"
+      # Default offline mode avoids embedding model downloads on first boot.
+      # Set to "1" only after pre-seeding FASTEMBED_CACHE_PATH with the model.
+      CLEVERLY_OFFLINE_EMBEDDINGS: "0"
+      SEARXNG_INSTANCE: ""
+      OPENAI_API_KEY: ""
+      RESEARCH_LLM_ENDPOINT: ""
+      OLLAMA_BASE_URL: ""
+      LLM_HOSTS: ""
+
+  cleverly_proxy:
+    image: ${CLEVERLY_IMAGE:-cleverly:local}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    entrypoint: ["python", "/app/docker/tcp_proxy.py"]
+    command: ["0.0.0.0", "7000", "cleverly", "7000"]
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-7000}:7000"
+    networks:
+      - offline_private
+      - offline_edge
+    depends_on:
+      - cleverly
+    restart: unless-stopped
+
+  chromadb:
+    ports: !reset []
+    networks:
+      - offline_private
+
+  searxng:
+    ports: !reset []
+    networks:
+      - offline_private
+
+  ntfy:
+    ports: !reset []
+    networks:
+      - offline_private
+
+networks:
+  offline_private:
+    internal: true
+  offline_edge:
+    driver: bridge

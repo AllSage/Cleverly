@@ -119,6 +119,45 @@ def test_docker_compose_binds_web_ui_to_loopback_by_default():
     assert '"${APP_PORT:-7000}:7000"' not in compose
 
 
+def test_cleverly_container_has_baseline_hardening():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    service = compose.split("  chromadb:", 1)[0]
+    assert 'user: "${PUID:-1000}:${PGID:-1000}"' in service
+    assert "read_only: true" in service
+    assert "cap_drop:" in service
+    assert "      - ALL" in service
+    assert "no-new-privileges:true" in service
+    assert "/tmp:size=" in service
+
+
+def test_offline_compose_overlay_blocks_container_egress():
+    overlay = Path("docker/offline.yml").read_text(encoding="utf-8")
+    assert "CLEVERLY_OFFLINE:" in overlay
+    assert "CLEVERLY_OFFLINE_EMBEDDINGS:" in overlay
+    assert "cleverly_proxy:" in overlay
+    assert "tcp_proxy.py" in overlay
+    assert "offline_private:" in overlay
+    assert "internal: true" in overlay
+
+
+def test_offline_mode_disables_internet_features(monkeypatch):
+    from src import settings
+
+    monkeypatch.setenv("CLEVERLY_OFFLINE", "1")
+    settings._invalidate_caches()
+    app_settings = settings.load_settings()
+    features = settings.load_features()
+    try:
+        assert app_settings["search_provider"] == "disabled"
+        assert app_settings["search_fallback_chain"] == []
+        assert app_settings["research_search_provider"] == "disabled"
+        assert features["web_search"] is False
+        assert features["web_fetch"] is False
+        assert features["deep_research"] is False
+    finally:
+        settings._invalidate_caches()
+
+
 def test_readme_native_quickstart_uses_loopback():
     readme = Path("README.md").read_text(encoding="utf-8")
     assert "python -m uvicorn app:app --host 127.0.0.1 --port 7000" in readme
@@ -485,26 +524,26 @@ def test_require_user_rejects_unauthenticated(monkeypatch):
 
 
 def test_inprocess_pollers_gate(monkeypatch):
-    """The ODYSSEUS_INPROCESS_POLLERS env var must let operators kill
+    """The CLEVERLY_INPROCESS_POLLERS env var must let operators kill
     the asyncio pollers when cron / systemd is driving the one-shot
-    `odysseus-mail poll-*` CLI subcommands instead. Two pollers racing
+    `cleverly-mail poll-*` CLI subcommands instead. Two pollers racing
     on the same SQLite would mark scheduled rows as 'sent' twice."""
     import sys as _sys
     _sys.modules.pop("routes.email_pollers", None)
     from routes.email_pollers import _inprocess_pollers_enabled  # noqa: WPS433
 
     # Defaults to enabled (preserves single-process deployments).
-    monkeypatch.delenv("ODYSSEUS_INPROCESS_POLLERS", raising=False)
+    monkeypatch.delenv("CLEVERLY_INPROCESS_POLLERS", raising=False)
     assert _inprocess_pollers_enabled() is True
 
     # Any of the off-values disables.
     for off in ("0", "false", "no", "off", "FALSE", "Off"):
-        monkeypatch.setenv("ODYSSEUS_INPROCESS_POLLERS", off)
+        monkeypatch.setenv("CLEVERLY_INPROCESS_POLLERS", off)
         assert _inprocess_pollers_enabled() is False, f"{off!r} should disable"
 
     # Explicit on-values stay enabled.
     for on in ("1", "true", "yes", "anything-truthy"):
-        monkeypatch.setenv("ODYSSEUS_INPROCESS_POLLERS", on)
+        monkeypatch.setenv("CLEVERLY_INPROCESS_POLLERS", on)
         assert _inprocess_pollers_enabled() is True, f"{on!r} should enable"
 
 
@@ -641,7 +680,7 @@ def _load_search_content_for_test(monkeypatch, name="services.search.content_und
     analytics.RateLimitError = RuntimeError
     analytics.error_logger = _types.SimpleNamespace(error=lambda *a, **k: None)
     cache = _types.ModuleType("services.search.cache")
-    cache.CONTENT_CACHE_DIR = Path("/tmp/odysseus-test-content-cache")
+    cache.CONTENT_CACHE_DIR = Path("/tmp/cleverly-test-content-cache")
     cache.content_cache_index = {}
     cache.generate_cache_key = lambda url: "test-cache-key"
     cache.cleanup_cache = lambda: None
@@ -801,7 +840,7 @@ def test_diagnostics_routes_are_admin_gated():
     """db/rag stats + test endpoints must require admin (they relied only on
     the global session check before)."""
     src = Path(__file__).resolve().parents[1] / "routes" / "diagnostics_routes.py"
-    text = src.read_text()
+    text = src.read_text(encoding="utf-8")
     for handler in ("get_database_stats", "get_rag_stats", "test_youtube", "test_research"):
         assert f"def {handler}(request: Request" in text, handler
     assert text.count("require_admin(request)") >= 4
@@ -811,7 +850,7 @@ def test_email_thread_rendering_sanitizes_body_html():
     """Both threaded render paths must run server-parsed body_html through the
     allowlist sanitizer (the flat path already did)."""
     src = Path(__file__).resolve().parents[1] / "static" / "js" / "emailLibrary.js"
-    text = src.read_text()
+    text = src.read_text(encoding="utf-8")
     # every `t.body_html` reference is wrapped by _sanitizeHtml(...)
     assert text.count("t.body_html") == text.count("_sanitizeHtml(t.body_html")
     assert "t.body_html" in text  # guard against the file being refactored away
