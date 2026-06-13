@@ -13,6 +13,7 @@ from core.middleware import require_admin
 from src import code_workspace
 from src import code_workspace_agent
 from src.auth_helpers import get_current_user
+from src.local_audit import append_audit
 
 
 class CreateWorkspaceRequest(BaseModel):
@@ -48,6 +49,11 @@ class AgentRequest(BaseModel):
     max_rounds: int = Field(default=2, ge=1, le=3)
     selected_paths: list[str] = Field(default_factory=list, max_length=12)
     apply_changes: bool = False
+
+
+class ValidateDiffRequest(BaseModel):
+    diff: str = Field(max_length=code_workspace.MAX_PATCH_BYTES)
+    test_command: str = Field(min_length=1, max_length=400)
 
 
 def _owner(request: Request) -> str:
@@ -98,10 +104,17 @@ def setup_code_workspace_routes() -> APIRouter:
                         raise code_workspace.CodeWorkspaceError("Archive is too large")
                     tmp.write(chunk)
             ws_name = name or Path(file.filename or "Workspace").stem
-            return {
+            result = {
                 "ok": True,
                 "workspace": code_workspace.import_archive(ws_name, tmp_path, owner=_owner(request)),
             }
+            append_audit("code_workspace_imported", {
+                "workspace_id": result["workspace"].get("id"),
+                "name": result["workspace"].get("name"),
+                "filename": file.filename or "",
+                "bytes": total,
+            }, user=_owner(request))
+            return result
         except code_workspace.CodeWorkspaceError as exc:
             raise _bad(exc)
         finally:
@@ -141,9 +154,48 @@ def setup_code_workspace_routes() -> APIRouter:
     @router.post("/{workspace_id}/patch")
     def code_workspace_patch(workspace_id: str, body: PatchRequest, request: Request):
         try:
-            return {"ok": True, **code_workspace.apply_unified_diff(workspace_id, body.diff, owner=_owner(request))}
+            result = {"ok": True, **code_workspace.apply_unified_diff(workspace_id, body.diff, owner=_owner(request))}
+            append_audit("code_workspace_patch_applied", {
+                "workspace_id": workspace_id,
+                "exit_code": result.get("exit_code"),
+                "bytes": len(body.diff.encode("utf-8")),
+            }, user=_owner(request))
+            return result
         except code_workspace.CodeWorkspaceError as exc:
             raise _bad(exc)
+
+    @router.post("/{workspace_id}/validate-diff")
+    def code_workspace_validate_diff(workspace_id: str, body: ValidateDiffRequest, request: Request):
+        owner = _owner(request)
+        snapshot = None
+        try:
+            snapshot = code_workspace.create_snapshot(workspace_id, "Before proposed diff validation", owner=owner)
+            patch = code_workspace.apply_unified_diff(workspace_id, body.diff, owner=owner)
+            if patch.get("exit_code") != 0:
+                return {"ok": True, "valid": False, "snapshot": snapshot, "patch": patch, "test": None}
+            test = code_workspace.run_command(
+                workspace_id,
+                body.test_command,
+                owner=owner,
+                timeout_seconds=code_workspace.MAX_COMMAND_SECONDS,
+            )
+            valid = test.get("exit_code") == 0
+            append_audit("code_workspace_diff_validated", {
+                "workspace_id": workspace_id,
+                "valid": valid,
+                "test_command": body.test_command,
+                "exit_code": test.get("exit_code"),
+                "snapshot_id": snapshot.get("id"),
+            }, user=owner)
+            return {"ok": True, "valid": valid, "snapshot": snapshot, "patch": patch, "test": test}
+        except code_workspace.CodeWorkspaceError as exc:
+            raise _bad(exc)
+        finally:
+            if snapshot:
+                try:
+                    code_workspace.restore_snapshot(workspace_id, snapshot["id"], owner=owner)
+                except Exception:
+                    pass
 
     @router.post("/{workspace_id}/run")
     def code_workspace_run(workspace_id: str, body: RunRequest, request: Request):
@@ -163,7 +215,7 @@ def setup_code_workspace_routes() -> APIRouter:
     @router.post("/{workspace_id}/agent")
     async def code_workspace_agent_run(workspace_id: str, body: AgentRequest, request: Request):
         try:
-            return await code_workspace_agent.run_agent(
+            result = await code_workspace_agent.run_agent(
                 workspace_id,
                 body.task,
                 owner=_owner(request),
@@ -173,6 +225,14 @@ def setup_code_workspace_routes() -> APIRouter:
                 selected_paths=body.selected_paths,
                 apply_changes=body.apply_changes,
             )
+            append_audit("code_workspace_agent_draft", {
+                "workspace_id": workspace_id,
+                "model": result.get("model"),
+                "selected_paths": result.get("selected_paths", []),
+                "has_proposed_diff": bool(result.get("proposed_diff")),
+                "applied": bool(result.get("applied")),
+            }, user=_owner(request))
+            return result
         except code_workspace.CodeWorkspaceError as exc:
             raise _bad(exc)
 
@@ -214,7 +274,9 @@ def setup_code_workspace_routes() -> APIRouter:
     @router.post("/{workspace_id}/snapshots/{snapshot_id}/restore")
     def code_workspace_restore_snapshot(workspace_id: str, snapshot_id: str, request: Request):
         try:
-            return {"ok": True, **code_workspace.restore_snapshot(workspace_id, snapshot_id, owner=_owner(request))}
+            result = {"ok": True, **code_workspace.restore_snapshot(workspace_id, snapshot_id, owner=_owner(request))}
+            append_audit("code_workspace_snapshot_restored", {"workspace_id": workspace_id, "snapshot_id": snapshot_id}, user=_owner(request))
+            return result
         except code_workspace.CodeWorkspaceError as exc:
             raise _bad(exc)
 
@@ -229,6 +291,11 @@ def setup_code_workspace_routes() -> APIRouter:
     def code_workspace_export(workspace_id: str, request: Request):
         try:
             export = code_workspace.export_workspace(workspace_id, owner=_owner(request))
+            append_audit("code_workspace_exported", {
+                "workspace_id": workspace_id,
+                "filename": export.get("filename"),
+                "size": export.get("size"),
+            }, user=_owner(request))
             return FileResponse(export["path"], filename=export["filename"], media_type="application/zip")
         except code_workspace.CodeWorkspaceError as exc:
             raise _bad(exc)

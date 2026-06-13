@@ -172,7 +172,7 @@ def _fallback_paths(listing: list[dict[str, Any]], task: str) -> list[str]:
     return [path for _score, path in sorted(scored, key=lambda x: (-x[0], x[1]))[: code_workspace.MAX_AGENT_FILES]]
 
 
-async def _choose_files(url: str, model: str, headers: dict, task: str, listing: list[dict[str, Any]]) -> list[str]:
+async def _choose_files(url: str, model: str, headers: dict, task: str, listing: list[dict[str, Any]]) -> tuple[list[str], str]:
     listing_text = "\n".join(f"{row['path']} ({row['size']} bytes)" for row in listing)
     messages = [
         {
@@ -187,7 +187,8 @@ async def _choose_files(url: str, model: str, headers: dict, task: str, listing:
     response = await llm_call_async(url, model, messages, headers=headers, temperature=0.2, max_tokens=1200, timeout=120)
     data = _extract_json(response)
     paths = data.get("paths") if isinstance(data, dict) else []
-    return [str(p) for p in paths if isinstance(p, str)][: code_workspace.MAX_AGENT_FILES]
+    plan = data.get("plan") if isinstance(data, dict) else ""
+    return [str(p) for p in paths if isinstance(p, str)][: code_workspace.MAX_AGENT_FILES], str(plan or "")
 
 
 def _build_patch_prompt(task: str, files: list[dict[str, Any]], status: str, prior: str = "") -> list[dict[str, str]]:
@@ -242,18 +243,25 @@ async def run_agent(
     snapshot = code_workspace.create_snapshot(workspace_id, "Before agent run", owner=owner, root=root)
     listing = _repo_listing(workspace_id, owner, root=root)
     paths = list(selected_paths or [])
+    plan = ""
     if not paths:
         try:
-            paths = await _choose_files(url, model, headers, task, listing)
+            paths, plan = await _choose_files(url, model, headers, task, listing)
         except Exception:
             paths = []
     if not paths:
         paths = _fallback_paths(listing, task)
+    if not plan:
+        plan = "Inspect selected files, draft a targeted unified diff, then require preview and tests before applying."
     files = _read_context_files(workspace_id, paths, owner, root=root)
     if not files:
         raise code_workspace.CodeWorkspaceError("No readable source files were selected for the coding agent")
 
-    steps: list[dict[str, Any]] = [{"phase": "snapshot", "snapshot": snapshot}, {"phase": "context", "paths": [f["path"] for f in files]}]
+    steps: list[dict[str, Any]] = [
+        {"phase": "plan", "plan": plan},
+        {"phase": "snapshot", "snapshot": snapshot},
+        {"phase": "context", "paths": [f["path"] for f in files]},
+    ]
     final_diff = ""
     test_result = None
     prior = ""
@@ -301,6 +309,7 @@ async def run_agent(
         "ok": True,
         "model_key": key,
         "model": model,
+        "plan": plan,
         "snapshot": snapshot,
         "selected_paths": [f["path"] for f in files],
         "proposed_diff": final_diff if not apply_changes else "",

@@ -11,6 +11,9 @@ let _currentFile = '';
 let _wired = false;
 let _pendingDiff = '';
 let _pendingSnapshot = null;
+let _pendingPlan = '';
+let _pendingValidation = null;
+let _pendingTestPassed = false;
 let _snapshots = [];
 
 function el(id) { return document.getElementById(id); }
@@ -38,9 +41,15 @@ function ensureStyles() {
     .code-ws-review{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);}
     .code-ws-review.hidden{display:none;}
     .code-ws-review-label{font-size:12px;font-weight:700;color:var(--fg);margin-right:auto;}
+    .code-ws-review-meta{flex:1 1 100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;}
+    .code-ws-gate-step{border:1px solid var(--border);border-radius:6px;padding:6px;background:color-mix(in srgb,var(--bg) 42%,transparent);font-size:11px;min-width:0;}
+    .code-ws-gate-step strong{display:block;margin-bottom:3px;}
+    .code-ws-gate-step.ok{border-color:rgba(52,211,153,.38);}
+    .code-ws-gate-step.wait{border-color:rgba(251,191,36,.35);}
+    .code-ws-btn:disabled{opacity:.45;cursor:not-allowed;}
     .code-ws-output{height:138px;overflow:auto;background:#0f1117;color:#e7eaf0;border:1px solid var(--border);border-radius:8px;padding:9px;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;}
     .code-ws-path{font-size:12px;opacity:.75;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-    @media(max-width:760px){.code-ws-grid{grid-template-columns:1fr;grid-template-rows:220px 1fr}.code-workspace-body{overflow:auto}.code-ws-main{min-height:640px}}
+    @media(max-width:760px){.code-ws-grid{grid-template-columns:1fr;grid-template-rows:220px 1fr}.code-ws-review-meta{grid-template-columns:1fr}.code-workspace-body{overflow:auto}.code-ws-main{min-height:640px}}
   `;
   document.head.appendChild(style);
 }
@@ -107,6 +116,7 @@ function renderShell() {
           </div>
           <div class="code-ws-review hidden" id="code-ws-review">
             <span class="code-ws-review-label">Proposed diff ready</span>
+            <div class="code-ws-review-meta" id="code-ws-review-gate"></div>
             <button class="code-ws-btn primary" id="code-ws-apply-proposed">Apply</button>
             <button class="code-ws-btn" id="code-ws-reject-proposed">Reject</button>
             <button class="code-ws-btn" id="code-ws-test-proposed">Run Tests</button>
@@ -157,11 +167,62 @@ function setOutput(text) {
   if (out) out.textContent = text || '';
 }
 
-function setPendingDiff(diff, snapshot) {
+function renderReviewGate() {
+  const review = el('code-ws-review');
+  if (!review) return;
+  review.classList.toggle('hidden', !_pendingDiff);
+  const applyBtn = el('code-ws-apply-proposed');
+  if (applyBtn) {
+    applyBtn.disabled = !_pendingDiff || !_pendingTestPassed;
+    applyBtn.title = _pendingTestPassed ? 'Apply the tested proposed diff' : 'Run Tests must pass before Apply is enabled';
+  }
+  const gate = el('code-ws-review-gate');
+  if (!gate) return;
+  if (!_pendingDiff) {
+    gate.innerHTML = '';
+    return;
+  }
+  const testCommand = (el('code-ws-command')?.value || '').trim();
+  const diffBytes = new Blob([_pendingDiff]).size;
+  const items = [
+    {
+      label: 'Plan',
+      ok: !!_pendingPlan,
+      detail: _pendingPlan || 'Review the selected files and proposed patch.',
+    },
+    {
+      label: 'Snapshot',
+      ok: !!_pendingSnapshot,
+      detail: _pendingSnapshot?.id ? `Rollback point ${_pendingSnapshot.id}` : 'No rollback point recorded.',
+    },
+    {
+      label: 'Diff',
+      ok: !!_pendingDiff,
+      detail: `${Math.max(1, Math.round(diffBytes / 1024))} KB proposed patch`,
+    },
+    {
+      label: 'Tests',
+      ok: _pendingTestPassed,
+      detail: _pendingTestPassed
+        ? `Passed: ${_pendingValidation?.test?.command || testCommand}`
+        : (testCommand ? 'Run Tests validates on a temporary snapshot.' : 'Enter a test command before applying.'),
+    },
+  ];
+  gate.innerHTML = items.map(item => `
+    <div class="code-ws-gate-step ${item.ok ? 'ok' : 'wait'}">
+      <strong>${item.ok ? 'OK' : 'Wait'}: ${esc(item.label)}</strong>
+      <span>${esc(item.detail)}</span>
+    </div>
+  `).join('');
+}
+
+function setPendingDiff(diff, snapshot, plan = '') {
   _pendingDiff = diff || '';
   _pendingSnapshot = snapshot || null;
-  const review = el('code-ws-review');
-  if (review) review.classList.toggle('hidden', !_pendingDiff);
+  _pendingPlan = _pendingDiff ? (plan || '') : '';
+  _pendingValidation = null;
+  _pendingTestPassed = false;
+  renderReviewGate();
 }
 
 function selectedName() {
@@ -312,6 +373,10 @@ async function applyProposedDiff() {
     setOutput('No proposed diff to apply.');
     return;
   }
+  if (!_pendingTestPassed) {
+    setOutput('Run Tests must pass on the proposed diff before Apply is enabled.');
+    return;
+  }
   await api(`/${encodeURIComponent(_selected)}/snapshots`, {
     method: 'POST',
     body: JSON.stringify({ label: 'Before applying agent draft' }),
@@ -329,6 +394,41 @@ async function applyProposedDiff() {
 function rejectProposedDiff() {
   setPendingDiff('', null);
   setOutput('Proposed diff rejected.');
+}
+
+async function validateProposedDiff() {
+  if (!_selected || !_pendingDiff) {
+    setOutput('No proposed diff to test.');
+    return;
+  }
+  const command = (el('code-ws-command')?.value || '').trim();
+  if (!command) {
+    _pendingValidation = null;
+    _pendingTestPassed = false;
+    renderReviewGate();
+    setOutput('Enter a test command before validating the proposed diff.');
+    return;
+  }
+  setOutput('Validating proposed diff on a temporary snapshot...');
+  const data = await api(`/${encodeURIComponent(_selected)}/validate-diff`, {
+    method: 'POST',
+    body: JSON.stringify({ diff: _pendingDiff, test_command: command }),
+  });
+  _pendingValidation = data;
+  _pendingTestPassed = !!data.valid;
+  renderReviewGate();
+  const test = data.test || {};
+  const patch = data.patch || {};
+  const lines = [
+    data.valid ? 'Validation passed. Apply is enabled.' : 'Validation failed. Apply remains disabled.',
+    `snapshot: ${data.snapshot?.id || ''}`,
+    `patch_exit_code: ${patch.exit_code ?? ''}`,
+    test.stdout || '',
+    test.stderr || '',
+    test.exit_code != null ? `exit_code: ${test.exit_code}` : '',
+  ];
+  setOutput(lines.filter(Boolean).join('\n'));
+  await loadTree('');
 }
 
 async function runCommand() {
@@ -360,10 +460,15 @@ async function runAgent() {
   });
   const lines = [
     `model: ${data.model || data.model_key || ''}`,
+    `plan: ${data.plan || 'Review proposed diff, validate tests, then apply.'}`,
     `snapshot: ${(data.snapshot && data.snapshot.id) || ''}`,
     `files: ${(data.selected_paths || []).join(', ')}`,
   ];
   for (const step of data.steps || []) {
+    if (step.phase === 'plan') {
+      lines.push(`plan: ${step.plan || data.plan || ''}`);
+      continue;
+    }
     lines.push(`${step.phase}${step.round ? ' #' + step.round : ''}: exit_code=${step.exit_code ?? 0}`);
     if (step.stderr) lines.push(step.stderr);
   }
@@ -374,9 +479,9 @@ async function runAgent() {
   }
   const finalDiff = data.proposed_diff || data.applied_diff || data.diff?.stdout || '';
   if (finalDiff && el('code-ws-editor')) el('code-ws-editor').value = finalDiff;
-  setPendingDiff(data.proposed_diff || '', data.snapshot || null);
+  setPendingDiff(data.proposed_diff || '', data.snapshot || null, data.plan || '');
   if (data.proposed_diff) {
-    lines.push('review: proposed diff is waiting for Apply or Reject');
+    lines.push('review: proposed diff is waiting for Run Tests, then Apply or Reject');
   }
   setOutput(lines.filter(Boolean).join('\n'));
   await loadTree('');
@@ -413,6 +518,19 @@ async function restoreLatestSnapshot() {
   }
   await api(`/${encodeURIComponent(_selected)}/snapshots/${encodeURIComponent(snap.id)}/restore`, { method: 'POST' });
   setOutput(`Restored snapshot ${snap.id}`);
+  _currentFile = '';
+  await loadTree('');
+  await loadSnapshots();
+}
+
+async function restoreReviewSnapshot() {
+  if (!_selected || !_pendingSnapshot?.id) {
+    setOutput('No review snapshot found.');
+    return;
+  }
+  await api(`/${encodeURIComponent(_selected)}/snapshots/${encodeURIComponent(_pendingSnapshot.id)}/restore`, { method: 'POST' });
+  setOutput(`Restored review snapshot ${_pendingSnapshot.id}`);
+  setPendingDiff('', null);
   _currentFile = '';
   await loadTree('');
   await loadSnapshots();
@@ -527,8 +645,21 @@ function wireControls() {
   el('code-ws-agent-run')?.addEventListener('click', guarded(runAgent));
   el('code-ws-apply-proposed')?.addEventListener('click', guarded(applyProposedDiff));
   el('code-ws-reject-proposed')?.addEventListener('click', rejectProposedDiff);
-  el('code-ws-test-proposed')?.addEventListener('click', guarded(runCommand));
-  el('code-ws-restore-review')?.addEventListener('click', guarded(restoreLatestSnapshot));
+  el('code-ws-test-proposed')?.addEventListener('click', guarded(validateProposedDiff));
+  el('code-ws-restore-review')?.addEventListener('click', guarded(restoreReviewSnapshot));
+  el('code-ws-command')?.addEventListener('input', () => {
+    if (!_pendingDiff) return;
+    _pendingValidation = null;
+    _pendingTestPassed = false;
+    renderReviewGate();
+  });
+  el('code-ws-editor')?.addEventListener('input', () => {
+    if (!_pendingDiff) return;
+    _pendingDiff = el('code-ws-editor')?.value || '';
+    _pendingValidation = null;
+    _pendingTestPassed = false;
+    renderReviewGate();
+  });
   el('code-ws-snapshot')?.addEventListener('click', guarded(createSnapshot));
   el('code-ws-restore-latest')?.addEventListener('click', guarded(restoreLatestSnapshot));
   el('code-ws-restore-selected')?.addEventListener('click', guarded(restoreSelectedSnapshot));

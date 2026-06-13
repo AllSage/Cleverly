@@ -8,18 +8,23 @@ import platform
 import socket
 import subprocess
 import sys
+import html
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from core.database import ModelEndpoint, SessionLocal
 from core.middleware import require_admin
 from src.auth_helpers import get_current_user
 from src.constants import DATA_DIR
+from src.endpoint_resolver import build_chat_url, normalize_base
+from src.local_audit import append_audit, read_audit
 from src.offline_policy import evaluate_offline_policy, is_local_model_url
 from src.settings import load_settings, offline_mode, save_settings
 
@@ -30,6 +35,18 @@ class RegisterLocalModelRequest(BaseModel):
     model: str = Field(min_length=1, max_length=240)
     set_default: bool = True
     shared: bool = True
+
+
+class ModelBenchmarkRequest(BaseModel):
+    base_url: str = Field(default="http://ollama:11434/v1", max_length=300)
+    model: str = Field(min_length=1, max_length=240)
+    prompt: str = Field(default="Reply with exactly: ready", max_length=500)
+    max_tokens: int = Field(default=32, ge=1, le=256)
+
+
+class AuditEventRequest(BaseModel):
+    action: str = Field(min_length=1, max_length=80)
+    detail: dict[str, Any] = Field(default_factory=dict)
 
 
 MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
@@ -244,6 +261,202 @@ def _git_commit(root: Path) -> str:
         return ""
 
 
+def _auth_configured(request: Request) -> bool:
+    mgr = getattr(getattr(request.app, "state", None), "auth_manager", None)
+    return bool(getattr(mgr, "is_configured", False))
+
+
+def _last_egress_result() -> dict[str, Any] | None:
+    for item in read_audit(100):
+        if item.get("action") == "egress_test":
+            detail = item.get("detail") if isinstance(item.get("detail"), dict) else {}
+            return {
+                "timestamp": item.get("timestamp", ""),
+                "blocked": bool(detail.get("blocked")),
+                "status": detail.get("status", ""),
+                "detail": detail.get("detail", ""),
+            }
+    return None
+
+
+def _status_for_check(report: dict[str, Any], check_id: str) -> str:
+    for item in report.get("checks") or []:
+        if item.get("id") == check_id:
+            return item.get("status", "")
+    return ""
+
+
+def _readiness_score(report: dict[str, Any], runtime: dict[str, Any], models: dict[str, Any], request: Request) -> dict[str, Any]:
+    last_egress = _last_egress_result()
+    items = [
+        {
+            "id": "auth-configured",
+            "label": "Auth configured",
+            "status": "ok" if _auth_configured(request) else "fail",
+            "detail": "Authentication is configured" if _auth_configured(request) else "Create the first admin user before using sensitive data",
+        },
+        {
+            "id": "offline-mode",
+            "label": "Offline mode",
+            "status": _status_for_check(report, "offline-mode") or "fail",
+            "detail": "Offline startup policy is active",
+        },
+        {
+            "id": "loopback-bind",
+            "label": "Loopback UI",
+            "status": _status_for_check(report, "loopback-bind") or "fail",
+            "detail": f"APP_BIND={runtime.get('app_bind', '')}",
+        },
+        {
+            "id": "sealed-data",
+            "label": "Sealed data",
+            "status": "ok" if runtime.get("sealed_mode") else "warn",
+            "detail": "Docker named volume data mode" if runtime.get("sealed_mode") else "Host-visible data mode is active or native storage is used",
+        },
+        {
+            "id": "local-model",
+            "label": "Local model",
+            "status": "ok" if (models.get("enabled_local") or 0) > 0 and (models.get("enabled_external") or 0) == 0 else "warn",
+            "detail": f"{models.get('enabled_local') or 0} local enabled, {models.get('enabled_external') or 0} external enabled",
+        },
+        {
+            "id": "code-worker",
+            "label": "Code worker",
+            "status": _status_for_check(report, "code-worker") or "warn",
+            "detail": f"runner={runtime.get('code_workspace_runner', '')}",
+        },
+        {
+            "id": "egress-proof",
+            "label": "Egress proof",
+            "status": "ok" if last_egress and last_egress.get("blocked") else "warn",
+            "detail": last_egress.get("detail") if last_egress else "Run Test No Internet before sensitive work",
+        },
+    ]
+    points = sum(1 for item in items if item["status"] == "ok")
+    partial = sum(1 for item in items if item["status"] == "warn") * 0.5
+    score = round(((points + partial) / len(items)) * 100)
+    return {
+        "score": score,
+        "status": "green" if score >= 90 and not report.get("summary", {}).get("fail") else ("yellow" if score >= 65 else "red"),
+        "label": "Ready" if score >= 90 else ("Needs review" if score >= 65 else "Not ready"),
+        "items": items,
+        "last_egress": last_egress,
+    }
+
+
+def _storage_visibility(runtime: dict[str, Any]) -> dict[str, Any]:
+    data_dir = Path(os.getenv("DATA_DIR") or DATA_DIR)
+    sealed = bool(runtime.get("sealed_mode"))
+    host_data = _truthy(os.getenv("CLEVERLY_HOST_DATA")) or _truthy(os.getenv("CLEVERLY_USE_HOST_DATA"))
+    return {
+        "mode": "sealed" if sealed else ("host-data" if host_data else "native"),
+        "sealed": sealed,
+        "host_data_enabled": host_data,
+        "paths": {
+            "data_dir": str(data_dir),
+            "logs_dir": str(Path(os.getenv("LOG_DIR") or _repo_root() / "logs")),
+            "cache_home": runtime.get("cache_home", ""),
+            "hf_home": runtime.get("hf_home", ""),
+            "fastembed_cache_path": runtime.get("fastembed_cache_path", ""),
+            "code_workspace_worker_dir": runtime.get("code_workspace_worker_dir", ""),
+            "audit_log": str(Path(os.getenv("DATA_DIR") or DATA_DIR) / "audit" / "local-audit.jsonl"),
+        },
+        "docker_volumes": [
+            "cleverly-data",
+            "cleverly-logs",
+            "cleverly-ssh",
+            "cleverly-cache",
+            "cleverly-huggingface",
+            "cleverly-local",
+            "cleverly-npm-cache",
+            "cleverly-ollama",
+        ],
+        "notes": [
+            "Docker named volumes are sealed from the project folder, not encrypted by themselves.",
+            "Host-data mode intentionally exposes ./data and ./logs to the host filesystem.",
+            "Encrypted backup export is the portable path for moving app data.",
+        ],
+    }
+
+
+def _status_payload(request: Request) -> dict[str, Any]:
+    report = evaluate_offline_policy(include_db=True)
+    data_dir = Path(os.getenv("DATA_DIR") or DATA_DIR)
+    checks = report.get("checks") or []
+    runtime = {
+        "offline": offline_mode(),
+        "strict": report.get("strict", False),
+        "break_glass": report.get("break_glass", False),
+        "app_bind": os.getenv("APP_BIND", "127.0.0.1"),
+        "data_dir": str(data_dir),
+        "cache_home": os.getenv("XDG_CACHE_HOME", ""),
+        "hf_home": os.getenv("HF_HOME", ""),
+        "fastembed_cache_path": os.getenv("FASTEMBED_CACHE_PATH", ""),
+        "code_workspace_runner": os.getenv("CODE_WORKSPACE_RUNNER", "worker" if _docker_like() else "in-process"),
+        "code_workspace_worker_dir": os.getenv("CODE_WORKSPACE_WORKER_DIR", str(data_dir / "code-workspaces" / ".worker")),
+        "platform": platform.platform(),
+        "python": sys.version.split()[0],
+        "hostname": platform.node(),
+        "docker_like": _docker_like(),
+        "sealed_mode": str(data_dir).replace("\\", "/").endswith("/app/data") and not _truthy(os.getenv("CLEVERLY_USE_HOST_DATA")),
+    }
+    models = _model_endpoint_summary()
+    storage = _storage_visibility(runtime)
+    readiness = _readiness_score(report, runtime, models, request)
+    return {
+        "ok": True,
+        "policy": report,
+        "checks": checks,
+        "summary": report.get("summary") or {},
+        "readiness": readiness,
+        "runtime": runtime,
+        "storage": storage,
+        "models": models,
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+def _report_payload(request: Request) -> dict[str, Any]:
+    status = _status_payload(request)
+    root = _repo_root()
+    return {
+        "ok": True,
+        "generated_at": datetime.now().isoformat(),
+        "product": "Cleverly",
+        "git_commit": _git_commit(root),
+        "status": status,
+        "audit": read_audit(100),
+        "sensitive_machine_checklist": [
+            "Prepare images and models on a connected non-sensitive machine.",
+            "Move only the offline bundle to the sensitive machine.",
+            "Use sealed Docker volumes unless host folders are intentional.",
+            "Confirm readiness score and Offline Control checks before importing data.",
+            "Run Test No Internet and keep this report.",
+        ],
+    }
+
+
+def _html_report(report: dict[str, Any]) -> str:
+    readiness = report.get("status", {}).get("readiness", {})
+    checks = readiness.get("items") or []
+    rows = "\n".join(
+        f"<tr><td>{html.escape(str(item.get('status', '')))}</td><td>{html.escape(str(item.get('label', '')))}</td><td>{html.escape(str(item.get('detail', '')))}</td></tr>"
+        for item in checks
+    )
+    audit_rows = "\n".join(
+        f"<tr><td>{html.escape(str(item.get('timestamp', '')))}</td><td>{html.escape(str(item.get('action', '')))}</td><td>{html.escape(json.dumps(item.get('detail', {}), default=str)[:600])}</td></tr>"
+        for item in report.get("audit", [])[:30]
+    )
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Cleverly Offline Report</title>
+<style>body{{font:14px/1.45 system-ui,sans-serif;background:#101216;color:#eef1f5;margin:24px}}table{{border-collapse:collapse;width:100%;margin:14px 0}}td,th{{border:1px solid #2a2f38;padding:8px;text-align:left;vertical-align:top}}.score{{font-size:42px;font-weight:800}}</style></head>
+<body><h1>Cleverly Offline Report</h1><p>Generated: {html.escape(str(report.get('generated_at','')))}</p>
+<div class="score">{html.escape(str(readiness.get('score','?')))}%</div><p>{html.escape(str(readiness.get('label','')))}</p>
+<h2>Readiness Checks</h2><table><thead><tr><th>Status</th><th>Check</th><th>Detail</th></tr></thead><tbody>{rows}</tbody></table>
+<h2>Recent Audit</h2><table><thead><tr><th>Time</th><th>Action</th><th>Detail</th></tr></thead><tbody>{audit_rows}</tbody></table>
+</body></html>"""
+
+
 def setup_offline_control_routes() -> APIRouter:
     router = APIRouter(
         prefix="/api/offline-control",
@@ -252,56 +465,94 @@ def setup_offline_control_routes() -> APIRouter:
     )
 
     @router.get("/status")
-    def offline_status():
-        report = evaluate_offline_policy(include_db=True)
-        data_dir = Path(os.getenv("DATA_DIR") or DATA_DIR)
-        checks = report.get("checks") or []
-        runtime = {
-            "offline": offline_mode(),
-            "strict": report.get("strict", False),
-            "break_glass": report.get("break_glass", False),
-            "app_bind": os.getenv("APP_BIND", "127.0.0.1"),
-            "data_dir": str(data_dir),
-            "cache_home": os.getenv("XDG_CACHE_HOME", ""),
-            "hf_home": os.getenv("HF_HOME", ""),
-            "fastembed_cache_path": os.getenv("FASTEMBED_CACHE_PATH", ""),
-            "code_workspace_runner": os.getenv("CODE_WORKSPACE_RUNNER", "worker" if _docker_like() else "in-process"),
-            "code_workspace_worker_dir": os.getenv("CODE_WORKSPACE_WORKER_DIR", str(data_dir / "code-workspaces" / ".worker")),
-            "platform": platform.platform(),
-            "python": sys.version.split()[0],
-            "hostname": platform.node(),
-            "docker_like": _docker_like(),
-            "sealed_mode": str(data_dir).replace("\\", "/").endswith("/app/data") and not _truthy(os.getenv("CLEVERLY_USE_HOST_DATA")),
-        }
+    def offline_status(request: Request):
+        return _status_payload(request)
+
+    @router.get("/storage")
+    def storage_status(request: Request):
+        return {"ok": True, "storage": _status_payload(request)["storage"]}
+
+    @router.get("/audit")
+    def audit_log(limit: int = 100):
+        return {"ok": True, "events": read_audit(limit)}
+
+    @router.post("/audit")
+    def audit_event(body: AuditEventRequest, request: Request):
         return {
             "ok": True,
-            "policy": report,
-            "checks": checks,
-            "summary": report.get("summary") or {},
-            "runtime": runtime,
-            "models": _model_endpoint_summary(),
-            "timestamp": datetime.now().isoformat(),
+            "event": append_audit(body.action, body.detail, user=get_current_user(request) or "", source="ui"),
+        }
+
+    @router.get("/report")
+    def report_json(request: Request):
+        report = _report_payload(request)
+        append_audit("offline_report_exported", {"format": "json", "score": report["status"]["readiness"]["score"]}, user=get_current_user(request) or "")
+        return report
+
+    @router.get("/report/html", response_class=HTMLResponse)
+    def report_html(request: Request):
+        report = _report_payload(request)
+        append_audit("offline_report_exported", {"format": "html", "score": report["status"]["readiness"]["score"]}, user=get_current_user(request) or "")
+        return HTMLResponse(_html_report(report))
+
+    @router.get("/help")
+    def offline_help():
+        return {
+            "ok": True,
+            "sections": [
+                {
+                    "title": "Sensitive machine checklist",
+                    "items": [
+                        "Prepare images and models only on a connected, non-sensitive machine.",
+                        "Move the offline bundle by trusted removable media.",
+                        "Run load-cleverly.cmd, then seal-data.cmd if model/data files were included.",
+                        "Start with sealed mode and confirm zero failed Offline Control checks.",
+                        "Run Test No Internet and export a local report before importing sensitive data.",
+                    ],
+                },
+                {
+                    "title": "What leaves the container",
+                    "items": [
+                        "In default offline Docker mode, model calls stay on local Docker networks.",
+                        "Encrypted backup export leaves the app only when you download the encrypted file.",
+                        "Host-data mode intentionally exposes data/log folders on the host filesystem.",
+                        "Network break-glass changes the threat model and is logged when used through the UI.",
+                    ],
+                },
+                {
+                    "title": "Model onboarding",
+                    "items": [
+                        "Pull models on a connected prep machine, not on the sensitive target.",
+                        "Register only local model endpoints in Offline Control.",
+                        "Run the benchmark after registration to see first-token and throughput behavior.",
+                    ],
+                },
+            ],
         }
 
     @router.post("/egress-test")
-    def egress_test():
+    def egress_test(request: Request):
         target = ("1.1.1.1", 80)
         try:
             with socket.create_connection(target, timeout=2.5):
                 pass
         except OSError as exc:
-            return {
+            result = {
                 "ok": True,
                 "blocked": True,
                 "status": "ok",
                 "detail": f"Outbound TCP test was blocked: {type(exc).__name__}",
             }
-        return {
+            append_audit("egress_test", result, user=get_current_user(request) or "")
+            return result
+        result = {
             "ok": True,
             "blocked": False,
             "status": "fail",
             "detail": "Outbound TCP to 1.1.1.1:80 succeeded. Run the Docker offline overlay before handling sensitive data.",
         }
+        append_audit("egress_test", result, user=get_current_user(request) or "")
+        return result
 
     @router.get("/models/local")
     def local_models():
@@ -370,7 +621,7 @@ def setup_offline_control_routes() -> APIRouter:
             settings["default_endpoint_id"] = endpoint_id
             settings["default_model"] = body.model
             save_settings(settings)
-        return {
+        result = {
             "ok": True,
             "id": endpoint_id,
             "created": created,
@@ -379,6 +630,87 @@ def setup_offline_control_routes() -> APIRouter:
             "model": body.model,
             "default": body.set_default,
         }
+        append_audit("model_endpoint_registered", result, user=get_current_user(request) or "")
+        return result
+
+    @router.post("/models/benchmark")
+    def benchmark_model(body: ModelBenchmarkRequest, request: Request):
+        base_url = body.base_url.strip().rstrip("/")
+        if not is_local_model_url(base_url):
+            raise HTTPException(403, "Only local model endpoints can be benchmarked in offline mode")
+        try:
+            import httpx
+        except Exception as exc:
+            raise HTTPException(500, f"httpx unavailable: {type(exc).__name__}")
+
+        chat_url = build_chat_url(normalize_base(base_url))
+        payload = {
+            "model": body.model,
+            "messages": [{"role": "user", "content": body.prompt}],
+            "temperature": 0,
+            "max_tokens": body.max_tokens,
+            "stream": True,
+        }
+        started = time.perf_counter()
+        first_token_ms = None
+        chunks = 0
+        chars = 0
+        content_parts: list[str] = []
+        try:
+            with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+                with client.stream("POST", chat_url, json=payload) as response:
+                    response.raise_for_status()
+                    for line in response.iter_lines():
+                        if not line:
+                            continue
+                        if line.startswith("data:"):
+                            line = line[5:].strip()
+                        if line == "[DONE]":
+                            break
+                        try:
+                            item = json.loads(line)
+                        except Exception:
+                            continue
+                        delta = (((item.get("choices") or [{}])[0].get("delta") or {}).get("content") or "")
+                        if delta:
+                            if first_token_ms is None:
+                                first_token_ms = round((time.perf_counter() - started) * 1000)
+                            chunks += 1
+                            chars += len(delta)
+                            content_parts.append(delta)
+        except Exception as exc:
+            # Some local servers do not stream. Fall back to a normal request.
+            payload["stream"] = False
+            started = time.perf_counter()
+            try:
+                with httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+                    response = client.post(chat_url, json=payload)
+                    response.raise_for_status()
+                    data = response.json()
+                text = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+                chars = len(text)
+                chunks = 1 if text else 0
+                first_token_ms = None
+                content_parts = [text]
+            except Exception as fallback_exc:
+                detail = {"model": body.model, "base_url": base_url, "error": str(fallback_exc or exc)[:500]}
+                append_audit("model_benchmark_failed", detail, user=get_current_user(request) or "")
+                raise HTTPException(502, f"Local model benchmark failed: {type(fallback_exc).__name__}")
+        total_ms = round((time.perf_counter() - started) * 1000)
+        result = {
+            "ok": True,
+            "base_url": base_url,
+            "model": body.model,
+            "first_token_ms": first_token_ms,
+            "total_ms": total_ms,
+            "chunks": chunks,
+            "chars": chars,
+            "chars_per_second": round(chars / max(total_ms / 1000, 0.001), 2),
+            "sample": "".join(content_parts)[:240],
+            "local_only": True,
+        }
+        append_audit("model_benchmark", {k: v for k, v in result.items() if k != "sample"}, user=get_current_user(request) or "")
+        return result
 
     @router.get("/about")
     def about():

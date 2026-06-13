@@ -12,8 +12,9 @@
 #>
 
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version = "",
     [string]$OutputDir = "dist\installer",
+    [string]$ReleaseChecklistPath = "",
     [string]$CertificatePath = "",
     [securestring]$CertificatePassword,
     [string]$TimestampUrl = "http://timestamp.digicert.com",
@@ -24,11 +25,75 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $InstallerScript = Join-Path $Root "installer\Cleverly.iss"
 $ResolvedOutput = if ([System.IO.Path]::IsPathRooted($OutputDir)) { $OutputDir } else { Join-Path $Root $OutputDir }
-$OutputExe = Join-Path $ResolvedOutput ("CleverlySetup-{0}.exe" -f $Version)
 
 function Fail([string]$Message) {
     Write-Host ("ERROR: " + $Message) -ForegroundColor Red
     exit 1
+}
+
+function Resolve-InstallerVersion() {
+    if (-not [string]::IsNullOrWhiteSpace($Version)) {
+        return $Version
+    }
+    $packageJson = Join-Path $Root "package.json"
+    if (Test-Path -LiteralPath $packageJson) {
+        try {
+            $package = Get-Content -LiteralPath $packageJson -Raw | ConvertFrom-Json
+            if ($package.version) {
+                return [string]$package.version
+            }
+        } catch {
+            Write-Warning ("Could not read package.json version: " + $_.Exception.Message)
+        }
+    }
+    return "1.0.0"
+}
+
+function Get-GitCommit() {
+    try {
+        $commit = & git -C $Root rev-parse --short HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($commit)) {
+            return $commit.Trim()
+        }
+    } catch {}
+    return "unknown"
+}
+
+$Version = Resolve-InstallerVersion
+$OutputExe = Join-Path $ResolvedOutput ("CleverlySetup-{0}.exe" -f $Version)
+$ResolvedChecklist = if ([System.IO.Path]::IsPathRooted($ReleaseChecklistPath)) {
+    $ReleaseChecklistPath
+} elseif (-not [string]::IsNullOrWhiteSpace($ReleaseChecklistPath)) {
+    Join-Path $Root $ReleaseChecklistPath
+} else {
+    Join-Path $ResolvedOutput ("CleverlySetup-{0}.release-checklist.md" -f $Version)
+}
+
+function Write-ReleaseChecklist([string]$SignatureStatus) {
+    $checklistDir = Split-Path -Parent $ResolvedChecklist
+    if ($checklistDir) {
+        New-Item -ItemType Directory -Force -Path $checklistDir | Out-Null
+    }
+    $lines = @(
+        "# Cleverly Windows Release Checklist",
+        "",
+        "- Version: $Version",
+        "- Installer: $OutputExe",
+        "- Git commit: $(Get-GitCommit)",
+        "- Signature status: $SignatureStatus",
+        "- RequireSignature: $RequireSignature",
+        "",
+        "## Required gates",
+        "- [ ] Run ``npm run build``.",
+        "- [ ] Run ``powershell -NoLogo -NoProfile -File .\ci\fresh-machine-offline-smoke.ps1`` on a prepared offline test machine.",
+        "- [ ] Run Offline Control: Test No Internet.",
+        "- [ ] Export the Offline Control HTML report.",
+        "- [ ] Confirm the installer is Authenticode-signed for release builds.",
+        "- [ ] Confirm the README sensitive machine checklist matches the release.",
+        ""
+    )
+    Set-Content -LiteralPath $ResolvedChecklist -Value $lines -Encoding UTF8
+    Write-Host ("Release checklist written to: " + $ResolvedChecklist) -ForegroundColor Cyan
 }
 
 if (-not (Test-Path -LiteralPath $InstallerScript)) {
@@ -61,6 +126,7 @@ if ([string]::IsNullOrWhiteSpace($CertificatePath)) {
         Fail "A certificate is required because -RequireSignature was set."
     }
     Write-Warning "Built unsigned installer. Re-run with -CertificatePath and -RequireSignature for release builds."
+    Write-ReleaseChecklist "Unsigned"
     Write-Host ("Installer written to: " + $OutputExe) -ForegroundColor Green
     exit 0
 }
@@ -107,4 +173,5 @@ if ($signature.Status -ne "Valid") {
     Fail ("Installer signature validation failed: " + $signature.Status)
 }
 
+Write-ReleaseChecklist $signature.Status
 Write-Host ("Signed installer written to: " + $OutputExe) -ForegroundColor Green

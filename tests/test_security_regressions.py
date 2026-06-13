@@ -271,12 +271,45 @@ def test_offline_control_center_is_admin_gated_and_local_only():
     assert "welcome-setup-btn" in index_html
     assert "welcome-offline-btn" in index_html
     assert "offline-proof-badge" in index_html
+    assert "welcome-readiness" in index_html
     assert "/api/backup/encrypted/export" in ui_js
     assert "/api/backup/encrypted/import" in ui_js
     assert "/models/recommendations" in setup_js
     assert "/egress-test" in setup_js
     assert 'placeholder="Model tag you pulled"' in setup_js
     assert 'value="llama3.2:3b"' not in setup_js
+
+
+def test_offline_assurance_workflow_has_local_reports_audit_and_help():
+    route = Path("routes/offline_control_routes.py").read_text(encoding="utf-8")
+    ui_js = Path("static/js/offlineControl.js").read_text(encoding="utf-8")
+    audit = Path("src/local_audit.py").read_text(encoding="utf-8")
+    css = Path("static/style.css").read_text(encoding="utf-8")
+
+    assert "def _readiness_score" in route
+    assert "def _storage_visibility" in route
+    assert '@router.get("/storage")' in route
+    assert '@router.get("/audit")' in route
+    assert '@router.post("/audit")' in route
+    assert '@router.get("/report")' in route
+    assert '@router.get("/report/html", response_class=HTMLResponse)' in route
+    assert '@router.get("/help")' in route
+    assert '@router.post("/models/benchmark")' in route
+    assert "build_chat_url(normalize_base(base_url))" in route
+    assert "append_audit(\"model_benchmark\"" in route
+    assert "append_audit(\"egress_test\"" in route
+    assert "sensitive_machine_checklist" in route
+    assert "local-audit.jsonl" in audit
+    assert "append_audit" in audit
+    assert "read_audit" in audit
+    assert "offline-export-report-json" in ui_js
+    assert "offline-export-report-html" in ui_js
+    assert "offline-run-benchmark" in ui_js
+    assert "renderStorage" in ui_js
+    assert "renderAudit" in ui_js
+    assert "renderHelp" in ui_js
+    assert "refreshWelcomeReadiness" in ui_js
+    assert ".welcome-readiness" in css
 
 
 def test_model_onboarding_uses_explicit_offline_model_recommendations():
@@ -315,13 +348,20 @@ def test_windows_installer_signing_path_requires_release_signature():
     assert "PrivilegesRequired=lowest" in installer
     assert "Cleverly-App.cmd" in installer
     assert "Excludes: \".git\\*" in installer
+    assert "VersionInfoVersion={#MyAppVersion}" in installer
+    assert "UninstallDisplayName={#MyAppName}" in installer
     assert "iscc.exe" in script
     assert "signtool.exe" in script
+    assert "Resolve-InstallerVersion" in script
+    assert "ReleaseChecklistPath" in script
+    assert "Write-ReleaseChecklist" in script
+    assert "CleverlySetup-{0}.release-checklist.md" in script
     assert "RequireSignature" in script
     assert "CertificatePath" in script
     assert "Get-AuthenticodeSignature" in script
     assert "A certificate is required because -RequireSignature was set" in script
     assert "Authenticode" in doc
+    assert "release-checklist.md" in doc
     assert "-RequireSignature" in doc
     assert "Windows Installer" in readme
 

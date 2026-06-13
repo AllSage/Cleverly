@@ -1839,6 +1839,36 @@ body.bg-pattern-sparkles {
       max-width:320px;
       line-height:1.4;
     }
+    .welcome-readiness {
+      pointer-events: auto;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      max-width: 360px;
+      margin-top: 12px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--panel) 78%, transparent);
+      color: var(--fg);
+      text-align: left;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    }
+    .welcome-readiness:not(:empty) { display: inline-flex; }
+    .welcome-readiness-score {
+      min-width: 42px;
+      font-size: 1rem;
+      font-weight: 800;
+      text-align: center;
+    }
+    .welcome-readiness-copy {
+      font-size: 0.72rem;
+      line-height: 1.35;
+      opacity: 0.78;
+    }
+    .welcome-readiness.green { border-color: color-mix(in srgb, #34d399 60%, var(--border)); }
+    .welcome-readiness.yellow { border-color: color-mix(in srgb, #fbbf24 60%, var(--border)); }
+    .welcome-readiness.red { border-color: color-mix(in srgb, #f87171 60%, var(--border)); }
     /* Incognito toggle — on welcome screen */
     #welcome-screen .welcome-actions {
       pointer-events: auto;

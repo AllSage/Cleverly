@@ -12,6 +12,9 @@ let _models = [];
 let _roots = [];
 let _egress = null;
 let _about = null;
+let _audit = [];
+let _help = null;
+let _benchmark = null;
 
 function el(id) { return document.getElementById(id); }
 function esc(value) { return uiModule.esc(value == null ? '' : String(value)); }
@@ -34,6 +37,11 @@ function ensureStyles() {
     .offline-card-title{font-size:11px;opacity:.7;margin-bottom:5px;}
     .offline-card-value{font-size:18px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
     .offline-card-note{font-size:11px;opacity:.72;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .offline-readiness{display:grid;grid-template-columns:110px minmax(0,1fr);gap:12px;align-items:center;margin-bottom:12px;border:1px solid var(--border);border-radius:8px;padding:12px;background:color-mix(in srgb,var(--bg) 44%,transparent);}
+    .offline-score{width:86px;height:86px;border-radius:50%;display:grid;place-items:center;font-size:24px;font-weight:850;border:6px solid var(--border);}
+    .offline-score.green{border-color:#34d399;color:#34d399}.offline-score.yellow{border-color:#fbbf24;color:#fbbf24}.offline-score.red{border-color:#f87171;color:#f87171}
+    .offline-mini-checks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;}
+    .offline-mini-check{display:flex;gap:7px;align-items:flex-start;font-size:12px;border-top:1px solid color-mix(in srgb,var(--border) 65%,transparent);padding-top:6px;}
     .offline-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;}
     .offline-btn{border:1px solid var(--border);background:var(--panel);color:var(--fg);border-radius:6px;padding:7px 10px;font-size:12px;cursor:pointer;white-space:nowrap;}
     .offline-btn.primary{background:var(--accent,var(--red));color:#fff;border-color:transparent;}
@@ -48,8 +56,11 @@ function ensureStyles() {
     .offline-table th{font-size:11px;opacity:.7;font-weight:700;}
     .offline-pre{white-space:pre-wrap;background:#0f1117;color:#e7eaf0;border:1px solid var(--border);border-radius:8px;padding:10px;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;max-height:260px;overflow:auto;}
     .offline-two{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+    .offline-doc-section{border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;background:color-mix(in srgb,var(--bg) 42%,transparent);}
+    .offline-doc-section h4{margin:0 0 8px;font-size:13px;}
+    .offline-doc-section ul{margin:0;padding-left:18px;font-size:12px;line-height:1.5;}
     .offline-proof-badge{font-size:9px;opacity:.72;margin-left:6px;white-space:nowrap;}
-    @media(max-width:820px){.offline-grid,.offline-two{grid-template-columns:1fr}.offline-check{grid-template-columns:1fr}.offline-control-body{overflow:auto}.offline-shell{height:auto;min-height:680px}}
+    @media(max-width:820px){.offline-grid,.offline-two,.offline-mini-checks,.offline-readiness{grid-template-columns:1fr}.offline-check{grid-template-columns:1fr}.offline-control-body{overflow:auto}.offline-shell{height:auto;min-height:680px}}
   `;
   document.head.appendChild(style);
 }
@@ -86,6 +97,9 @@ function renderTabs() {
   const tabs = [
     ['status', 'Status'],
     ['models', 'Models'],
+    ['storage', 'Storage'],
+    ['audit', 'Audit'],
+    ['help', 'Help'],
     ['backups', 'Backups'],
     ['about', 'About'],
   ];
@@ -102,10 +116,22 @@ function renderStatus() {
   const runtime = _status?.runtime || {};
   const models = _status?.models || {};
   const checks = _status?.checks || [];
+  const readiness = _status?.readiness || {};
+  const readinessItems = readiness.items || [];
   const egressHtml = _egress
     ? `<div class="offline-card-note"><span class="offline-pill ${_egress.status === 'ok' ? 'ok' : 'fail'}">${esc(_egress.status)}</span> ${esc(_egress.detail)}</div>`
     : '<div class="offline-card-note">No proof test has been run in this browser session.</div>';
   return `
+    <div class="offline-readiness">
+      <div class="offline-score ${esc(readiness.status || 'yellow')}">${esc(readiness.score ?? '?')}%</div>
+      <div>
+        <div style="font-size:18px;font-weight:800;margin-bottom:4px;">${esc(readiness.label || 'Readiness')}</div>
+        <div style="font-size:12px;opacity:.72;margin-bottom:8px;">Sensitive-machine readiness score. Export a report after running Test No Internet.</div>
+        <div class="offline-mini-checks">
+          ${readinessItems.map(item => `<div class="offline-mini-check"><span class="offline-pill ${esc(item.status)}">${esc(item.status)}</span><span><strong>${esc(item.label)}</strong><br><span style="opacity:.68">${esc(item.detail)}</span></span></div>`).join('')}
+        </div>
+      </div>
+    </div>
     <div class="offline-grid">
       <div class="offline-card"><div class="offline-card-title">Policy</div><div class="offline-card-value">${runtime.strict ? 'Strict' : 'Relaxed'}</div><div class="offline-card-note">${runtime.offline ? 'Offline mode is enabled' : 'Network mode is enabled'}</div></div>
       <div class="offline-card"><div class="offline-card-title">Checks</div><div class="offline-card-value">${summary.ok || 0}/${(summary.ok || 0) + (summary.warn || 0) + (summary.fail || 0)}</div><div class="offline-card-note">${summary.warn || 0} warnings, ${summary.fail || 0} failures</div></div>
@@ -117,6 +143,8 @@ function renderStatus() {
     <div class="offline-row">
       <button class="offline-btn primary" id="offline-refresh">Refresh</button>
       <button class="offline-btn" id="offline-egress-test">Test No Internet</button>
+      <button class="offline-btn" id="offline-export-report-json">Export Report JSON</button>
+      <button class="offline-btn" id="offline-export-report-html">Export Report HTML</button>
       <button class="offline-btn" id="offline-open-code">Open Code Workspace</button>
     </div>
     <div>
@@ -155,10 +183,71 @@ function renderModels() {
         <button class="offline-btn primary" id="offline-register-model">Register</button>
       </div>
     </div>
+    <div class="offline-card" style="margin-bottom:12px;">
+      <div class="offline-card-title">Local Model Benchmark</div>
+      <div class="offline-row">
+        <input class="offline-input" id="offline-bench-base" placeholder="http://ollama:11434/v1" style="flex:1" value="http://ollama:11434/v1">
+        <input class="offline-input" id="offline-bench-model" placeholder="Model tag to benchmark" style="flex:1" value="${esc(_status?.models?.default_model || '')}">
+        <button class="offline-btn primary" id="offline-run-benchmark">Benchmark</button>
+      </div>
+      <div class="offline-card-note">${_benchmark ? `first token: ${esc(_benchmark.first_token_ms || 'n/a')}ms; total: ${esc(_benchmark.total_ms)}ms; speed: ${esc(_benchmark.chars_per_second)} chars/sec` : 'Runs only against local endpoints.'}</div>
+    </div>
     <table class="offline-table">
       <thead><tr><th>Name</th><th>Path / Model ID</th><th>Size</th><th>Use</th></tr></thead>
       <tbody>${modelRows || '<tr><td colspan="4" style="opacity:.65">No local model files found yet.</td></tr>'}</tbody>
     </table>
+  `;
+}
+
+function renderStorage() {
+  const storage = _status?.storage || {};
+  const paths = storage.paths || {};
+  return `
+    <div class="offline-grid">
+      <div class="offline-card"><div class="offline-card-title">Mode</div><div class="offline-card-value">${esc(storage.mode || '')}</div><div class="offline-card-note">${storage.sealed ? 'Docker named volumes are default' : 'Review host-visible paths'}</div></div>
+      <div class="offline-card"><div class="offline-card-title">Host Data</div><div class="offline-card-value">${storage.host_data_enabled ? 'Enabled' : 'Off'}</div><div class="offline-card-note">Host folders are explicit only</div></div>
+      <div class="offline-card"><div class="offline-card-title">Audit Log</div><div class="offline-card-value">Local</div><div class="offline-card-note">${esc(paths.audit_log || '')}</div></div>
+    </div>
+    <div class="offline-two">
+      <div>
+        <h4 style="margin:0 0 8px;font-size:13px;">Paths</h4>
+        <table class="offline-table"><tbody>${Object.entries(paths).map(([k,v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}</tbody></table>
+      </div>
+      <div>
+        <h4 style="margin:0 0 8px;font-size:13px;">Docker Volumes</h4>
+        <table class="offline-table"><tbody>${(storage.docker_volumes || []).map(v => `<tr><td>${esc(v)}</td></tr>`).join('')}</tbody></table>
+        <div class="offline-card-note">${(storage.notes || []).map(esc).join('<br>')}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderAudit() {
+  return `
+    <div class="offline-row">
+      <button class="offline-btn primary" id="offline-refresh-audit">Refresh Audit</button>
+      <span style="font-size:12px;opacity:.72">Local JSONL audit events stored inside DATA_DIR.</span>
+    </div>
+    <table class="offline-table">
+      <thead><tr><th>Time</th><th>Action</th><th>User</th><th>Detail</th></tr></thead>
+      <tbody>${_audit.map(item => `<tr><td>${esc(item.timestamp)}</td><td>${esc(item.action)}</td><td>${esc(item.user || '')}</td><td>${esc(JSON.stringify(item.detail || {})).slice(0, 600)}</td></tr>`).join('') || '<tr><td colspan="4" style="opacity:.65">No audit events yet.</td></tr>'}</tbody>
+    </table>
+  `;
+}
+
+function renderHelp() {
+  const sections = _help?.sections || [];
+  return `
+    <div class="offline-row">
+      <button class="offline-btn primary" id="offline-refresh-help">Refresh Help</button>
+      <button class="offline-btn" id="offline-help-report">Export Report</button>
+    </div>
+    ${sections.map(section => `
+      <section class="offline-doc-section">
+        <h4>${esc(section.title)}</h4>
+        <ul>${(section.items || []).map(item => `<li>${esc(item)}</li>`).join('')}</ul>
+      </section>
+    `).join('') || '<div style="opacity:.65;font-size:12px;">Help content not loaded.</div>'}
   `;
 }
 
@@ -220,8 +309,11 @@ function render() {
   if (!host) return;
   const panel = _tab === 'status' ? renderStatus()
     : _tab === 'models' ? renderModels()
-      : _tab === 'backups' ? renderBackups()
-        : renderAbout();
+      : _tab === 'storage' ? renderStorage()
+        : _tab === 'audit' ? renderAudit()
+          : _tab === 'help' ? renderHelp()
+            : _tab === 'backups' ? renderBackups()
+              : renderAbout();
   host.innerHTML = `<div class="offline-shell">${renderTabs()}<section class="offline-panel">${panel}</section></div>`;
   wireRendered();
 }
@@ -266,7 +358,7 @@ async function registerModel() {
 }
 
 function downloadText(filename, text) {
-  const blob = new Blob([text], { type: 'application/json' });
+  const blob = new Blob([text], { type: filename.endsWith('.html') ? 'text/html' : 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -277,12 +369,48 @@ function downloadText(filename, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+async function exportReport(format) {
+  const html = format === 'html';
+  const res = await fetch(`${API}/report${html ? '/html' : ''}`, { credentials: 'same-origin' });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Report export failed (${res.status})`);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  downloadText(`cleverly_offline_report_${stamp}.${html ? 'html' : 'json'}`, text);
+  uiModule.showToast('Offline report exported');
+  await refreshAudit().catch(() => {});
+}
+
+async function runBenchmark() {
+  const payload = {
+    base_url: el('offline-bench-base')?.value || '',
+    model: el('offline-bench-model')?.value || '',
+  };
+  if (!payload.model.trim()) throw new Error('Model tag is required for benchmark');
+  _benchmark = await api('/models/benchmark', { method: 'POST', body: JSON.stringify(payload) });
+  render();
+}
+
+async function refreshAudit() {
+  const data = await api('/audit?limit=100');
+  _audit = data.events || [];
+  render();
+}
+
+async function refreshHelp() {
+  _help = await api('/help');
+  render();
+}
+
 async function exportEncrypted() {
   const password = el('offline-export-pass')?.value || '';
   if (password.length < 8) throw new Error('Use at least 8 characters for the backup password');
   const { text } = await backupApi('/api/backup/encrypted/export', { password });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   downloadText(`cleverly_encrypted_backup_${stamp}.json`, text);
+  await api('/audit', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'encrypted_backup_exported', detail: { filename: `cleverly_encrypted_backup_${stamp}.json` } }),
+  }).catch(() => {});
   setBackupOutput('Encrypted backup exported.');
 }
 
@@ -294,6 +422,10 @@ async function importEncrypted() {
   const text = await file.text();
   const backup = JSON.parse(text);
   const { data } = await backupApi('/api/backup/encrypted/import', { password, backup });
+  await api('/audit', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'encrypted_backup_imported', detail: { filename: file.name } }),
+  }).catch(() => {});
   setBackupOutput(data.message || 'Encrypted backup imported.');
 }
 
@@ -320,14 +452,22 @@ function wireRendered() {
       _tab = btn.dataset.offlineTab || 'status';
       if (_tab === 'models' && !_models.length) await scanModels();
       else if (_tab === 'about' && !_about) await refreshAbout();
+      else if (_tab === 'audit' && !_audit.length) await refreshAudit();
+      else if (_tab === 'help' && !_help) await refreshHelp();
       else render();
     }));
   });
   el('offline-refresh')?.addEventListener('click', guarded(refreshStatus));
   el('offline-egress-test')?.addEventListener('click', guarded(runEgressTest));
+  el('offline-export-report-json')?.addEventListener('click', guarded(() => exportReport('json')));
+  el('offline-export-report-html')?.addEventListener('click', guarded(() => exportReport('html')));
   el('offline-open-code')?.addEventListener('click', () => el('tool-code-workspace-btn')?.click());
   el('offline-scan-models')?.addEventListener('click', guarded(scanModels));
   el('offline-register-model')?.addEventListener('click', guarded(registerModel));
+  el('offline-run-benchmark')?.addEventListener('click', guarded(runBenchmark));
+  el('offline-refresh-audit')?.addEventListener('click', guarded(refreshAudit));
+  el('offline-refresh-help')?.addEventListener('click', guarded(refreshHelp));
+  el('offline-help-report')?.addEventListener('click', guarded(() => exportReport('html')));
   el('offline-export-encrypted')?.addEventListener('click', guarded(exportEncrypted));
   el('offline-pick-import')?.addEventListener('click', () => el('offline-import-file')?.click());
   el('offline-import-file')?.addEventListener('change', () => {
@@ -366,18 +506,38 @@ function updateBadgeFromStatus(status) {
   badge.style.color = fail ? '#f87171' : (warn ? '#fbbf24' : '#34d399');
 }
 
+function updateWelcomeReadiness(status) {
+  const host = el('welcome-readiness');
+  if (!host) return;
+  const readiness = status?.readiness || {};
+  const score = readiness.score ?? '?';
+  const state = readiness.status || 'yellow';
+  host.className = `welcome-readiness ${state}`;
+  host.innerHTML = `
+    <span class="welcome-readiness-score">${esc(score)}%</span>
+    <span class="welcome-readiness-copy"><strong>${esc(readiness.label || 'Offline readiness')}</strong><br>${esc((readiness.items || []).filter(i => i.status !== 'ok').slice(0, 1)[0]?.detail || 'Offline checks look ready.')}</span>
+  `;
+}
+
 export async function refreshBadge() {
   ensureStyles();
   try {
     const status = await api('/status');
     updateBadgeFromStatus(status);
+    updateWelcomeReadiness(status);
   } catch (_) {
     const badge = el('offline-proof-badge');
     if (badge) {
       badge.textContent = '';
       badge.removeAttribute('style');
     }
+    const welcome = el('welcome-readiness');
+    if (welcome) welcome.innerHTML = '';
   }
+}
+
+export async function refreshWelcomeReadiness() {
+  return refreshBadge();
 }
 
 export async function open() {
@@ -401,4 +561,4 @@ export function isOpen() {
   return _open && !modal()?.classList.contains('hidden');
 }
 
-export default { open, close, isOpen, refreshBadge };
+export default { open, close, isOpen, refreshBadge, refreshWelcomeReadiness };

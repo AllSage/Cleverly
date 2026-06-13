@@ -161,19 +161,33 @@ def test_code_workspace_worker_runner_executes_from_queue(tmp_path, monkeypatch)
 
 def test_code_workspace_is_wired_as_admin_only_offline_tool():
     root = Path(__file__).resolve().parents[1]
+    routes = (root / "routes" / "code_workspace_routes.py").read_text(encoding="utf-8")
+    ui_js = (root / "static" / "js" / "codeWorkspace.js").read_text(encoding="utf-8")
+    agent = (root / "src" / "code_workspace_agent.py").read_text(encoding="utf-8")
     assert "code_workspace" in (root / "src" / "tool_security.py").read_text(encoding="utf-8")
     assert "\"code_workspace\"" in (root / "src" / "tool_execution.py").read_text(encoding="utf-8")
     assert "\"code_workspace\"" in (root / "src" / "tool_schemas.py").read_text(encoding="utf-8")
-    assert "Depends(require_admin)" in (root / "routes" / "code_workspace_routes.py").read_text(encoding="utf-8")
+    assert "Depends(require_admin)" in routes
     assert "/api/code-workspaces" in (root / "app.py").read_text(encoding="utf-8")
     operator_routes = (root / "routes" / "operator_routes.py").read_text(encoding="utf-8")
     assert 'prefix="/api/operator"' in operator_routes
     assert '@router.get("/checks")' in operator_routes
     assert '@router.get("/page"' in operator_routes
     assert "tool-code-workspace-btn" in (root / "static" / "index.html").read_text(encoding="utf-8")
-    assert "code_workspace_model_key" in (root / "static" / "js" / "codeWorkspace.js").read_text(encoding="utf-8")
-    assert "code-ws-agent-run" in (root / "static" / "js" / "codeWorkspace.js").read_text(encoding="utf-8")
-    assert "code-ws-apply-proposed" in (root / "static" / "js" / "codeWorkspace.js").read_text(encoding="utf-8")
+    assert "code_workspace_model_key" in ui_js
+    assert "code-ws-agent-run" in ui_js
+    assert "code-ws-apply-proposed" in ui_js
+    assert "ValidateDiffRequest" in routes
+    assert '@router.post("/{workspace_id}/validate-diff")' in routes
+    assert "Before proposed diff validation" in routes
+    assert "code_workspace_diff_validated" in routes
+    assert "validateProposedDiff" in ui_js
+    assert "_pendingTestPassed" in ui_js
+    assert "Run Tests must pass on the proposed diff before Apply is enabled" in ui_js
+    assert "code-ws-review-gate" in ui_js
+    assert "steps: list[dict[str, Any]] = [" in agent
+    assert '"phase": "plan"' in agent
+    assert '"plan": plan' in agent
 
 
 def test_code_workspace_worker_is_networkless_in_compose():

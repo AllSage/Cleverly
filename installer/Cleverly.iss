@@ -11,6 +11,7 @@ AppPublisher=AllSage
 AppPublisherURL=https://github.com/AllSage/Cleverly
 AppSupportURL=https://github.com/AllSage/Cleverly
 AppUpdatesURL=https://github.com/AllSage/Cleverly
+UninstallDisplayName={#MyAppName}
 DefaultDirName={localappdata}\Programs\Cleverly
 DefaultGroupName=Cleverly
 DisableProgramGroupPage=yes
@@ -22,6 +23,10 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\Cleverly-App.cmd
+VersionInfoVersion={#MyAppVersion}
+VersionInfoCompany=AllSage
+VersionInfoProductName={#MyAppName}
+VersionInfoDescription=Cleverly Offline AI Application
 SetupLogging=yes
 
 [Files]
