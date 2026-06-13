@@ -23,7 +23,7 @@ services:
         condition: service_completed_successfully
 
   ollama:
-    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:latest}
+    image: ${OLLAMA_IMAGE:-cleverly-ollama:local}
     init: true
     networks:
       - offline_private
@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
 
   ollama_pull:
-    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:latest}
+    image: ${OLLAMA_IMAGE:-cleverly-ollama:local}
     init: true
     restart: "no"
     volumes:

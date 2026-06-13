@@ -24,7 +24,7 @@ services:
       - offline_private
 
   ollama:
-    image: ${OLLAMA_IMAGE:-docker.io/ollama/ollama:latest}
+    image: ${OLLAMA_IMAGE:-cleverly-ollama:local}
     init: true
     volumes:
       - ./data/ollama:/root/.ollama

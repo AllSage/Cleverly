@@ -82,6 +82,7 @@ overlay. The default model is `llama3.2:3b`; override `OLLAMA_MODEL` for a
 different Ollama tag.
 
 ```bash
+docker build -f docker/ollama-local.Dockerfile -t cleverly-ollama:local .
 OLLAMA_MODEL=llama3.2:3b docker compose -f docker-compose.yml -f docker/ollama.yml up -d --build
 ```
 

@@ -36,6 +36,7 @@ To bundle an offline chat model with Ollama, pull it into `./data/ollama` on
 the connected machine:
 
 ```bash
+docker build -f docker/ollama-local.Dockerfile -t cleverly-ollama:local .
 OLLAMA_MODEL=llama3.2:3b docker compose --env-file .env \
   -f docker-compose.yml \
   -f docker/ollama.yml \
@@ -51,7 +52,7 @@ Save the images to a portable archive:
 ```bash
 docker save \
   cleverly:local \
-  docker.io/ollama/ollama:latest \
+  cleverly-ollama:local \
   docker.io/chromadb/chroma:latest \
   docker.io/searxng/searxng:latest \
   docker.io/binwiederhier/ntfy:latest \

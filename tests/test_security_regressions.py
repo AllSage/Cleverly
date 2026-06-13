@@ -154,8 +154,12 @@ def test_docker_entrypoint_requires_explicit_network_break_glass():
 def test_ollama_overlays_use_persistent_model_cache_and_auto_seed():
     connected = Path("docker/ollama.yml").read_text(encoding="utf-8")
     offline = Path("docker/ollama-offline.yml").read_text(encoding="utf-8")
+    local_image = Path("docker/ollama-local.Dockerfile").read_text(encoding="utf-8")
     assert "./data/ollama:/root/.ollama" in connected
     assert "./data/ollama:/root/.ollama" in offline
+    assert "cleverly-ollama:local" in connected
+    assert "cleverly-ollama:local" in offline
+    assert "ollama.com/install.sh" in local_image
     assert "ollama pull" in connected
     assert "CLEVERLY_AUTO_ADD_OLLAMA" in connected
     assert "CLEVERLY_AUTO_ADD_OLLAMA" in offline
