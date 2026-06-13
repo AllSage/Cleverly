@@ -202,6 +202,38 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     assert "_features.deep_research !== false" in compare_selector
 
 
+def test_training_lab_is_local_only_and_wired_to_ui():
+    app_js = Path("static/app.js").read_text(encoding="utf-8")
+    index_html = Path("static/index.html").read_text(encoding="utf-8")
+    training_js = Path("static/js/trainingLab.js").read_text(encoding="utf-8")
+    route_py = Path("routes/training_routes.py").read_text(encoding="utf-8")
+    trainer_py = Path("src/local_training.py").read_text(encoding="utf-8")
+
+    assert "tool-training-btn" in index_html
+    assert "training-lab-modal" in index_html
+    assert "trainingLabModule.open" in app_js
+    assert "'/training'" in app_js
+    assert "/api/training/status" in training_js
+    assert "DEFAULT_ORDER = 3" in trainer_py
+    assert "Depends(require_admin)" in route_py
+
+    combined = "\n".join([training_js, route_py, trainer_py])
+    forbidden = [
+        "requests.",
+        "httpx.",
+        "urllib.",
+        "aiohttp",
+        "subprocess",
+        "Popen",
+        "os.system",
+        "socket.",
+        "pip install",
+        "huggingface",
+    ]
+    for token in forbidden:
+        assert token not in combined
+
+
 def test_ollama_overlays_use_persistent_model_cache_and_auto_seed():
     connected = Path("docker/ollama.yml").read_text(encoding="utf-8")
     offline = Path("docker/ollama-offline.yml").read_text(encoding="utf-8")

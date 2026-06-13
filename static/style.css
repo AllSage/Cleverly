@@ -17296,6 +17296,56 @@ body.gallery-selecting .gallery-dl-btn,
   background: transparent;
   padding: 4px 0;
 }
+.training-lab-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.training-lab-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.training-lab-card {
+  min-width: 0;
+}
+.training-lab-generate-card {
+  grid-column: 1 / -1;
+}
+.training-lab-textarea,
+.training-lab-prompt {
+  resize: vertical;
+  line-height: 1.45;
+}
+.training-lab-output {
+  min-height: 150px;
+  max-height: 260px;
+}
+.training-lab-meter,
+.training-lab-status {
+  align-self: center;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.training-lab-status {
+  align-self: stretch;
+  min-height: 18px;
+  padding: 0 2px;
+}
+.training-lab-train-fields {
+  grid-template-columns: minmax(0, 1fr) 90px;
+}
+@media (max-width: 768px) {
+  .training-lab-grid {
+    grid-template-columns: 1fr;
+  }
+  .training-lab-generate-card {
+    grid-column: auto;
+  }
+}
 .cookbook-group {
   display: flex;
   flex-direction: column;

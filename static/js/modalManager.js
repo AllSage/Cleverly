@@ -1377,6 +1377,7 @@ export function injectMinimizeButton(modal, modalId) {
 // can still register explicitly with custom restoreFn/closeFn.
 const _AUTO_WIRE = {
   'cookbook-modal':       { rail: 'rail-cookbook',  sidebar: 'tool-cookbook-btn' },
+  'training-lab-modal':   { rail: 'rail-training',  sidebar: 'tool-training-btn' },
   'calendar-modal':       { rail: 'rail-calendar',  sidebar: 'tool-calendar-btn' },
   'gallery-modal':        { rail: 'rail-gallery',   sidebar: 'tool-gallery-btn' },
   'tasks-modal':          { rail: 'rail-tasks',     sidebar: 'tool-tasks-btn' },

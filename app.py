@@ -619,6 +619,10 @@ app.include_router(setup_shell_routes())
 from routes.cookbook_routes import setup_cookbook_routes
 app.include_router(setup_cookbook_routes())
 
+# Local Training Lab (offline-only starter language-model training)
+from routes.training_routes import setup_training_routes
+app.include_router(setup_training_routes())
+
 # Hardware model fitting (cookbook "What Fits?" tab)
 from routes.hwfit_routes import setup_hwfit_routes
 app.include_router(setup_hwfit_routes())
@@ -715,6 +719,10 @@ async def serve_calendar(request: Request):
 # bookmarks render with tool-specific icons.
 @app.get("/cookbook")
 async def serve_cookbook(request: Request):
+    return await serve_index(request)
+
+@app.get("/training")
+async def serve_training(request: Request):
     return await serve_index(request)
 
 @app.get("/email")

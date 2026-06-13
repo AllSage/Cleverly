@@ -120,6 +120,11 @@
           "<path d='M9 4 L23 4 L23 8 L9 8 Z' fill='none' stroke='" + ac + "' stroke-width='2.5' stroke-linejoin='round'/>" +
           "<line x1='11' y1='14' x2='21' y2='14' stroke='" + ac + "' stroke-width='2'/>" +
           "<line x1='11' y1='19' x2='17' y2='19' stroke='" + ac + "' stroke-width='2'/>",
+        '/training':
+          "<line x1='5' y1='27' x2='27' y2='27' stroke='" + ac + "' stroke-width='2.5' stroke-linecap='round'/>" +
+          "<line x1='10' y1='27' x2='10' y2='13' stroke='" + ac + "' stroke-width='2.5' stroke-linecap='round'/>" +
+          "<line x1='16' y1='27' x2='16' y2='7' stroke='" + ac + "' stroke-width='2.5' stroke-linecap='round'/>" +
+          "<line x1='22' y1='27' x2='22' y2='17' stroke='" + ac + "' stroke-width='2.5' stroke-linecap='round'/>",
         '/email':
           "<rect x='4' y='7' width='24' height='18' rx='2' fill='none' stroke='" + ac + "' stroke-width='2.5'/>" +
           "<path d='M5 9 L16 17 L27 9' fill='none' stroke='" + ac + "' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/>",
@@ -153,6 +158,7 @@
         '/calendar': 'Calendar — Cleverly',
         '/notes': 'Notes — Cleverly',
         '/cookbook': 'Cookbook — Cleverly',
+        '/training': 'Training — Cleverly',
         '/email': 'Email — Cleverly',
         '/memory': 'Memory — Cleverly',
         '/gallery': 'Gallery — Cleverly',
@@ -656,6 +662,7 @@
     <button class="icon-rail-btn" id="rail-calendar" title="Calendar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></button>
     <button class="icon-rail-btn" id="rail-compare" title="Compare"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M11 18H8a2 2 0 0 1-2-2V9"/></svg></button>
     <button class="icon-rail-btn" id="rail-cookbook" title="Cookbook"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.7"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg></button>
+    <button class="icon-rail-btn" id="rail-training" title="Training"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M8 19V9"/><path d="M12 19V5"/><path d="M16 19v-7"/></svg></button>
     <button class="icon-rail-btn" id="rail-research" title="Deep Research"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg></button>
     <button class="icon-rail-btn" id="rail-email" title="Email"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></button>
     <button class="icon-rail-btn" id="rail-gallery" title="Gallery"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
@@ -845,6 +852,17 @@
           <span class="grow">Cookbook</span>
           <span id="cookbook-bg-status" style="display:none;font-size:9px;opacity:0.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:6px;flex-shrink:1;min-width:0;position:relative;top:-1px;"></span>
           <span class="cookbook-notif-dot" id="cookbook-notif-dot" style="display:none;margin-left:6px;margin-right:4px;position:relative;top:-1px;left:0px;"></span>
+        </div>
+        <div class="list-item" id="tool-training-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+            style="flex-shrink:0;opacity:0.5;">
+            <path d="M4 19h16"/>
+            <path d="M8 19V9"/>
+            <path d="M12 19V5"/>
+            <path d="M16 19v-7"/>
+          </svg>
+          <span class="grow">Training</span>
         </div>
         <div class="list-item" id="tool-research-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;opacity:0.5;"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
@@ -1292,6 +1310,17 @@
     </div>
   </div>
 
+  <!-- Training Lab Modal -->
+  <div id="training-lab-modal" class="modal hidden">
+    <div class="modal-content" style="width: min(880px, 94vw); height: 86vh; max-height: 92vh; background: var(--bg);">
+      <div class="modal-header">
+        <h4 style="margin:0;margin-right:auto"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M4 19h16"/><path d="M8 19V9"/><path d="M12 19V5"/><path d="M16 19v-7"/></svg>Training</h4>
+        <button class="close-btn" id="close-training-lab-modal">✖</button>
+      </div>
+      <div class="modal-body training-lab-body"></div>
+    </div>
+  </div>
+
   <!-- Settings Modal (all users) -->
   <div id="settings-modal" class="modal hidden">
     <div class="modal-content settings-modal-content">
@@ -1685,6 +1714,11 @@
                 <span class="vis-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h6M9 11h4"/></svg></span>
                 <span class="vis-label">Cookbook</span>
                 <input type="checkbox" checked data-ui-key="tool-cookbook"><span class="vis-switch"></span>
+              </label>
+              <label class="vis-row">
+                <span class="vis-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M8 19V9"/><path d="M12 19V5"/><path d="M16 19v-7"/></svg></span>
+                <span class="vis-label">Training</span>
+                <input type="checkbox" checked data-ui-key="tool-training"><span class="vis-switch"></span>
               </label>
               <label class="vis-row" data-online-feature="deep_research">
                 <span class="vis-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg></span>
@@ -2245,6 +2279,7 @@
 <script type="module" src="/static/js/chatStream.js"></script>
 <script type="module" src="/static/js/chat.js?v=20260520m"></script>
 <script type="module" src="/static/js/cookbook.js"></script>
+<script type="module" src="/static/js/trainingLab.js"></script>
 <script type="module" src="/static/js/search-chat.js"></script>
 <script type="module" src="/static/js/compare/index.js"></script>
 <script type="module" src="/static/js/theme.js"></script>

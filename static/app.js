@@ -36,6 +36,7 @@ import themeModule from './js/theme.js';
 // _envState objects), which broke server selection. Keep all cookbook imports
 // unversioned so this can't recur.
 import cookbookModule from './js/cookbook.js';
+import trainingLabModule from './js/trainingLab.js';
 import groupModule from './js/group.js';
 import * as researchPanelModule from './js/research/panel.js';
 import ttsModule from './js/tts-ai.js';
@@ -50,6 +51,7 @@ window.sessionModule = sessionModule;
 window.uiModule = uiModule;
 window.adminModule = adminModule;
 window.cookbookModule = cookbookModule;
+window.trainingLabModule = trainingLabModule;
 
 // Redirect to login on 401 from any fetch
 const _origFetch = window.fetch;
@@ -503,6 +505,7 @@ function initializeEventListeners() {
       // Map modal id → sidebar list-item id to clear active state
       const modalItemMap = {
         'cookbook-modal': null,
+        'training-lab-modal': null,
         'rename-session-modal': null,
         'rename-ai-modal': null,
         'custom-preset-modal': null,
@@ -804,6 +807,17 @@ function initializeEventListeners() {
     });
   }
 
+  const toolTrainingBtn = el('tool-training-btn');
+  if (toolTrainingBtn) {
+    toolTrainingBtn.addEventListener('click', async () => {
+      if (!trainingLabModule) return;
+      const Modals = await import('./js/modalManager.js');
+      if (!Modals.toggle('training-lab-modal')) {
+        trainingLabModule.open();
+      }
+    });
+  }
+
   // Document library tool button
   const toolDoclibBtn = el('tool-doclib-btn');
   if (toolDoclibBtn) {
@@ -964,6 +978,7 @@ function initializeEventListeners() {
     },
     '/calendar': () => calendarModule && calendarModule.openCalendar(),
     '/cookbook': () => document.getElementById('tool-cookbook-btn')?.click(),
+    '/training': () => document.getElementById('tool-training-btn')?.click(),
     '/email':    () => {
       // Collapse the wide sidebar → icon rail (48px) so the user keeps
       // navigation visible alongside the fullscreen email view.
@@ -2415,6 +2430,7 @@ function initializeEventListeners() {
     'tool-calendar':       '#tool-calendar-btn',
     'tool-compare':        '#tool-compare-btn',
     'tool-cookbook':       '#tool-cookbook-btn',
+    'tool-training':       '#tool-training-btn',
     'tool-research':       '#tool-research-btn',
     'tool-gallery':        '#tool-gallery-btn',
     'tool-library':        '#tool-library-btn',
@@ -3516,6 +3532,7 @@ function startCleverlyApp() {
     'rail-compare':   'tool-compare-btn',
     'rail-research':  'tool-research-btn',
     'rail-cookbook':   'tool-cookbook-btn',
+    'rail-training':   'tool-training-btn',
     'rail-archive':   'tool-library-btn',
     'rail-gallery':   'tool-gallery-btn',
     'rail-tasks':     'tool-tasks-btn',

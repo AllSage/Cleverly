@@ -14,6 +14,7 @@ It runs on your hardware, with your data.
 - **Chat**: local models and API providers, including Ollama, OpenAI-compatible endpoints, OpenRouter, and OpenAI.
 - **Agent tools**: MCP, web, files, shell, skills, memory, and task workflows.
 - **Cookbook**: hardware-aware model recommendations, downloads, and serving via vLLM, llama.cpp, and related engines.
+- **Training Lab**: offline-only starter text training with local datasets and saved model artifacts.
 - **Deep Research**: multi-step source gathering and synthesis into visual reports.
 - **Compare**: blind side-by-side model comparison and synthesis.
 - **Documents**: multi-tab editor with markdown, HTML, CSV, syntax highlighting, AI edits, and suggestions.
@@ -98,6 +99,10 @@ models or embeddings available without downloads.
 
 See [docs/offline-release.md](docs/offline-release.md) for the full offline
 release and verification checklist.
+
+The built-in [Training Lab](docs/local-training-lab.md) also runs offline. It
+uses pasted local text and writes datasets/artifacts under `./data/training`;
+it does not download datasets, install packages, or call model endpoints.
 
 ### Docker With Bundled Ollama
 

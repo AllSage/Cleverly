@@ -15,6 +15,8 @@ on `127.0.0.1:${APP_PORT:-7000}`.
 - Publishes the UI through the `cleverly_proxy` sidecar.
 - Refuses Docker startup with `CLEVERLY_OFFLINE` disabled unless
   `CLEVERLY_ALLOW_NETWORK=I_ACCEPT_NETWORK_RISK` is explicitly set.
+- Keeps the Training Lab local-only; datasets and artifacts stay under
+  `./data/training`.
 - Leaves model, embedding, Chroma, and npm caches under mounted `./data`
   directories so they can be pre-seeded.
 
