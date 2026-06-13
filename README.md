@@ -55,6 +55,7 @@ Common commands:
 .\Cleverly.ps1 start -FineTune
 .\Cleverly.ps1 stop
 .\Cleverly.ps1 status
+.\Cleverly.ps1 doctor -FineTune
 .\Cleverly.ps1 logs
 ```
 
@@ -69,6 +70,15 @@ If images or models are missing, run prep on a connected, non-sensitive machine:
 ```
 
 Then move the prepared images/data to the offline machine and start again.
+
+To make that transfer easier, build a portable offline bundle:
+
+```powershell
+.\Cleverly.ps1 bundle -AllowConnectedPrep -FineTune
+```
+
+It writes `dist\cleverly-offline-bundle`. Copy that folder to the offline
+machine, then run `load-cleverly.cmd` once and `start-cleverly.cmd` to launch.
 
 ### First Login
 
@@ -131,6 +141,12 @@ container has no internet egress.
 
 For the full air-gap checklist, use
 [docs/offline-release.md](docs/offline-release.md).
+
+To check a local install without downloading anything:
+
+```powershell
+.\Cleverly.ps1 doctor -FineTune
+```
 
 ### Pull A Local Model
 

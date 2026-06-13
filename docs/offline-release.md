@@ -38,6 +38,17 @@ docker compose --env-file .env build cleverly
 docker compose --env-file .env pull chromadb searxng ntfy
 ```
 
+On Windows, the easiest connected-prep path is the bundle command:
+
+```powershell
+.\Cleverly.ps1 bundle -AllowConnectedPrep -FineTune
+```
+
+It builds the local images, pulls support service images, pulls the configured
+Ollama model, copies prepared model caches, saves Docker images to
+`cleverly-images.tar`, and writes helper scripts under
+`dist\cleverly-offline-bundle`.
+
 To bundle an offline chat model with Ollama, pull it into `./data/ollama` on
 the connected machine:
 
@@ -88,6 +99,16 @@ Ollama runtime files in `data/ollama` are usable for inference but are not
 trainable base weights.
 
 ## Offline Machine
+
+If you used `.\Cleverly.ps1 bundle`, copy `dist\cleverly-offline-bundle` to the
+offline machine, then run:
+
+```text
+load-cleverly.cmd
+start-cleverly.cmd
+```
+
+The rest of this section shows the manual equivalent.
 
 Load the images:
 
@@ -180,6 +201,12 @@ docker compose --env-file .env -f docker-compose.yml -f docker/ollama-offline.ym
 ```
 
 That command should fail in offline mode.
+
+On Windows, the bundled doctor command runs the same practical checks:
+
+```powershell
+.\Cleverly.ps1 doctor -FineTune
+```
 
 ## Chroma, RAG, and Embeddings
 
