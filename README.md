@@ -13,6 +13,7 @@ It runs on your hardware, with your data.
 
 - **Chat**: local models and API providers, including Ollama, OpenAI-compatible endpoints, OpenRouter, and OpenAI.
 - **Agent tools**: MCP, web, files, shell, skills, memory, and task workflows.
+- **Code Workspace**: import a local repo archive, edit files, apply diffs, run offline test/build commands, inspect git status/diff, and commit changes inside the sealed Docker data volume.
 - **Cookbook**: hardware-aware model recommendations, downloads, and serving via vLLM, llama.cpp, and related engines.
 - **Training Lab**: offline-only starter text training with local datasets and saved model artifacts.
 - **Deep Research**: multi-step source gathering and synthesis into visual reports.
@@ -249,6 +250,22 @@ External AI/security references are tracked as
 [study packs](docs/external-agent-study-packs.md) only. Cleverly does not pull
 or execute those repositories during offline runtime.
 
+### Code Workspace
+
+Use **Code** in the sidebar to work on a complete repo inside Cleverly. Import a
+`.zip`, `.tar`, `.tar.gz`, or `.tgz` archive, then browse files, edit files,
+apply unified diffs, run local test/build commands, inspect git status/diff, and
+commit changes.
+
+Code workspaces live under the sealed Docker data volume by default. Network
+fetch/install commands such as `curl`, `wget`, `git pull`, `pip install`, and
+`npm install` are blocked in workspace command runs. Archive imports reject path
+traversal, symlinks, `.git` internals, and oversized expansion.
+
+The Code Workspace model key is intentionally blank by default. Set it in the
+Code panel or with `manage_settings` before expecting an agent to use a specific
+coding model, for example `GLM-5.2`.
+
 ## Docker Notes
 
 Compose starts Cleverly, ChromaDB, SearXNG, ntfy, and the local proxy.
@@ -340,6 +357,7 @@ for deployment-level defaults and secrets you want present before first boot.
 | `CLEVERLY_OFFLINE` | `1` in Docker | Disable internet-facing features and startup network warmups |
 | `CLEVERLY_OFFLINE_EMBEDDINGS` | `0` in Docker | Allow local FastEmbed only after its cache is pre-seeded |
 | `CLEVERLY_HOST_DATA` | unset | Set to `1` only to make `Cleverly.ps1` use visible `./data` and `./logs` bind mounts |
+| `CODE_WORKSPACE_DIR` | unset | Optional override for sealed code workspace storage; defaults to `DATA_DIR/code-workspaces` |
 | `AUTH_ENABLED` | `true` | Enable/disable login |
 | `LOCALHOST_BYPASS` | `false` | Development-only auth bypass for direct loopback requests |
 | `DATABASE_URL` | `sqlite:///./data/app.db` | Database connection string |

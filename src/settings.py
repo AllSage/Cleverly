@@ -79,6 +79,7 @@ DEFAULT_SETTINGS = {
     "agent_max_tool_calls": 0,
     "agent_input_token_budget": 6000,
     "agent_stream_timeout_seconds": 300,
+    "code_workspace_model_key": "",
     "task_endpoint_id": "",
     "task_model": "",
     "default_endpoint_id": "",

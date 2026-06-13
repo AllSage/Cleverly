@@ -114,6 +114,7 @@ _TIMEOUT_EXEMPT_PREFIXES = (
     "/api/model/probe",     # SSE; iterates models with up to 8s timeout each
     "/api/model-endpoints", # /probe sub-route also iterates models
     "/api/cookbook/setup",  # remote pacman/apt installs
+    "/api/code-workspaces", # sealed repo import/test/build commands
     "/api/upload",          # large files
     "/api/image",           # diffusion proxies (inpaint/harmonize/upscale/etc.) — own 120s httpx timeout
 )
@@ -623,6 +624,10 @@ app.include_router(setup_cookbook_routes())
 from routes.training_routes import setup_training_routes
 app.include_router(setup_training_routes())
 
+# Sealed local code workspaces
+from routes.code_workspace_routes import setup_code_workspace_routes
+app.include_router(setup_code_workspace_routes())
+
 # Hardware model fitting (cookbook "What Fits?" tab)
 from routes.hwfit_routes import setup_hwfit_routes
 app.include_router(setup_hwfit_routes())
@@ -723,6 +728,10 @@ async def serve_cookbook(request: Request):
 
 @app.get("/training")
 async def serve_training(request: Request):
+    return await serve_index(request)
+
+@app.get("/code")
+async def serve_code(request: Request):
     return await serve_index(request)
 
 @app.get("/email")

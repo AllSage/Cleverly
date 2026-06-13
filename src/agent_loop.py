@@ -218,6 +218,21 @@ Read a file and return its contents.""",
 ```
 Write content to a file. First line is the path, rest is the content.""",
 
+    "code_workspace": """\
+- ```code_workspace``` - Codex-like sealed repo workspace. Body is JSON.
+Actions:
+  {"action":"list"}
+  {"action":"create","name":"Project"}
+  {"action":"tree","workspace_id":"...","path":""}
+  {"action":"read","workspace_id":"...","path":"src/app.py"}
+  {"action":"write","workspace_id":"...","path":"src/app.py","content":"..."}
+  {"action":"patch","workspace_id":"...","diff":"unified diff"}
+  {"action":"run","workspace_id":"...","command":"pytest -q","timeout_seconds":120}
+  {"action":"status","workspace_id":"..."}
+  {"action":"diff","workspace_id":"..."}
+  {"action":"commit","workspace_id":"...","message":"..."}
+Use this instead of broad read_file/write_file/bash for imported repos. It is confined to DATA_DIR/code-workspaces and blocks network install/fetch commands.""",
+
     "create_document": """\
 ```create_document
 <title>

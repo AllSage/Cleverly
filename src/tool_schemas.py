@@ -110,6 +110,32 @@ FUNCTION_TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "code_workspace",
+            "description": "Codex-like sealed repo workspace tool. Create/list workspaces, inspect repo trees, read/write files, apply unified diffs, run offline test/build commands, view git status/diff, and commit changes. Use this for editing an imported code repository inside Cleverly without network access.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list", "create", "tree", "read", "write", "patch", "run", "status", "diff", "commit"],
+                        "description": "Workspace action"
+                    },
+                    "workspace_id": {"type": "string", "description": "Workspace id from list/create/import"},
+                    "name": {"type": "string", "description": "Workspace name for create"},
+                    "path": {"type": "string", "description": "Repo-relative file or directory path"},
+                    "content": {"type": "string", "description": "File content for write"},
+                    "diff": {"type": "string", "description": "Unified diff for patch"},
+                    "command": {"type": "string", "description": "Offline test/build command to run in the workspace"},
+                    "timeout_seconds": {"type": "integer", "description": "Command timeout, max 300 seconds"},
+                    "message": {"type": "string", "description": "Commit message"}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "create_document",
             "description": "Create a new document in the editor panel. ALWAYS use this when the user asks to write, create, build, or generate code, scripts, programs, games, apps, or any substantial content (>15 lines). NEVER put large code blocks directly in chat — use this tool instead.",
             "parameters": {
@@ -1063,6 +1089,8 @@ def function_call_to_tool_block(name: str, arguments: str) -> Optional[ToolBlock
         content = args.get("path", "")
     elif tool_type == "write_file":
         content = args.get("path", "") + "\n" + args.get("content", "")
+    elif tool_type == "code_workspace":
+        content = json.dumps(args)
     elif tool_type == "create_document":
         parts = [args.get("title", "Untitled")]
         if args.get("language"):

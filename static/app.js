@@ -37,6 +37,7 @@ import themeModule from './js/theme.js';
 // unversioned so this can't recur.
 import cookbookModule from './js/cookbook.js';
 import trainingLabModule from './js/trainingLab.js';
+import codeWorkspaceModule from './js/codeWorkspace.js';
 import groupModule from './js/group.js';
 import * as researchPanelModule from './js/research/panel.js';
 import ttsModule from './js/tts-ai.js';
@@ -818,6 +819,17 @@ function initializeEventListeners() {
     });
   }
 
+  const toolCodeWorkspaceBtn = el('tool-code-workspace-btn');
+  if (toolCodeWorkspaceBtn) {
+    toolCodeWorkspaceBtn.addEventListener('click', async () => {
+      if (!codeWorkspaceModule) return;
+      const Modals = await import('./js/modalManager.js');
+      if (!Modals.toggle('code-workspace-modal')) {
+        codeWorkspaceModule.open();
+      }
+    });
+  }
+
   // Document library tool button
   const toolDoclibBtn = el('tool-doclib-btn');
   if (toolDoclibBtn) {
@@ -979,6 +991,7 @@ function initializeEventListeners() {
     '/calendar': () => calendarModule && calendarModule.openCalendar(),
     '/cookbook': () => document.getElementById('tool-cookbook-btn')?.click(),
     '/training': () => document.getElementById('tool-training-btn')?.click(),
+    '/code': () => document.getElementById('tool-code-workspace-btn')?.click(),
     '/email':    () => {
       // Collapse the wide sidebar → icon rail (48px) so the user keeps
       // navigation visible alongside the fullscreen email view.
@@ -2431,6 +2444,7 @@ function initializeEventListeners() {
     'tool-compare':        '#tool-compare-btn',
     'tool-cookbook':       '#tool-cookbook-btn',
     'tool-training':       '#tool-training-btn',
+    'tool-code-workspace': '#tool-code-workspace-btn',
     'tool-research':       '#tool-research-btn',
     'tool-gallery':        '#tool-gallery-btn',
     'tool-library':        '#tool-library-btn',

@@ -35,6 +35,7 @@ NON_ADMIN_BLOCKED_TOOLS = {
     "resolve_contact",
     "manage_contact",
     "manage_calendar",
+    "code_workspace",
     "vault_search",
     "vault_get",
     "vault_unlock",

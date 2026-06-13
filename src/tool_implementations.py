@@ -1454,6 +1454,75 @@ async def do_manage_documents(content: str, owner: Optional[str] = None) -> Dict
 # Settings/preferences management tool
 # ---------------------------------------------------------------------------
 
+async def do_code_workspace(content: str, owner: Optional[str] = None) -> Dict:
+    """Manage sealed local code workspaces."""
+    try:
+        args = _parse_tool_args(content)
+    except ValueError:
+        return {"error": "Invalid JSON arguments", "exit_code": 1}
+
+    from src import code_workspace
+    from src.settings import get_setting
+
+    action = (args.get("action") or "list").strip().lower()
+    workspace_id = (args.get("workspace_id") or args.get("id") or "").strip()
+
+    try:
+        if action == "list":
+            items = code_workspace.list_workspaces(owner=owner or "")
+            model_key = get_setting("code_workspace_model_key", "")
+            suffix = f"\nCode workspace model key: {model_key}" if model_key else "\nCode workspace model key is not set."
+            return {
+                "response": code_workspace.summarize(items) + suffix,
+                "workspaces": items,
+                "exit_code": 0,
+            }
+        if action == "create":
+            meta = code_workspace.create_workspace(args.get("name") or "Workspace", owner=owner or "")
+            return {"response": f"Created code workspace {meta['name']} (`{meta['id']}`).", "workspace": meta, "exit_code": 0}
+        if not workspace_id:
+            return {"error": "workspace_id is required for this action", "exit_code": 1}
+        if action == "tree":
+            tree = code_workspace.list_tree(workspace_id, args.get("path") or "", owner=owner or "")
+            lines = [
+                ("[dir] " if e["type"] == "dir" else "[file] ") + e["path"]
+                for e in tree["entries"]
+            ]
+            return {"response": "\n".join(lines) or "Directory is empty.", **tree, "exit_code": 0}
+        if action == "read":
+            result = code_workspace.read_file(workspace_id, args.get("path") or "", owner=owner or "")
+            return {"content": result["content"], "path": result["path"], "size": result["size"], "exit_code": 0}
+        if action == "write":
+            result = code_workspace.write_file(
+                workspace_id,
+                args.get("path") or "",
+                args.get("content") or "",
+                owner=owner or "",
+            )
+            return {"response": f"Wrote {result['path']} ({result['size']} chars).", **result}
+        if action == "patch":
+            result = code_workspace.apply_unified_diff(workspace_id, args.get("diff") or "", owner=owner or "")
+            if result.get("exit_code") == 0:
+                return {"response": "Patch applied.", **result}
+            return result
+        if action == "run":
+            return code_workspace.run_command(
+                workspace_id,
+                args.get("command") or "",
+                owner=owner or "",
+                timeout_seconds=int(args.get("timeout_seconds") or 120),
+            )
+        if action == "status":
+            return code_workspace.git_status(workspace_id, owner=owner or "")
+        if action == "diff":
+            return code_workspace.git_diff(workspace_id, owner=owner or "", staged=bool(args.get("staged")))
+        if action == "commit":
+            return code_workspace.git_commit(workspace_id, args.get("message") or "", owner=owner or "")
+        return {"error": f"Unknown code_workspace action '{action}'", "exit_code": 1}
+    except code_workspace.CodeWorkspaceError as exc:
+        return {"error": str(exc), "exit_code": 1}
+
+
 async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
     """Manage user settings and preferences."""
     try:
@@ -1502,6 +1571,10 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
             "agent tool calls": "agent_max_tool_calls", "max tool calls": "agent_max_tool_calls",
             "agent timeout": "agent_stream_timeout_seconds", "stream timeout": "agent_stream_timeout_seconds",
             "token budget": "agent_input_token_budget",
+            "code workspace model": "code_workspace_model_key",
+            "code workspace model key": "code_workspace_model_key",
+            "coding model": "code_workspace_model_key",
+            "coding model key": "code_workspace_model_key",
         }
         def _resolve(k):
             k2 = (k or "").strip().lower()
