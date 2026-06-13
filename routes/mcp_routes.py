@@ -13,6 +13,7 @@ import httpx
 from core.database import McpServer, SessionLocal
 from core.middleware import require_admin
 from src.mcp_manager import McpManager
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
     def list_servers(request: Request):
         """List all configured MCP servers with connection status."""
         require_admin(request)
+        if offline_mode():
+            return []
         db = SessionLocal()
         try:
             servers = db.query(McpServer).all()
@@ -94,6 +97,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
         registering a stdio server is equivalent to executing arbitrary
         binaries on the host."""
         require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "MCP servers are disabled in offline mode")
         server_id = str(uuid.uuid4())[:8]
 
         # Validate
@@ -202,6 +207,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
     async def reconnect_server(server_id: str, request: Request):
         """Reconnect to an MCP server."""
         require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "MCP servers are disabled in offline mode")
         db = SessionLocal()
         try:
             srv = db.query(McpServer).filter(McpServer.id == server_id).first()
@@ -236,6 +243,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
     async def toggle_server(server_id: str, request: Request, is_enabled: str = Form(...)):
         """Enable or disable an MCP server."""
         require_admin(request)
+        if offline_mode() and str(is_enabled).lower() == "true":
+            raise HTTPException(403, "MCP servers are disabled in offline mode")
         db = SessionLocal()
         try:
             srv = db.query(McpServer).filter(McpServer.id == server_id).first()
@@ -287,6 +296,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
     def list_tools(request: Request):
         """List all discovered MCP tools across all connected servers."""
         require_admin(request)
+        if offline_mode():
+            return []
         disabled_map = _load_disabled_map()
         return mcp_manager.get_all_tools(disabled_map)
 
@@ -294,6 +305,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
     def list_server_tools(server_id: str, request: Request):
         """List all tools for a specific MCP server with enabled/disabled state."""
         require_admin(request)
+        if offline_mode():
+            return []
         db = SessionLocal()
         try:
             srv = db.query(McpServer).filter(McpServer.id == server_id).first()
@@ -341,6 +354,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
     def oauth_authorize(server_id: str, request: Request):
         """Show OAuth authorization page with Google sign-in link."""
         require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "MCP OAuth is disabled in offline mode")
         db = SessionLocal()
         try:
             srv = db.query(McpServer).filter(McpServer.id == server_id).first()
@@ -395,6 +410,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
     async def oauth_callback(code: str, state: str, request: Request):
         """Handle OAuth callback from Google — exchange code for tokens."""
         require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "MCP OAuth is disabled in offline mode")
         server_id = state
         return await _exchange_and_connect(server_id, code, request)
 
@@ -402,6 +419,8 @@ def setup_mcp_routes(mcp_manager: McpManager):
     async def oauth_exchange(server_id: str, request: Request, callback_url: str = Form(...)):
         """Manual code exchange — user pastes the callback URL from their browser."""
         require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "MCP OAuth is disabled in offline mode")
         try:
             parsed = urllib.parse.urlparse(callback_url)
             params = urllib.parse.parse_qs(parsed.query)

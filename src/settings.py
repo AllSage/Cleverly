@@ -134,6 +134,15 @@ DEFAULT_FEATURES = {
     "web_search": True,
     "web_fetch": True,
     "deep_research": False,
+    "cookbook_downloads": True,
+    "cookbook_dependency_installs": True,
+    "cookbook_remote_servers": True,
+    "external_model_endpoints": True,
+    "network_integrations": True,
+    "network_notifications": True,
+    "webhooks": True,
+    "mcp": True,
+    "vault": True,
     "memory": True,
     "document_editor": True,
     "rag": True,
@@ -230,6 +239,15 @@ def load_features() -> dict:
         merged["web_search"] = False
         merged["web_fetch"] = False
         merged["deep_research"] = False
+        merged["cookbook_downloads"] = False
+        merged["cookbook_dependency_installs"] = False
+        merged["cookbook_remote_servers"] = False
+        merged["external_model_endpoints"] = False
+        merged["network_integrations"] = False
+        merged["network_notifications"] = False
+        merged["webhooks"] = False
+        merged["mcp"] = False
+        merged["vault"] = False
         merged["email"] = False
     _features_cache = (now, merged)
     return merged

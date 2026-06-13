@@ -16,6 +16,7 @@ from src.settings import (
     load_features as _load_features,
     save_features as _save_features,
     DEFAULT_SETTINGS,
+    offline_mode,
 )
 from src.integrations import (
     load_integrations,
@@ -413,6 +414,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user or not auth_manager.is_admin(user):
             raise HTTPException(403, "Admin only")
+        if offline_mode():
+            return {"integrations": []}
         items = load_integrations()
         # Mask API keys for frontend display
         safe = [mask_integration_secret(item) for item in items]
@@ -421,6 +424,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
     @router.get("/integrations/presets")
     async def list_presets():
         """List available integration presets."""
+        if offline_mode():
+            return {"presets": {}}
         return {"presets": {k: {kk: vv for kk, vv in v.items() if kk != "api_key"} for k, v in INTEGRATION_PRESETS.items()}}
 
     @router.post("/integrations")
@@ -429,6 +434,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user or not auth_manager.is_admin(user):
             raise HTTPException(403, "Admin only")
+        if offline_mode():
+            raise HTTPException(403, "Network integrations are disabled in offline mode")
         body = await request.json()
         item = add_integration(body)
         return {"ok": True, "integration": mask_integration_secret(item)}
@@ -439,6 +446,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user or not auth_manager.is_admin(user):
             raise HTTPException(403, "Admin only")
+        if offline_mode():
+            raise HTTPException(403, "Network integrations are disabled in offline mode")
         body = await request.json()
         item = update_integration(integration_id, body)
         if not item:
@@ -462,6 +471,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user or not auth_manager.is_admin(user):
             raise HTTPException(403, "Admin only")
+        if offline_mode():
+            raise HTTPException(403, "Network integration tests are disabled in offline mode")
         integ = get_integration(integration_id)
         if not integ:
             raise HTTPException(404, "Integration not found")

@@ -1327,19 +1327,24 @@ function _renderRecipes() {
 
   const presets = _loadPresets();
   const hasSaved = presets.length > 0;
+  const features = window._cleverlyFeatures || {};
+  const canDownload = features.cookbook_downloads !== false;
+  const canInstallDeps = features.cookbook_dependency_installs !== false;
+  const canUseRemoteServers = features.cookbook_remote_servers !== false;
+  const initialTab = canDownload ? 'Search' : 'Serve';
 
   let html = '';
 
   // Tabs
   html += '<div class="cookbook-tabs">';
-  html += '<button class="cookbook-tab active" data-backend="Search"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="7 14 12 19 17 14"/><line x1="12" y1="19" x2="12" y2="5"/><line x1="5" y1="21" x2="19" y2="21"/></svg>Download</button>';
-  html += '<button class="cookbook-tab" data-backend="Serve"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-1px;margin-right:3px;"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>Serve</button>';
-  html += '<button class="cookbook-tab" data-backend="Dependencies"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-1px;margin-right:3px;"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Dependencies</button>';
+  if (canDownload) html += '<button class="cookbook-tab active" data-backend="Search" data-online-feature="cookbook_downloads"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-1px;margin-right:3px;"><polyline points="7 14 12 19 17 14"/><line x1="12" y1="19" x2="12" y2="5"/><line x1="5" y1="21" x2="19" y2="21"/></svg>Download</button>';
+  html += `<button class="cookbook-tab${initialTab === 'Serve' ? ' active' : ''}" data-backend="Serve"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-1px;margin-right:3px;"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><circle cx="6" cy="6" r="1"/><circle cx="6" cy="18" r="1"/></svg>Serve</button>`;
+  if (canInstallDeps) html += '<button class="cookbook-tab" data-backend="Dependencies" data-online-feature="cookbook_dependency_installs"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-1px;margin-right:3px;"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>Dependencies</button>';
   html += '<button class="cookbook-tab" data-backend="Settings"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:-1px;margin-right:3px;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>';
   html += '</div>';
 
   // Search group
-  html += '<div class="cookbook-group" data-backend-group="Search" style="flex:0 0 auto;">';
+  html += `<div class="cookbook-group${initialTab === 'Search' ? '' : ' hidden'}" data-backend-group="Search" data-online-feature="cookbook_downloads" style="flex:0 0 auto;">`;
   html += '<div class="admin-card" style="display:flex;flex-direction:column;overflow:hidden;">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">Download</h2>';
@@ -1375,14 +1380,16 @@ function _renderRecipes() {
 
   // Download input
   html += `<div style="margin-top:7px;margin-bottom:2px;display:flex;gap:4px;align-items:center;">`;
-  if (_es.servers.length > 1) {
+  const serverOpts = canUseRemoteServers ? _buildServerOpts(true) : '<option value="local">Local</option>';
+  const scanServerOpts = canUseRemoteServers ? _buildServerOpts(false) : '<option value="local">Local</option>';
+  if (canUseRemoteServers && _es.servers.length > 1) {
     html += `<select class="cookbook-field-input hwfit-dl-server" id="hwfit-dl-server" style="height:28px;position:relative;top:0px;">`;
-    html += _buildServerOpts(true);
+    html += serverOpts;
     html += `</select>`;
   } else {
     html += `<input type="hidden" id="hwfit-dl-server" value="local" />`;
   }
-  html += `<button class="memory-toolbar-btn cookbook-dl-add-server" title="Add server in Settings" style="height:28px;">add server</button>`;
+  if (canUseRemoteServers) html += `<button class="memory-toolbar-btn cookbook-dl-add-server" data-online-feature="cookbook_remote_servers" title="Add server in Settings" style="height:28px;">add server</button>`;
   html += `</div>`;
   html += `<div class="cookbook-dl-input" style="margin-top:0;">`;
   html += `<input type="text" class="cookbook-dl-repo" id="cookbook-dl-repo" placeholder="org/model-name, HF URL, or org/model:QUANT_TAG" />`;
@@ -1402,7 +1409,7 @@ function _renderRecipes() {
 
   // Search section
   html += '</div></div></div>';
-  html += '<div class="cookbook-group" data-backend-group="Search">';
+  html += `<div class="cookbook-group${initialTab === 'Search' ? '' : ' hidden'}" data-backend-group="Search" data-online-feature="cookbook_downloads">`;
   html += '<div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">Scan / Download</h2>';
@@ -1426,7 +1433,7 @@ function _renderRecipes() {
   html += '</div>';
   html += '<div class="hwfit-toolbar" style="margin-top:7px;">';
   html += '<select class="cookbook-field-input hwfit-server-select" id="hwfit-server-select" style="height:28px;min-width:88px;position:relative;top:0px;">';
-  html += _buildServerOpts(false);
+  html += scanServerOpts;
   html += '</select>';
   html += '<div class="hwfit-gpu-toggles" id="hwfit-gpu-toggles"></div>';
   // Scan/refresh button (icon-only) where the quant dropdown used to sit.
@@ -1453,7 +1460,7 @@ function _renderRecipes() {
   html += '</div></div>';
 
   // Serve group
-  html += '<div class="cookbook-group hidden" data-backend-group="Serve">';
+  html += `<div class="cookbook-group${initialTab === 'Serve' ? '' : ' hidden'}" data-backend-group="Serve">`;
   html += '<div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">Serve <span id="serve-stats" class="memory-count" style="font-size:0.6em;opacity:0.6;font-weight:normal"></span></h2>';
@@ -1465,7 +1472,7 @@ function _renderRecipes() {
   html += '<span class="cookbook-serve-dir-edit" title="Edit in Settings">edit</span>';
   html += '</div>';
   html += '<div style="display:flex;gap:4px;align-items:center;margin-top:4px;">';
-  html += '<select class="memory-sort-select" id="hwfit-cache-server" style="height:24px;">' + _buildServerOpts(true) + '</select>';
+  html += '<select class="memory-sort-select" id="hwfit-cache-server" style="height:24px;">' + serverOpts + '</select>';
   html += '<select class="memory-sort-select" id="serve-sort" style="height:24px;">';
   html += '<option value="name">Name</option><option value="size-desc">Size \u2193</option><option value="size-asc">Size \u2191</option><option value="recent">Recent</option>';
   html += '</select>';
@@ -1489,18 +1496,20 @@ function _renderRecipes() {
   html += '</div></div>';
 
   // Dependencies tab
-  html += '<div class="cookbook-group hidden" data-backend-group="Dependencies">';
+  if (canInstallDeps) {
+  html += '<div class="cookbook-group hidden" data-backend-group="Dependencies" data-online-feature="cookbook_dependency_installs">';
   html += '<div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">';
   html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">Dependencies</h2>';
   html += '<span style="font-size:10px;opacity:0.5;margin-left:auto;">Server</span>';
   html += '<select class="cookbook-field-input" id="hwfit-deps-server" style="height:28px;min-width:70px;">';
-  html += _buildServerOpts(false);
+  html += scanServerOpts;
   html += '</select>';
   html += '</div>';
   html += '<p class="memory-desc doclib-desc">Optional packages that extend Cleverly capabilities.</p>';
   html += '<div class="doclib-grid" id="cookbook-deps-list"></div>';
   html += '</div></div>';
+  }
 
   // Settings tab
   // Settings tab — split into two separate `.admin-card` blocks so the
@@ -1509,7 +1518,8 @@ function _renderRecipes() {
   html += '<div class="cookbook-group hidden cookbook-settings-stack" data-backend-group="Settings">';
 
   // ── HuggingFace Token block ─────────────────────────────────────────
-  html += '<div class="admin-card" style="flex:0 0 auto;display:flex;flex-direction:column;">';
+  if (canDownload) {
+  html += '<div class="admin-card" data-online-feature="cookbook_downloads" style="flex:0 0 auto;display:flex;flex-direction:column;">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">HuggingFace Token</h2>';
   html += '</div>';
@@ -1528,9 +1538,11 @@ function _renderRecipes() {
   html += `</div>`;
   html += '</div>';
   html += '</div>';
+  }
 
   // ── Servers block ───────────────────────────────────────────────────
-  html += '<div class="admin-card" style="flex:0 0 auto;display:flex;flex-direction:column;">';
+  if (canUseRemoteServers) {
+  html += '<div class="admin-card" data-online-feature="cookbook_remote_servers" style="flex:0 0 auto;display:flex;flex-direction:column;">';
   html += '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;margin-top:-8px;">';
   html += '<h2 style="margin:0;padding:0;line-height:1;">Servers</h2>';
   // Reuse the calendar +New pill: spinning plus, label fades in idea uses
@@ -1547,6 +1559,7 @@ function _renderRecipes() {
   html += '</div>';
 
   html += '</div></div>';
+  }
 
   body.innerHTML = html;
   _wireTabEvents(body);

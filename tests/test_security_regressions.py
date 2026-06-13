@@ -179,12 +179,22 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     assert 'data-online-feature="deep_research"' in index_html
     assert 'data-online-feature="web_search"' in index_html
     assert 'data-online-feature="email"' in index_html
+    assert 'data-online-feature="network_notifications"' in index_html
+    assert 'data-online-feature="network_integrations"' in index_html
+    assert 'data-online-feature="external_model_endpoints"' in index_html
+    assert "cookbook_downloads" in app_js
+    assert "cookbook_dependency_installs" in app_js
+    assert "cookbook_remote_servers" in app_js
+    assert "external_model_endpoints" in app_js
+    assert "network_integrations" in app_js
+    assert "network_notifications" in app_js
     assert '[data-settings-tab="email"]' in app_js
     assert '[data-settings-panel="email"]' in app_js
     assert "features.email === false" in app_js
     assert "features.email !== false" in chat_js
     assert "window._cleverlyFeatures.email === false" in inbox_js
     assert "emailEnabled" in settings_js
+    assert "networkNotificationsEnabled" in settings_js
     assert "_features.web_search !== false" in compare_selector
     assert "_features.deep_research !== false" in compare_selector
 
@@ -221,6 +231,15 @@ def test_offline_mode_disables_internet_features(monkeypatch):
         assert features["web_search"] is False
         assert features["web_fetch"] is False
         assert features["deep_research"] is False
+        assert features["cookbook_downloads"] is False
+        assert features["cookbook_dependency_installs"] is False
+        assert features["cookbook_remote_servers"] is False
+        assert features["external_model_endpoints"] is False
+        assert features["network_integrations"] is False
+        assert features["network_notifications"] is False
+        assert features["webhooks"] is False
+        assert features["mcp"] is False
+        assert features["vault"] is False
         assert features["email"] is False
     finally:
         settings._invalidate_caches()

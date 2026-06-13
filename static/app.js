@@ -1307,6 +1307,39 @@ function initializeEventListeners() {
         '[data-settings-panel="email"]',
         '[data-online-feature="email"]',
       ],
+      cookbook_downloads: [
+        '[data-online-feature="cookbook_downloads"]',
+      ],
+      cookbook_dependency_installs: [
+        '[data-online-feature="cookbook_dependency_installs"]',
+      ],
+      cookbook_remote_servers: [
+        '[data-online-feature="cookbook_remote_servers"]',
+      ],
+      external_model_endpoints: [
+        '#adm-add-api',
+        '#adm-epList-api',
+        '[data-online-feature="external_model_endpoints"]',
+      ],
+      network_integrations: [
+        '[data-settings-tab="integrations"]',
+        '[data-settings-panel="integrations"]',
+        '[data-online-feature="network_integrations"]',
+      ],
+      network_notifications: [
+        '#set-reminder-channel-ntfy-opt',
+        '#set-reminder-ntfy-topic-row',
+        '[data-online-feature="network_notifications"]',
+      ],
+      webhooks: [
+        '[data-online-feature="webhooks"]',
+      ],
+      mcp: [
+        '[data-online-feature="mcp"]',
+      ],
+      vault: [
+        '[data-online-feature="vault"]',
+      ],
     };
 
     Object.entries(hideSelectors).forEach(([key, selectors]) => {

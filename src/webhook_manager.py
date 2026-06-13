@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import httpx
 
 from src.database import SessionLocal, Webhook
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,9 @@ class WebhookManager:
 
     async def _deliver(self, webhook_id: str, url: str, secret: Optional[str], event: str, payload: dict):
         """Internal delivery. Never call directly from outside this class (use deliver_test)."""
+        if offline_mode():
+            logger.info("Skipping webhook %s because offline mode is enabled", webhook_id)
+            return
         # Re-validate URL at delivery time in case DB was tampered with
         try:
             validate_webhook_url(url)

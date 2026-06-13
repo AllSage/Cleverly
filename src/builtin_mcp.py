@@ -12,6 +12,7 @@ import sys
 import asyncio
 
 from core.platform_compat import IS_WINDOWS, which_tool
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ async def register_builtin_servers(mcp_manager):
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     python = sys.executable
+    features = load_features()
 
     async def _connect_python_server(server_id: str, script_path: str, name: str):
         try:
@@ -118,6 +120,9 @@ async def register_builtin_servers(mcp_manager):
             logger.warning(f"Built-in MCP server {name} error: {type(e).__name__}: {e}")
 
     for server_id, (script, name) in _BUILTIN_SERVERS.items():
+        if server_id == "email" and features.get("email") is False:
+            logger.info("Skipping built-in Email MCP because the email feature is disabled")
+            continue
         script_path = os.path.join(base_dir, script)
         if not os.path.exists(script_path):
             logger.warning(f"Built-in MCP server script not found: {script_path}")
@@ -125,6 +130,9 @@ async def register_builtin_servers(mcp_manager):
         asyncio.create_task(_connect_python_server(server_id, script_path, name))
 
     # Register NPX-based servers in the background (they take longer to start)
+    if offline_mode():
+        logger.info("Skipping NPX-based MCP servers because offline mode is enabled")
+        return
     npx_path = _find_npx()
     logger.info(f"NPX binary resolved to: {npx_path}")
 

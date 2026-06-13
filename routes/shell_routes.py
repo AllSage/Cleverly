@@ -38,6 +38,7 @@ from core.platform_compat import (
     detached_popen_kwargs,
     find_bash,
 )
+from src.settings import offline_mode
 
 
 def _require_admin(request: Request):
@@ -911,6 +912,8 @@ def setup_shell_routes() -> APIRouter:
     async def install_package(request: Request):
         """Install a package via pip. Admin only — pip install is effectively code exec."""
         _require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "Dependency installs are disabled in offline mode")
         import sys as _sys
         body = await request.json()
         pip_name = body.get("pip")

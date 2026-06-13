@@ -13,6 +13,7 @@ from dateutil.rrule import DAILY, WEEKLY, MONTHLY, YEARLY
 
 from core.database import SessionLocal, CalendarCal, CalendarEvent
 from src.auth_helpers import get_current_user
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -509,6 +510,8 @@ def setup_calendar_routes() -> APIRouter:
         owner = _require_user(request)
         from routes.prefs_routes import _load_for_user
         cfg = (_load_for_user(owner) or {}).get("caldav", {}) or {}
+        if offline_mode():
+            cfg = {}
         # Surface url+username but never hand the password back to the
         # client — saved-state UI shouldn't leak the credential.
         return {
@@ -534,6 +537,8 @@ def setup_calendar_routes() -> APIRouter:
             prefs.pop("caldav", None)
             _save_for_user(owner, prefs)
             return {"ok": True, "cleared": True}
+        if offline_mode():
+            raise HTTPException(403, "CalDAV sync is disabled in offline mode")
         cfg["url"] = body.get("url", "").strip()
         cfg["username"] = (body.get("username") or "").strip()
         # Preserve the stored password when the client sends an empty
@@ -553,6 +558,8 @@ def setup_calendar_routes() -> APIRouter:
         creds otherwise. Returns {ok, error?} with a useful message on
         failure (status code, auth issue, network error)."""
         owner = _require_user(request)
+        if offline_mode():
+            raise HTTPException(403, "CalDAV sync is disabled in offline mode")
         try:
             body = await request.json()
         except Exception:
@@ -607,6 +614,8 @@ def setup_calendar_routes() -> APIRouter:
         Returns counts + any per-calendar errors. Called by the frontend
         on calendar open and by the periodic scheduler loop."""
         owner = _require_user(request)
+        if offline_mode():
+            raise HTTPException(403, "CalDAV sync is disabled in offline mode")
         from src.caldav_sync import sync_caldav
         return await sync_caldav(owner)
 

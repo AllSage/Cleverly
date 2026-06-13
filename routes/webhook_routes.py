@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from core.database import SessionLocal, Webhook
 from src.webhook_manager import WebhookManager, validate_webhook_url, validate_events
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,8 @@ def setup_webhook_routes(
     @router.get("/webhooks")
     def list_webhooks(request: Request):
         _require_admin(request)
+        if offline_mode():
+            return []
         db = SessionLocal()
         try:
             hooks = db.query(Webhook).all()
@@ -66,6 +69,8 @@ def setup_webhook_routes(
         events: str = Form(""),
     ):
         _require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "Webhooks are disabled in offline mode")
         name = name.strip()[:MAX_NAME_LEN]
         if not name:
             raise HTTPException(400, "Webhook name is required")
@@ -106,6 +111,8 @@ def setup_webhook_routes(
     @router.post("/webhooks/{webhook_id}/test")
     async def test_webhook(request: Request, webhook_id: str):
         _require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "Webhooks are disabled in offline mode")
         db = SessionLocal()
         try:
             wh = db.query(Webhook).filter(Webhook.id == webhook_id).first()
@@ -121,6 +128,8 @@ def setup_webhook_routes(
     @router.patch("/webhooks/{webhook_id}")
     def toggle_webhook(request: Request, webhook_id: str):
         _require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "Webhooks are disabled in offline mode")
         db = SessionLocal()
         try:
             wh = db.query(Webhook).filter(Webhook.id == webhook_id).first()

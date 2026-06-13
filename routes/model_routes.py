@@ -15,11 +15,23 @@ from fastapi.responses import StreamingResponse
 from core.database import SessionLocal, ModelEndpoint, Session as DbSession
 from core.middleware import require_admin
 from src.llm_core import _detect_provider, ANTHROPIC_MODELS
-from src.settings import load_settings as _load_settings, save_settings as _save_settings
+from src.settings import load_settings as _load_settings, save_settings as _save_settings, offline_mode
 from src.endpoint_resolver import normalize_base as _normalize_base, build_chat_url
 from src.auth_helpers import owner_filter
 
 logger = logging.getLogger(__name__)
+
+
+def _offline_endpoint_allowed(base_url: str) -> bool:
+    """Offline mode permits loopback and Docker-service style model endpoints only."""
+    parsed = urlparse((base_url or "").strip())
+    host = (parsed.hostname or "").strip().lower()
+    if host in {"localhost", "127.0.0.1", "::1", "host.docker.internal"}:
+        return True
+    if host.startswith("127."):
+        return True
+    # Compose service names are usually bare hostnames such as "ollama".
+    return bool(host) and "." not in host
 
 
 def _anthropic_api_root(base: str) -> str:
@@ -304,6 +316,8 @@ def _classify_endpoint(base_url: str) -> str:
 def _probe_endpoint(base_url: str, api_key: str = None, timeout: int = 5) -> List[str]:
     """Probe a base URL's /models endpoint and return list of model IDs.
     For Anthropic, queries their /v1/models API, falling back to hardcoded list."""
+    if offline_mode() and not _offline_endpoint_allowed(base_url):
+        return []
     from src.endpoint_resolver import resolve_url
     base = resolve_url(_normalize_base(base_url))
     if _detect_provider(base) == "anthropic":
@@ -381,6 +395,8 @@ def _probe_endpoint(base_url: str, api_key: str = None, timeout: int = 5) -> Lis
 
 def _ping_endpoint(base_url: str, api_key: str = None, timeout: float = 1.5) -> Dict[str, Any]:
     """Reachability probe that does not require installed/listed models."""
+    if offline_mode() and not _offline_endpoint_allowed(base_url):
+        return {"reachable": False, "error": "External endpoints are disabled in offline mode", "status_code": None}
     from src.endpoint_resolver import resolve_url
     base = resolve_url(_normalize_base(base_url))
     headers = {}
@@ -893,6 +909,8 @@ def setup_model_routes(model_discovery):
     def providers(request: Request, refresh: bool = False):
         """Get all available providers (cached for 30s)."""
         require_admin(request)
+        if offline_mode():
+            return []
         now = _time.time()
         if not refresh and _providers_cache["data"] is not None and (now - _providers_cache["time"]) < _PROVIDERS_CACHE_TTL:
             return _providers_cache["data"]
@@ -905,6 +923,8 @@ def setup_model_routes(model_discovery):
     def discover_local(request: Request):
         """Scan local network for model servers on common ports."""
         require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "Network model discovery is disabled in offline mode")
         return model_discovery.discover_models()
 
     # ---- Admin: model endpoints CRUD ----
@@ -979,6 +999,8 @@ def setup_model_routes(model_discovery):
         base_url = _normalize_base(base_url)
         if not base_url:
             raise HTTPException(400, "Base URL is required")
+        if offline_mode() and not _offline_endpoint_allowed(base_url):
+            raise HTTPException(403, "External model endpoints are disabled in offline mode")
         # Resolve hostname via Tailscale if DNS fails
         from src.endpoint_resolver import resolve_url
         base_url = resolve_url(base_url)
@@ -1088,6 +1110,8 @@ def setup_model_routes(model_discovery):
         if not base_url:
             raise HTTPException(400, "Base URL is required")
         from src.endpoint_resolver import resolve_url
+        if offline_mode() and not _offline_endpoint_allowed(base_url):
+            raise HTTPException(403, "External model endpoints are disabled in offline mode")
         base_url = resolve_url(base_url)
         probe_timeout = 3 if (":11434" in base_url or "ollama" in base_url.lower()) else 2
         models = _probe_endpoint(base_url, api_key.strip() or None, timeout=probe_timeout)

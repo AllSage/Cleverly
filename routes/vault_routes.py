@@ -12,11 +12,12 @@ import shutil
 import asyncio
 from pathlib import Path
 from datetime import datetime
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from core.middleware import require_admin
 from core.platform_compat import IS_WINDOWS, safe_chmod, which_tool
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,8 @@ def setup_vault_routes():
     async def get_config(request: Request):
         """Return vault config (no sensitive fields)."""
         require_admin(request)
+        if offline_mode():
+            return {"server_url": "", "email": "", "unlocked": False, "unlocked_at": "", "bw_installed": False}
         cfg = _load_config()
         return {
             "server_url": cfg.get("server_url", ""),
@@ -134,6 +137,8 @@ def setup_vault_routes():
     async def save_config(req: VaultConfig, request: Request):
         """Save vault URL + email. Runs 'bw config server' to point at Vaultwarden."""
         require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "Vault integration is disabled in offline mode")
         cfg = _load_config()
         cfg["server_url"] = req.server_url.strip().rstrip("/")
         cfg["email"] = req.email.strip()
@@ -150,6 +155,8 @@ def setup_vault_routes():
     async def login(req: VaultLoginRequest, request: Request):
         """Log in to Vaultwarden (required once per account)."""
         require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "Vault integration is disabled in offline mode")
         cfg = _load_config()
         # Update email
         cfg["email"] = req.email
@@ -175,6 +182,8 @@ def setup_vault_routes():
     async def unlock(req: VaultUnlockRequest, request: Request):
         """Unlock the vault and save the session key."""
         require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "Vault integration is disabled in offline mode")
         stdout, stderr, rc = await _run_bw(
             ["unlock", req.master_password, "--raw"],
         )

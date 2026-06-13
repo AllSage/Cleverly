@@ -28,6 +28,7 @@ from core.platform_compat import (
     which_tool,
 )
 from routes.shell_routes import TMUX_LOG_DIR
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -384,6 +385,8 @@ def setup_cookbook_routes() -> APIRouter:
         Uses `hf download` CLI directly — runs in tmux via `script -qc`
         for real TTY progress, streams ANSI-stripped output via log file."""
         require_admin(request)
+        if offline_mode():
+            raise HTTPException(403, "Model downloads are disabled in offline mode")
         # Defence-in-depth: even though this endpoint is admin-gated, refuse
         # values that would land in shell contexts with metacharacters.
         _validate_repo_id(req.repo_id)
@@ -783,6 +786,8 @@ def setup_cookbook_routes() -> APIRouter:
         a fake org/name wrapper.
         """
         require_admin(request)
+        if offline_mode() and req.remote_host:
+            raise HTTPException(403, "Remote Cookbook servers are disabled in offline mode")
         # Defence-in-depth: reject values that could break out of shell contexts.
         _validate_remote_host(req.remote_host)
         req.ssh_port = _validate_ssh_port(req.ssh_port)
@@ -797,6 +802,14 @@ def setup_cookbook_routes() -> APIRouter:
         # `TypeError: argument of type 'NoneType'` (a 500 instead of a clean 400).
         req.cmd = _validate_serve_cmd(req.cmd) or ""
         is_pip_install = bool(req.cmd and "pip install" in req.cmd)
+        if offline_mode() and is_pip_install:
+            raise HTTPException(403, "Dependency installs are disabled in offline mode")
+        if offline_mode() and req.cmd and re.search(
+            r"\b(hf\s+download|ollama\s+pull|git\s+clone|curl\b|wget\b|snapshot_download|huggingface_hub)\b",
+            req.cmd,
+            re.IGNORECASE,
+        ):
+            raise HTTPException(403, "Network download commands are disabled in offline mode")
         if is_pip_install:
             # PEP-508-style package spec — letters, digits, `.-_` for the
             # name; `[` `]` for extras; `<>=!~,` for version specifiers.

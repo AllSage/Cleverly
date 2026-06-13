@@ -18,6 +18,7 @@ from fastapi import APIRouter, Query, Depends, Response
 from typing import List, Dict, Optional
 
 from src.auth_helpers import require_user
+from src.settings import offline_mode
 from core.middleware import require_admin
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,8 @@ def _save_settings(settings):
 
 def _get_carddav_config():
     import os
+    if offline_mode():
+        return {"url": "", "username": "", "password": ""}
     settings = _load_settings()
     return {
         "url": settings.get("carddav_url", os.environ.get("CARDDAV_URL", "")),
@@ -737,6 +740,8 @@ def setup_contacts_routes():
 
     @router.put("/config")
     async def update_config(data: dict, _admin: str = Depends(require_admin)):
+        if offline_mode() and (data.get("carddav_url") or "").strip():
+            raise HTTPException(403, "CardDAV sync is disabled in offline mode")
         settings = _load_settings()
         for key in ("carddav_url", "carddav_username", "carddav_password"):
             if key in data:

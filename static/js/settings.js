@@ -2111,13 +2111,17 @@ function initAll() {
   initAppearance();
   initShortcuts();
   initAccount();
-  initIntegrations();
+  if (!window._cleverlyFeatures || window._cleverlyFeatures.network_integrations !== false) {
+    initIntegrations();
+  }
   if (!window._cleverlyFeatures || window._cleverlyFeatures.email !== false) {
     initEmailSettings();
     initEmailAccountsSettings();
   }
   initReminderSettings();
-  initUnifiedIntegrations();
+  if (!window._cleverlyFeatures || window._cleverlyFeatures.network_integrations !== false) {
+    initUnifiedIntegrations();
+  }
 }
 
 function notifyIntegrationsChanged() {
@@ -2130,6 +2134,7 @@ async function initReminderSettings() {
   const root = el('settings-modal');
   if (!root || !root.querySelector('[data-settings-panel="reminders"]')) return;
   const emailEnabled = !window._cleverlyFeatures || window._cleverlyFeatures.email !== false;
+  const networkNotificationsEnabled = !window._cleverlyFeatures || window._cleverlyFeatures.network_notifications !== false;
 
   // Public URL field (used for deep-links in outgoing alert emails)
   const pubUrlIn = el('set-app-public-url');
@@ -2188,13 +2193,15 @@ async function initReminderSettings() {
   // what the Integrations panel manages. Treat the email channel as
   // configured if there's at least one account with SMTP set.
   let emailAccounts = [];
-  try {
-    const res = await fetch('/api/email/accounts', { credentials: 'same-origin' });
-    if (res.ok) {
-      const d = await res.json();
-      emailAccounts = (d.accounts || []).filter(a => a.smtp_host && a.smtp_user && a.has_smtp_password);
-    }
-  } catch (_) {}
+  if (emailEnabled) {
+    try {
+      const res = await fetch('/api/email/accounts', { credentials: 'same-origin' });
+      if (res.ok) {
+        const d = await res.json();
+        emailAccounts = (d.accounts || []).filter(a => a.smtp_host && a.smtp_user && a.has_smtp_password);
+      }
+    } catch (_) {}
+  }
   let smtpConfigured = emailAccounts.length > 0;
 
   if (!smtpConfigured && emailOpt) {
@@ -2205,6 +2212,7 @@ async function initReminderSettings() {
   // Detect whether ntfy integration exists — try admin endpoint, fall back to
   // checking if an ntfy integration was saved in settings (non-admin users).
   let ntfyConfigured = false;
+  if (networkNotificationsEnabled) {
   try {
     const res = await fetch('/api/auth/integrations', { credentials: 'same-origin' });
     if (res.ok) {
@@ -2214,8 +2222,9 @@ async function initReminderSettings() {
       );
     }
   } catch (_) {}
+  }
   // If admin check failed, check if ntfy was previously selected (trust the saved setting)
-  if (!ntfyConfigured) {
+  if (networkNotificationsEnabled && !ntfyConfigured) {
     try {
       const res = await fetch('/api/auth/settings', { credentials: 'same-origin' });
       const s = await res.json();
@@ -2223,9 +2232,11 @@ async function initReminderSettings() {
     } catch (_) {}
   }
 
-  if (!ntfyConfigured && ntfyOpt) {
+  if ((!networkNotificationsEnabled || !ntfyConfigured) && ntfyOpt) {
     ntfyOpt.disabled = true;
-    ntfyOpt.textContent = 'ntfy (add in Integrations first)';
+    ntfyOpt.hidden = !networkNotificationsEnabled;
+    ntfyOpt.style.display = networkNotificationsEnabled ? '' : 'none';
+    ntfyOpt.textContent = networkNotificationsEnabled ? 'ntfy (add in Integrations first)' : 'ntfy';
   }
 
   const emailFromRow = el('set-reminder-email-from-row');
@@ -2254,7 +2265,9 @@ async function initReminderSettings() {
         : 'Email';
     }
     if (ntfyOpt) {
-      ntfyOpt.disabled = !ntfyConfigured;
+      ntfyOpt.disabled = !networkNotificationsEnabled || !ntfyConfigured;
+      ntfyOpt.hidden = !networkNotificationsEnabled;
+      ntfyOpt.style.display = networkNotificationsEnabled ? '' : 'none';
       ntfyOpt.textContent = ntfyConfigured ? 'ntfy' : 'ntfy (add in Integrations first)';
     }
   }
@@ -2276,27 +2289,29 @@ async function initReminderSettings() {
     smtpConfigured = emailAccounts.length > 0;
 
     ntfyConfigured = false;
-    try {
-      const res = await fetch('/api/auth/integrations', { credentials: 'same-origin' });
-      if (res.ok) {
-        const data = await res.json();
-        ntfyConfigured = (data.integrations || []).some(
-          i => (i.preset === 'ntfy' || (i.name || '').toLowerCase() === 'ntfy') && i.enabled !== false && i.base_url
-        );
-      }
-    } catch (_) {}
-    if (!ntfyConfigured) {
+    if (networkNotificationsEnabled) {
       try {
-        const res = await fetch('/api/auth/settings', { credentials: 'same-origin' });
-        const s = await res.json();
-        if (s.reminder_channel === 'ntfy') ntfyConfigured = true;
+        const res = await fetch('/api/auth/integrations', { credentials: 'same-origin' });
+        if (res.ok) {
+          const data = await res.json();
+          ntfyConfigured = (data.integrations || []).some(
+            i => (i.preset === 'ntfy' || (i.name || '').toLowerCase() === 'ntfy') && i.enabled !== false && i.base_url
+          );
+        }
       } catch (_) {}
+      if (!ntfyConfigured) {
+        try {
+          const res = await fetch('/api/auth/settings', { credentials: 'same-origin' });
+          const s = await res.json();
+          if (s.reminder_channel === 'ntfy') ntfyConfigured = true;
+        } catch (_) {}
+      }
     }
 
     applyReminderChannelAvailability();
     populateReminderEmailAccounts(currentEmailAccount);
     if (currentChannel === 'email' && (!emailEnabled || !smtpConfigured)) channelSel.value = 'browser';
-    else if (currentChannel === 'ntfy' && !ntfyConfigured) channelSel.value = 'browser';
+    else if (currentChannel === 'ntfy' && (!networkNotificationsEnabled || !ntfyConfigured)) channelSel.value = 'browser';
     else channelSel.value = currentChannel;
     if (hint) hint.textContent = CHANNEL_HINTS[channelSel.value] || '';
     syncChannelRows();
@@ -2309,7 +2324,7 @@ async function initReminderSettings() {
     const isEmail = channelSel.value === 'email';
     if (emailFromRow) emailFromRow.style.display = (isEmail && emailAccounts.length > 1) ? 'flex' : 'none';
     if (emailToRow) emailToRow.style.display = isEmail ? 'flex' : 'none';
-    if (ntfyTopicRow) ntfyTopicRow.style.display = channelSel.value === 'ntfy' ? 'flex' : 'none';
+    if (ntfyTopicRow) ntfyTopicRow.style.display = networkNotificationsEnabled && channelSel.value === 'ntfy' ? 'flex' : 'none';
   }
 
   // Browser notifications fire on EVERY reminder (see

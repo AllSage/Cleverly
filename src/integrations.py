@@ -10,6 +10,7 @@ import httpx
 from core.atomic_io import atomic_write_json
 from core.platform_compat import safe_chmod
 from src.secret_storage import decrypt, encrypt, is_encrypted
+from src.settings import offline_mode
 
 log = logging.getLogger(__name__)
 
@@ -430,6 +431,8 @@ def get_integrations_prompt() -> str:
 
     Returns empty string if no integrations are enabled.
     """
+    if offline_mode():
+        return ""
     integrations = load_integrations()
     enabled = [i for i in integrations if i.get("enabled", True)]
     if not enabled:
