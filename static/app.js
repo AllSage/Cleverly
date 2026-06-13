@@ -39,6 +39,7 @@ import cookbookModule from './js/cookbook.js';
 import trainingLabModule from './js/trainingLab.js';
 import codeWorkspaceModule from './js/codeWorkspace.js';
 import offlineControlModule from './js/offlineControl.js';
+import setupWizardModule from './js/setupWizard.js';
 import groupModule from './js/group.js';
 import * as researchPanelModule from './js/research/panel.js';
 import ttsModule from './js/tts-ai.js';
@@ -55,6 +56,7 @@ window.adminModule = adminModule;
 window.cookbookModule = cookbookModule;
 window.trainingLabModule = trainingLabModule;
 window.offlineControlModule = offlineControlModule;
+window.setupWizardModule = setupWizardModule;
 
 // Redirect to login on 401 from any fetch
 const _origFetch = window.fetch;
@@ -843,6 +845,23 @@ function initializeEventListeners() {
     });
   }
 
+  const welcomeSetupBtn = el('welcome-setup-btn');
+  if (welcomeSetupBtn) {
+    welcomeSetupBtn.addEventListener('click', async () => {
+      if (!setupWizardModule) return;
+      const Modals = await import('./js/modalManager.js');
+      if (!Modals.toggle('setup-wizard-modal')) {
+        setupWizardModule.open();
+      }
+    });
+  }
+  const welcomeOfflineBtn = el('welcome-offline-btn');
+  if (welcomeOfflineBtn) {
+    welcomeOfflineBtn.addEventListener('click', () => {
+      document.getElementById('tool-offline-btn')?.click();
+    });
+  }
+
   // Document library tool button
   const toolDoclibBtn = el('tool-doclib-btn');
   if (toolDoclibBtn) {
@@ -1006,6 +1025,7 @@ function initializeEventListeners() {
     '/training': () => document.getElementById('tool-training-btn')?.click(),
     '/code': () => document.getElementById('tool-code-workspace-btn')?.click(),
     '/offline': () => document.getElementById('tool-offline-btn')?.click(),
+    '/setup': () => document.getElementById('welcome-setup-btn')?.click(),
     '/email':    () => {
       // Collapse the wide sidebar → icon rail (48px) so the user keeps
       // navigation visible alongside the fullscreen email view.
@@ -4014,7 +4034,18 @@ function startCleverlyApp() {
     const hasModels = modelsBox && modelsBox.querySelector('.models-row');
     if (!hasModels) {
       const tip = document.getElementById('welcome-tip');
-      if (tip) tip.textContent = 'Add an AI endpoint from Settings in the sidebar, or paste an endpoint/API key into the chat.';
+      if (tip) tip.textContent = 'Open Setup to register a local model before using sensitive data.';
+      const setupBtn = document.getElementById('welcome-setup-btn');
+      if (setupBtn) setupBtn.classList.add('attention');
+      if (setupWizardModule && setupWizardModule.shouldShowSetupPrompt && setupWizardModule.shouldShowSetupPrompt()) {
+        setTimeout(() => {
+          if (document.body.dataset.routeCollapsedSidebar === '1') return;
+          setupWizardModule.open().catch(() => {});
+        }, 500);
+      }
+    } else {
+      const setupBtn = document.getElementById('welcome-setup-btn');
+      if (setupBtn) setupBtn.classList.remove('attention');
     }
   }).catch(() => {});
   if (offlineControlModule && offlineControlModule.refreshBadge) {

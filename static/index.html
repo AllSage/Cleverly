@@ -977,6 +977,16 @@
         </svg>
         <span class="incognito-label">Nobody</span>
       </button>
+      <div class="welcome-actions" id="welcome-actions">
+        <button type="button" class="welcome-action-btn primary" id="welcome-setup-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          <span>Setup</span>
+        </button>
+        <button type="button" class="welcome-action-btn" id="welcome-offline-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-5"/></svg>
+          <span>Offline Check</span>
+        </button>
+      </div>
       <div id="welcome-setup" style="display:none"></div>
     </div>
     <script nonce="{{CSP_NONCE}}">
@@ -1361,6 +1371,17 @@
         <button class="close-btn" id="close-offline-control-modal">&times;</button>
       </div>
       <div class="modal-body offline-control-body"></div>
+    </div>
+  </div>
+
+  <!-- First-Run Setup Wizard Modal -->
+  <div id="setup-wizard-modal" class="modal hidden">
+    <div class="modal-content" style="width:min(960px,96vw);height:84vh;max-height:94vh;background:var(--bg);">
+      <div class="modal-header">
+        <h4 style="margin:0;margin-right:auto"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Setup</h4>
+        <button class="close-btn" id="close-setup-wizard-modal">&times;</button>
+      </div>
+      <div class="modal-body setup-wizard-body"></div>
     </div>
   </div>
 

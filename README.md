@@ -73,6 +73,12 @@ Double-clicking `Cleverly.cmd` also starts the offline app and opens the
 browser. The Windows launcher does not pull, build, or download during normal
 start.
 
+For a small desktop-style control window, double-click:
+
+```text
+Cleverly-App.cmd
+```
+
 If images or models are missing, run prep on a connected, non-sensitive machine:
 
 ```powershell
@@ -109,6 +115,14 @@ docker compose logs cleverly
 ```
 
 Log in, then change the password in **Settings**.
+
+After login, open **Setup** on the welcome screen. The setup wizard walks
+through offline status, local model registration, and the no-internet proof
+check. You can also open it directly at:
+
+```text
+http://127.0.0.1:7000/setup
+```
 
 ### Docker Quick Start
 
@@ -170,10 +184,11 @@ To check a local install without downloading anything:
 .\Cleverly.ps1 doctor -FineTune
 ```
 
-### Pull A Local Model
+### Choose And Pull A Local Model
 
-Run this only on a connected prep machine. The default model is
-`llama3.2:3b`; set `OLLAMA_MODEL` to another Ollama tag if needed.
+Run this only on a connected prep machine. The starter example uses
+`llama3.2:3b`; pass `-Model` or set `OLLAMA_MODEL` to the exact Ollama tag
+you want to carry offline.
 
 ```bash
 docker build -f docker/ollama-local.Dockerfile -t cleverly-ollama:local .
@@ -183,6 +198,45 @@ OLLAMA_MODEL=llama3.2:3b docker compose -f docker-compose.yml -f docker/ollama.y
 This stores Ollama models under `./data/ollama` for transfer. Run
 `.\Cleverly.ps1 seal-data` on the offline machine after loading images to copy
 that model store into the sealed Docker volume.
+
+For model choices and exact prep commands, use
+[docs/model-onboarding.md](docs/model-onboarding.md). The first-run Setup
+wizard uses the same recommendations.
+
+### Sensitive Machine Checklist
+
+Before loading sensitive files, memories, email, calendars, private repos, or
+client data:
+
+- Prepare images and models only on a connected, non-sensitive machine.
+- Move the offline bundle to the target machine by trusted removable media.
+- Run `load-cleverly.cmd` from the bundle.
+- Run `seal-data.cmd` if prepared data/model files were included.
+- Start with `.\Cleverly.ps1 start` or `.\Cleverly.ps1 start -FineTune`.
+- Open **Setup** or **Offline** and confirm zero failed offline-policy checks.
+- Run **Test No Internet** in Offline Control.
+- Run `.\ci\fresh-machine-offline-smoke.ps1` and keep the JSON report.
+- Confirm the UI is only at `http://127.0.0.1:7000`.
+- Do not pass `-HostData` unless visible host folders are intentional.
+- Do not set `CLEVERLY_ALLOW_NETWORK` unless accepting the break-glass risk.
+- Keep the Docker data root protected by full-disk encryption when possible.
+
+See [docs/fresh-machine-offline-test.md](docs/fresh-machine-offline-test.md)
+and [docs/security-review.md](docs/security-review.md).
+
+### Windows Installer
+
+Cleverly includes a per-user Windows installer project. Local test builds can
+be unsigned, but release installers should be Authenticode-signed:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 `
+  -CertificatePath .\certs\cleverly-release.pfx `
+  -RequireSignature
+```
+
+The signing certificate is not included in this repo. Details:
+[docs/windows-installer.md](docs/windows-installer.md).
 
 ### Native Linux / macOS
 

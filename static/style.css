@@ -1840,6 +1840,41 @@ body.bg-pattern-sparkles {
       line-height:1.4;
     }
     /* Incognito toggle — on welcome screen */
+    #welcome-screen .welcome-actions {
+      pointer-events: auto;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    .welcome-action-btn {
+      border: 1px solid var(--border);
+      background: color-mix(in srgb, var(--panel) 84%, transparent);
+      color: var(--fg);
+      border-radius: 8px;
+      padding: 7px 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+      font: inherit;
+      font-size: 12px;
+      min-height: 34px;
+    }
+    .welcome-action-btn.primary {
+      background: var(--accent, var(--red));
+      color: #fff;
+      border-color: transparent;
+    }
+    .welcome-action-btn.attention {
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, var(--red)) 22%, transparent);
+    }
+    .welcome-action-btn:hover {
+      border-color: color-mix(in srgb, var(--accent, var(--red)) 65%, var(--border));
+    }
     .incognito-btn {
       pointer-events: auto;
       background: none;

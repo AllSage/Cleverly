@@ -32,6 +32,37 @@ class RegisterLocalModelRequest(BaseModel):
     shared: bool = True
 
 
+MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
+    {
+        "id": "baseline",
+        "label": "Baseline offline chat",
+        "model": "llama3.2:3b",
+        "size": "2.0GB",
+        "hardware": "8GB RAM or better",
+        "best_for": "Fast first boot, private notes, simple code review, and general chat.",
+        "source_url": "https://ollama.com/library/llama3.2",
+    },
+    {
+        "id": "balanced",
+        "label": "Balanced coding and chat",
+        "model": "qwen2.5:7b",
+        "size": "4.7GB",
+        "hardware": "16GB RAM or better; GPU helps but is not required.",
+        "best_for": "Better reasoning, structured output, and coding tasks.",
+        "source_url": "https://ollama.com/library/qwen2.5",
+    },
+    {
+        "id": "vision",
+        "label": "Local vision option",
+        "model": "gemma3:4b",
+        "size": "3.3GB",
+        "hardware": "12GB RAM or better; useful when image input matters.",
+        "best_for": "Text plus image workflows on a modest machine.",
+        "source_url": "https://ollama.com/library/gemma3",
+    },
+]
+
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -275,6 +306,23 @@ def setup_offline_control_routes() -> APIRouter:
     @router.get("/models/local")
     def local_models():
         return {"ok": True, "models": _scan_local_models(), "roots": [str(p) for p in _candidate_roots()]}
+
+    @router.get("/models/recommendations")
+    def model_recommendations():
+        commands = []
+        for item in MODEL_RECOMMENDATIONS:
+            model = item["model"]
+            commands.append({
+                **item,
+                "prep_command": f".\\Cleverly.ps1 prep -AllowConnectedPrep -Model {model}",
+                "bundle_command": f".\\Cleverly.ps1 bundle -AllowConnectedPrep -Model {model}",
+                "register_base_url": "http://ollama:11434/v1",
+            })
+        return {
+            "ok": True,
+            "offline_warning": "Run prep or bundle only on a connected, non-sensitive machine. Do not run these commands on the offline target machine.",
+            "recommendations": commands,
+        }
 
     @router.post("/models/register")
     def register_local_model(body: RegisterLocalModelRequest, request: Request):

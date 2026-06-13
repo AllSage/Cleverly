@@ -248,6 +248,7 @@ def test_offline_control_center_is_admin_gated_and_local_only():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     index_html = Path("static/index.html").read_text(encoding="utf-8")
     ui_js = Path("static/js/offlineControl.js").read_text(encoding="utf-8")
+    setup_js = Path("static/js/setupWizard.js").read_text(encoding="utf-8")
     app_py = Path("app.py").read_text(encoding="utf-8")
 
     assert 'prefix="/api/offline-control"' in route
@@ -256,15 +257,101 @@ def test_offline_control_center_is_admin_gated_and_local_only():
     assert 'socket.create_connection(target, timeout=2.5)' in route
     assert "is_local_model_url(base_url)" in route
     assert "Only local model endpoints" in route
+    assert '"/models/recommendations"' in route
+    assert "MODEL_RECOMMENDATIONS" in route
     assert "setup_offline_control_routes" in app_py
     assert "offlineControlModule" in app_js
+    assert "setupWizardModule" in app_js
     assert "'/offline'" in app_js
+    assert "'/setup'" in app_js
     assert "rail-offline" in index_html
     assert "tool-offline-btn" in index_html
     assert "offline-control-modal" in index_html
+    assert "setup-wizard-modal" in index_html
+    assert "welcome-setup-btn" in index_html
+    assert "welcome-offline-btn" in index_html
     assert "offline-proof-badge" in index_html
     assert "/api/backup/encrypted/export" in ui_js
     assert "/api/backup/encrypted/import" in ui_js
+    assert "/models/recommendations" in setup_js
+    assert "/egress-test" in setup_js
+    assert 'placeholder="Model tag you pulled"' in setup_js
+    assert 'value="llama3.2:3b"' not in setup_js
+
+
+def test_model_onboarding_uses_explicit_offline_model_recommendations():
+    route = Path("routes/offline_control_routes.py").read_text(encoding="utf-8")
+    doc = Path("docs/model-onboarding.md").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    for tag, source, size in (
+        ("llama3.2:3b", "https://ollama.com/library/llama3.2", "2.0GB"),
+        ("qwen2.5:7b", "https://ollama.com/library/qwen2.5", "4.7GB"),
+        ("gemma3:4b", "https://ollama.com/library/gemma3", "3.3GB"),
+    ):
+        assert tag in route
+        assert source in route
+        assert size in route
+        assert tag in doc
+        assert source in doc
+        assert size in doc
+
+    assert ".\\Cleverly.ps1 prep -AllowConnectedPrep -Model llama3.2:3b" in doc
+    assert ".\\Cleverly.ps1 bundle -AllowConnectedPrep -Model llama3.2:3b" in doc
+    assert "Do not run model pulls on the" in doc
+    assert "Code Workspace model key is blank by default" in doc
+    assert "starter example uses" in readme
+    assert "pass `-Model`" in readme
+
+
+def test_windows_installer_signing_path_requires_release_signature():
+    installer = Path("installer/Cleverly.iss").read_text(encoding="utf-8")
+    script = Path("scripts/build-windows-installer.ps1").read_text(encoding="utf-8")
+    doc = Path("docs/windows-installer.md").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "AppName={#MyAppName}" in installer
+    assert "DefaultDirName={localappdata}\\Programs\\Cleverly" in installer
+    assert "PrivilegesRequired=lowest" in installer
+    assert "Cleverly-App.cmd" in installer
+    assert "Excludes: \".git\\*" in installer
+    assert "iscc.exe" in script
+    assert "signtool.exe" in script
+    assert "RequireSignature" in script
+    assert "CertificatePath" in script
+    assert "Get-AuthenticodeSignature" in script
+    assert "A certificate is required because -RequireSignature was set" in script
+    assert "Authenticode" in doc
+    assert "-RequireSignature" in doc
+    assert "Windows Installer" in readme
+
+
+def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
+    smoke = Path("ci/fresh-machine-offline-smoke.ps1").read_text(encoding="utf-8")
+    smoke_doc = Path("docs/fresh-machine-offline-test.md").read_text(encoding="utf-8")
+    review = Path("docs/security-review.md").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+    security = Path("SECURITY.md").read_text(encoding="utf-8")
+
+    assert "fresh-machine-offline-smoke.json" in smoke
+    assert "Cleverly.ps1" in smoke
+    assert "docker image inspect" in smoke
+    assert "cleverly:local" in smoke
+    assert "cleverly-ollama:local" in smoke
+    assert "cleverly-code-worker" in smoke
+    assert "NetworkMode" in smoke
+    assert "socket.create_connection(('1.1.1.1', 80), 3)" in smoke
+    assert "127\\.0\\.0\\.1:{0}" in smoke
+    assert "Fresh Machine Offline Test" in smoke_doc
+    assert "does not need internet access" in smoke_doc
+    assert "formal internal review" in review
+    assert "not an independent third-party penetration test" in review
+    assert "Required Release Gates" in review
+    assert "Windows installer is Authenticode-signed" in review
+    assert "Sensitive Machine Checklist" in readme
+    assert "fresh-machine-offline-smoke.ps1" in readme
+    assert "docs/security-review.md" in security
+    assert "docs/windows-installer.md" in security
 
 
 def test_encrypted_app_backup_uses_password_kdf():

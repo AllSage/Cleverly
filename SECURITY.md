@@ -9,6 +9,9 @@ Security fixes are handled on the default branch until formal releases are cut.
 ## Deployment Guidance
 
 - Keep `AUTH_ENABLED=true`.
+- For sensitive/offline machines, follow the
+  [README sensitive-machine checklist](README.md#sensitive-machine-checklist)
+  before loading private data.
 - Use HTTPS when exposing the app beyond localhost.
 - Put the app behind a trusted reverse proxy or private network.
 - Protect `.env`, `data/`, logs, uploaded files, generated media, and database files.
@@ -21,6 +24,13 @@ Security fixes are handled on the default branch until formal releases are cut.
 - Leave high-risk agent tools restricted to admins: shell, Python, file read/write, email send/read, MCP, app API, task/skill/memory management, settings, tokens, and model serving.
 - Rotate API keys, webhook secrets, and Cleverly API tokens if they appear in logs, screenshots, demos, or shared chats.
 - Treat shell, model-serving, MCP, email, calendar, and vault features as privileged admin functionality.
+- Use [docs/model-onboarding.md](docs/model-onboarding.md) to prepare local
+  models on a connected, non-sensitive machine.
+- Use [docs/fresh-machine-offline-test.md](docs/fresh-machine-offline-test.md)
+  and [docs/security-review.md](docs/security-review.md) as release gates for
+  sensitive-machine installs.
+- Release Windows installers should be Authenticode-signed; see
+  [docs/windows-installer.md](docs/windows-installer.md).
 
 ## Publishing A Fork
 
