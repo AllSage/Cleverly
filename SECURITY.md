@@ -12,6 +12,9 @@ Security fixes are handled on the default branch until formal releases are cut.
 - Use HTTPS when exposing the app beyond localhost.
 - Put the app behind a trusted reverse proxy or private network.
 - Protect `.env`, `data/`, logs, uploaded files, generated media, and database files.
+- Use sealed Docker volumes plus full-disk encryption or an encrypted Docker
+  data root for sensitive offline machines; see
+  [docs/encrypted-docker-data-root.md](docs/encrypted-docker-data-root.md).
 - Disable open signup unless you intentionally want new accounts.
 - Keep demo/test users non-admin, and remove them entirely on serious deployments.
 - Give admin accounts strong passwords and enable 2FA where possible.

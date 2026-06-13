@@ -265,7 +265,10 @@ is explicitly set.
 Sealed Docker volumes are not encryption. A host administrator, anyone with
 Docker access, or anyone with access to Docker's data root can inspect them. For
 stronger at-rest protection, use full-disk encryption or an encrypted Docker
-data root.
+data root. On Windows, use
+[docs/encrypted-docker-data-root.md](docs/encrypted-docker-data-root.md) to
+check or enable BitLocker protection for the drive holding Docker Desktop's data
+disk.
 
 To use the old visible host-folder layout, add `-f docker/host-data.yml` to
 manual Compose commands or pass `-HostData` to `Cleverly.ps1`. On Linux, make

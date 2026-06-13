@@ -164,6 +164,23 @@ def test_docker_storage_defaults_to_sealed_named_volumes():
     assert "./logs:/app/logs" in host_data
 
 
+def test_encrypted_docker_data_root_hardening_is_documented():
+    doc = Path("docs/encrypted-docker-data-root.md").read_text(encoding="utf-8")
+    script = Path("scripts/windows-docker-data-root-bitlocker.ps1").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+    security = Path("SECURITY.md").read_text(encoding="utf-8")
+
+    assert "docker_data.vhdx" in doc
+    assert "BitLocker" in doc
+    assert "logged-in Windows administrator" in doc
+    assert "RecoveryKeyPath" in script
+    assert "Get-BitLockerVolume" in script
+    assert "Enable-BitLocker" in script
+    assert "XtsAes256" in script
+    assert "encrypted-docker-data-root.md" in readme
+    assert "encrypted-docker-data-root.md" in security
+
+
 def test_offline_compose_overlay_reinforces_container_egress_block():
     overlay = Path("docker/offline.yml").read_text(encoding="utf-8")
     assert "CLEVERLY_OFFLINE:" in overlay
