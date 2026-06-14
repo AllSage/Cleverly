@@ -24,10 +24,10 @@ machine. Keep the generated reports with the release artifact.
   admin shell to require the release-readiness checks:
 
   ```powershell
-  powershell -ExecutionPolicy Bypass -File .\scripts\configure-branch-protection.ps1
+  powershell -ExecutionPolicy Bypass -File .\scripts\configure-branch-protection.ps1 -RequirePullRequest
   ```
 
-- For a stricter team workflow, add `-RequirePullRequest`.
+- Use pull requests for normal work once branch protection is enabled.
 - Do not put signing certificates, model files, or private release data in
   GitHub Actions logs or artifacts.
 
@@ -100,6 +100,8 @@ Use `scripts/build-offline-release.ps1` for the full release wrapper,
 ## Windows Release
 
 - Build the installer with `scripts/build-windows-installer.ps1`.
+- For local signing workflow validation only, create ignored test signing
+  material with `scripts/new-self-signed-code-signing-cert.ps1`.
 - For release distribution, pass `-RequireSignature`.
 - Verify Authenticode signature status is valid.
 - Re-check the output with `scripts/verify-windows-installer-signature.ps1

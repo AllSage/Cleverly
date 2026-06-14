@@ -14,6 +14,7 @@ param(
     [switch]$FineTune,
     [switch]$RequireSignature,
     [string]$CertificatePath = "",
+    [string]$CertificatePasswordPath = "",
     [switch]$SkipTests,
     [switch]$SkipBundle,
     [switch]$SkipInstaller,
@@ -69,6 +70,7 @@ try {
     if ($FineTune) { $args += "-FineTune" }
     if ($RequireSignature) { $args += "-RequireSignature" }
     if ($CertificatePath) { $args += @("-CertificatePath", $CertificatePath) }
+    if ($CertificatePasswordPath) { $args += @("-CertificatePasswordPath", $CertificatePasswordPath) }
     if ($SkipTests) { $args += "-SkipTests" }
     if ($SkipBundle) { $args += "-SkipBundle" }
     if ($SkipInstaller) { $args += "-SkipInstaller" }
