@@ -582,6 +582,8 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "node --check" in release_script
     assert "pytest -q" in release_script
     assert "Get-FileHash" in sbom_script
+    assert "CycloneDX" in sbom_script
+    assert "bomFormat" in sbom_script
     assert "pip freeze --all" in sbom_script
     assert "package-lock.json" in sbom_script
     assert "ConvertFrom-Json" in sbom_script
@@ -668,6 +670,7 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "Sensitive Machine Checklist" in readme
     assert "scripts\\build-offline-release.ps1" in readme
     assert "scripts\\generate-sbom.ps1" in readme
+    assert "CycloneDX JSON SBOM" in readme
     assert "scripts\\make-release.ps1" in readme
     assert "scripts\\run-static-security.ps1" in readme
     assert "scripts\\write-model-integrity.ps1" in readme

@@ -48,7 +48,7 @@ Use `scripts/build-offline-release.ps1` for the full release wrapper,
 - Run any relevant UI smoke checks after frontend changes.
 - Build the Docker image.
 - Build the Windows app or installer when shipping Windows artifacts.
-- Generate the local SBOM with `scripts/generate-sbom.ps1` and keep
+- Generate the local CycloneDX SBOM with `scripts/generate-sbom.ps1` and keep
   `dist\sbom\cleverly-sbom.json` plus `cleverly-sbom.json.sha256`.
 - Run `scripts/run-static-security.ps1` and keep `static-security.json`.
 - Run `scripts/write-model-integrity.ps1` or confirm the release wrapper wrote

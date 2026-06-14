@@ -296,7 +296,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\make-release.ps1 -Version 1.0
 ```
 
 The release wrapper writes `release-manifest.json`, `checksums.sha256`,
-`cleverly-sbom.json`, `static-security.json`, `model-integrity.json`,
+`cleverly-sbom.json` as a CycloneDX JSON SBOM, `static-security.json`, `model-integrity.json`,
 `release-dashboard.html`, `release-dashboard.json`, and no-network smoke
 evidence into the release folder.
 
