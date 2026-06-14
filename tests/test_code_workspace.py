@@ -183,8 +183,14 @@ def test_code_workspace_is_wired_as_admin_only_offline_tool():
     assert "code_workspace_diff_validated" in routes
     assert "validateProposedDiff" in ui_js
     assert "_pendingTestPassed" in ui_js
+    assert "_lastRunPassed" in ui_js
     assert "Run Tests must pass on the proposed diff before Apply is enabled" in ui_js
     assert "code-ws-review-gate" in ui_js
+    assert "Before manual diff apply" in ui_js
+    assert "Manual diff validation failed. No permanent changes were applied." in ui_js
+    assert "Commit without a passing local test run" in ui_js
+    assert "Resolve the pending proposed diff before committing." in ui_js
+    assert "code-ws-bottom-actions" in ui_js
     assert "steps: list[dict[str, Any]] = [" in agent
     assert '"phase": "plan"' in agent
     assert '"plan": plan' in agent

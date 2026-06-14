@@ -5,7 +5,7 @@
 # ./data/ollama plus the Docker images, then use docker/ollama-offline.yml.
 #
 # Example:
-#   OLLAMA_MODEL=qwen2.5:7b docker compose \
+#   OLLAMA_MODEL=qwen3-coder:30b docker compose \
 #     -f docker-compose.yml -f docker/ollama.yml up -d --build
 services:
   cleverly:

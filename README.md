@@ -272,8 +272,9 @@ client data:
 - Do not set `CLEVERLY_ALLOW_NETWORK` unless accepting the break-glass risk.
 - Keep the Docker data root protected by full-disk encryption when possible.
 
-See [docs/fresh-machine-offline-test.md](docs/fresh-machine-offline-test.md)
-and [docs/security-review.md](docs/security-review.md).
+See [docs/release-checklist.md](docs/release-checklist.md),
+[docs/fresh-machine-offline-test.md](docs/fresh-machine-offline-test.md), and
+[docs/security-review.md](docs/security-review.md).
 
 ### Windows Installer
 

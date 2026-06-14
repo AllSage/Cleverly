@@ -15,6 +15,8 @@ let _pendingPlan = '';
 let _pendingValidation = null;
 let _pendingTestPassed = false;
 let _snapshots = [];
+let _lastRunPassed = false;
+let _lastRunCommand = '';
 
 function el(id) { return document.getElementById(id); }
 function esc(s) { return uiModule.esc(s == null ? '' : String(s)); }
@@ -36,6 +38,8 @@ function ensureStyles() {
     .code-ws-item:hover,.code-ws-item.active{background:color-mix(in srgb,var(--accent, #7aa2ff) 18%,transparent);}
     .code-ws-main{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:8px;height:100%;min-height:0;}
     .code-ws-toolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+    .code-ws-bottom-actions{display:grid;grid-template-columns:auto auto minmax(140px,1fr) auto;gap:6px;align-items:stretch;}
+    .code-ws-bottom-actions .code-ws-btn,.code-ws-bottom-actions .code-ws-input{width:100%;box-sizing:border-box;}
     .code-ws-input{background:var(--input-bg,var(--panel));color:var(--fg);border:1px solid var(--border);border-radius:6px;padding:7px 8px;font:inherit;font-size:12px;min-width:0;}
     .code-ws-btn{height:auto!important;min-height:32px;margin:0!important;border:1px solid var(--border);background:var(--panel);color:var(--fg);border-radius:6px;padding:0 9px;font-size:12px;line-height:1.2;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;}
     .code-ws-btn.primary{background:var(--accent,var(--red));color:white;border-color:transparent;}
@@ -62,6 +66,8 @@ function ensureStyles() {
       .code-ws-tree{max-height:170px;border:1px solid var(--border);border-radius:6px;}
       .code-ws-review-meta{grid-template-columns:1fr;}
       .code-ws-toolbar{align-items:stretch;}
+      .code-ws-bottom-actions{grid-template-columns:1fr 1fr;}
+      .code-ws-bottom-actions #code-ws-commit-msg{grid-column:1 / -1;}
       .code-ws-toolbar .code-ws-input{flex:1 1 150px;}
       #code-ws-current{flex:1 1 100%;width:100%;min-width:0;}
       #code-ws-command,#code-ws-commit-msg{flex:1 1 100%!important;width:100%;}
@@ -171,7 +177,7 @@ function renderShell() {
             <textarea class="code-ws-editor" id="code-ws-editor" spellcheck="false" placeholder="Select a file or paste a unified diff."></textarea>
           </div>
           <div>
-            <div class="code-ws-toolbar" style="margin-bottom:6px;">
+            <div class="code-ws-toolbar code-ws-bottom-actions" style="margin-bottom:6px;">
               <button class="code-ws-btn primary" id="code-ws-save-file">Save File</button>
               <button class="code-ws-btn" id="code-ws-apply-patch">Apply Diff</button>
               <input class="code-ws-input" id="code-ws-commit-msg" placeholder="Commit message" style="flex:1">
@@ -247,6 +253,16 @@ function setPendingDiff(diff, snapshot, plan = '') {
   _pendingValidation = null;
   _pendingTestPassed = false;
   renderReviewGate();
+}
+
+async function confirmAction(message, options = {}) {
+  if (uiModule.styledConfirm) return uiModule.styledConfirm(message, options);
+  return window.confirm(message);
+}
+
+function markWorkspaceDirty() {
+  _lastRunPassed = false;
+  _lastRunCommand = '';
 }
 
 function selectedName() {
@@ -378,18 +394,73 @@ async function saveFile() {
     method: 'PUT',
     body: JSON.stringify({ path: _currentFile, content }),
   });
+  markWorkspaceDirty();
   setOutput(`Saved ${data.path}`);
 }
 
 async function applyPatch() {
   if (!_selected) return;
   const diff = el('code-ws-editor')?.value || '';
+  if (!diff.trim()) {
+    setOutput('Paste a unified diff before applying.');
+    return;
+  }
+  const command = (el('code-ws-command')?.value || '').trim();
+  let validation = null;
+  if (command) {
+    setOutput('Validating manual diff on a temporary snapshot before apply...');
+    validation = await api(`/${encodeURIComponent(_selected)}/validate-diff`, {
+      method: 'POST',
+      body: JSON.stringify({ diff, test_command: command }),
+    });
+    if (!validation.valid) {
+      const test = validation.test || {};
+      const patch = validation.patch || {};
+      setOutput([
+        'Manual diff validation failed. No permanent changes were applied.',
+        `snapshot: ${validation.snapshot?.id || ''}`,
+        `patch_exit_code: ${patch.exit_code ?? ''}`,
+        test.stdout || '',
+        test.stderr || '',
+        test.exit_code != null ? `exit_code: ${test.exit_code}` : '',
+      ].filter(Boolean).join('\n'));
+      await loadTree('');
+      return;
+    }
+  } else {
+    const ok = await confirmAction('Apply diff without a test command? A rollback snapshot will be created first.', {
+      confirmText: 'Apply Diff',
+      cancelText: 'Cancel',
+      danger: true,
+    });
+    if (!ok) {
+      setOutput('Manual diff apply cancelled.');
+      return;
+    }
+  }
+  const snapshot = await api(`/${encodeURIComponent(_selected)}/snapshots`, {
+    method: 'POST',
+    body: JSON.stringify({ label: 'Before manual diff apply' }),
+  });
   const data = await api(`/${encodeURIComponent(_selected)}/patch`, {
     method: 'POST',
     body: JSON.stringify({ diff }),
   });
-  setOutput([data.stdout, data.stderr].filter(Boolean).join('\n') || 'Patch applied.');
+  if (validation?.valid) {
+    _lastRunPassed = true;
+    _lastRunCommand = command;
+  } else {
+    markWorkspaceDirty();
+  }
+  setOutput([
+    `snapshot: ${snapshot.snapshot?.id || 'created before manual diff apply'}`,
+    validation?.valid ? `validation: passed ${command}` : '',
+    data.stdout || '',
+    data.stderr || '',
+    'Patch applied.',
+  ].filter(Boolean).join('\n'));
   await loadTree('');
+  await loadSnapshots();
 }
 
 async function applyProposedDiff() {
@@ -409,6 +480,8 @@ async function applyProposedDiff() {
     method: 'POST',
     body: JSON.stringify({ diff: _pendingDiff }),
   });
+  _lastRunPassed = true;
+  _lastRunCommand = _pendingValidation?.test?.command || (el('code-ws-command')?.value || '').trim();
   setPendingDiff('', null);
   setOutput([data.stdout, data.stderr].filter(Boolean).join('\n') || 'Proposed diff applied.');
   await loadTree('');
@@ -462,6 +535,8 @@ async function runCommand() {
     method: 'POST',
     body: JSON.stringify({ command, timeout_seconds: 120 }),
   });
+  _lastRunPassed = !!command.trim() && data.exit_code === 0;
+  _lastRunCommand = _lastRunPassed ? command.trim() : '';
   setOutput([data.stdout, data.stderr, `exit_code: ${data.exit_code}`].filter(Boolean).join('\n'));
 }
 
@@ -541,6 +616,7 @@ async function restoreLatestSnapshot() {
     return;
   }
   await api(`/${encodeURIComponent(_selected)}/snapshots/${encodeURIComponent(snap.id)}/restore`, { method: 'POST' });
+  markWorkspaceDirty();
   setOutput(`Restored snapshot ${snap.id}`);
   _currentFile = '';
   await loadTree('');
@@ -553,6 +629,7 @@ async function restoreReviewSnapshot() {
     return;
   }
   await api(`/${encodeURIComponent(_selected)}/snapshots/${encodeURIComponent(_pendingSnapshot.id)}/restore`, { method: 'POST' });
+  markWorkspaceDirty();
   setOutput(`Restored review snapshot ${_pendingSnapshot.id}`);
   setPendingDiff('', null);
   _currentFile = '';
@@ -572,6 +649,7 @@ async function restoreSelectedSnapshot() {
     return;
   }
   await api(`/${encodeURIComponent(_selected)}/snapshots/${encodeURIComponent(snapshotId)}/restore`, { method: 'POST' });
+  markWorkspaceDirty();
   setOutput(`Restored snapshot ${snapshotId}`);
   _currentFile = '';
   await loadTree('');
@@ -633,12 +711,27 @@ async function showDiff() {
 
 async function commit() {
   if (!_selected) return;
+  if (_pendingDiff) {
+    setOutput('Resolve the pending proposed diff before committing.');
+    return;
+  }
+  if (!_lastRunPassed) {
+    const ok = await confirmAction('Commit without a passing local test run? Run a command first for stronger evidence.', {
+      confirmText: 'Commit',
+      cancelText: 'Cancel',
+      danger: true,
+    });
+    if (!ok) {
+      setOutput('Commit cancelled.');
+      return;
+    }
+  }
   const message = el('code-ws-commit-msg')?.value || 'Cleverly code workspace changes';
   const data = await api(`/${encodeURIComponent(_selected)}/commit`, {
     method: 'POST',
     body: JSON.stringify({ message }),
   });
-  setOutput([data.stdout, data.stderr, `exit_code: ${data.exit_code}`].filter(Boolean).join('\n'));
+  setOutput([_lastRunPassed ? `last_passing_run: ${_lastRunCommand}` : 'last_passing_run: none', data.stdout, data.stderr, `exit_code: ${data.exit_code}`].filter(Boolean).join('\n'));
 }
 
 function guarded(fn) {

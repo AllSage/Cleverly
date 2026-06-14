@@ -119,11 +119,13 @@ Before declaring a sensitive-machine release ready:
 - Full test suite passes.
 - `node --check` passes for changed frontend modules.
 - Docker image builds successfully.
+- `ci/no-network-container-smoke.ps1` passes and produces a local report.
 - Fresh-machine offline smoke test passes on the target class of computer.
 - Offline Control reports zero failed checks.
 - Egress proof reports outbound TCP blocked.
 - Windows installer is Authenticode-signed for release distribution.
-- README sensitive-machine checklist is followed.
+- README sensitive-machine checklist and `docs/release-checklist.md` are
+  followed.
 
 ## Recommended External Review
 

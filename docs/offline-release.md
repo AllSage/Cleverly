@@ -5,6 +5,9 @@ internet access. Docker Compose is offline-by-default: the app and bundled
 services run on an internal Docker network, and only a local proxy is published
 on `127.0.0.1:${APP_PORT:-7000}`.
 
+For release sign-off, use this runbook with
+[release-checklist.md](release-checklist.md).
+
 ## What Offline Mode Changes
 
 - Sets `CLEVERLY_OFFLINE=1` in base Compose.
@@ -46,20 +49,27 @@ docker compose --env-file .env pull chromadb searxng ntfy
 On Windows, the easiest connected-prep path is the bundle command:
 
 ```powershell
-.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen2.5:7b -FineTune
+.\Cleverly.ps1 bundle -AllowConnectedPrep -FineTune
 ```
 
-It builds the local images, pulls support service images, pulls the configured
-Ollama model, copies prepared model caches, saves Docker images to
-`cleverly-images.tar`, and writes load, seal, and start helper scripts under
-`dist\cleverly-offline-bundle`.
+It builds the local images, pulls support service images, auto-picks the
+primary Ollama model from detected GPU memory, copies prepared model caches,
+saves Docker images to `cleverly-images.tar`, and writes load, seal, and start
+helper scripts under `dist\cleverly-offline-bundle`.
+
+Force a hardware tier or exact model when needed:
+
+```powershell
+.\Cleverly.ps1 bundle -AllowConnectedPrep -GpuGB 24
+.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen3-coder:30b
+```
 
 To bundle an offline chat model with Ollama, pull it into `./data/ollama` on
 the connected machine:
 
 ```bash
 docker build -f docker/ollama-local.Dockerfile -t cleverly-ollama:local .
-OLLAMA_MODEL=qwen2.5:7b docker compose --env-file .env \
+OLLAMA_MODEL=qwen3-coder:30b docker compose --env-file .env \
   -f docker-compose.yml \
   -f docker/ollama.yml \
   up -d --build
@@ -187,13 +197,13 @@ Windows prep helper, run it only on a connected prep machine and pass the
 explicit opt-in:
 
 ```powershell
-.\Cleverly.ps1 prep -AllowConnectedPrep -Model qwen2.5:7b
+.\Cleverly.ps1 prep -AllowConnectedPrep -GpuGB 24
 ```
 
 To build the optional fine-tune image during connected prep:
 
 ```powershell
-.\Cleverly.ps1 prep -AllowConnectedPrep -Model qwen2.5:7b -FineTune
+.\Cleverly.ps1 prep -AllowConnectedPrep -Model qwen3-coder:30b -FineTune
 ```
 
 Open:

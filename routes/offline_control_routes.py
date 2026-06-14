@@ -53,6 +53,7 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
     {
         "id": "cpu",
         "label": "CPU-only safe starter",
+        "quality_profile": "CPU Safe",
         "model": "llama3.2:3b",
         "size": "2.0GB",
         "min_gpu_gb": 0,
@@ -64,6 +65,7 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
     {
         "id": "gpu-4",
         "label": "Low VRAM local chat",
+        "quality_profile": "Low VRAM",
         "model": "qwen3:4b",
         "size": "2.5GB",
         "min_gpu_gb": 4,
@@ -75,6 +77,7 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
     {
         "id": "gpu-8",
         "label": "Balanced 8GB GPU",
+        "quality_profile": "Balanced",
         "model": "qwen3:8b",
         "size": "5.2GB",
         "min_gpu_gb": 8,
@@ -86,6 +89,7 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
     {
         "id": "gpu-12",
         "label": "Stronger local reasoning",
+        "quality_profile": "Stronger",
         "model": "qwen3:14b",
         "size": "9.3GB",
         "min_gpu_gb": 12,
@@ -97,6 +101,7 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
     {
         "id": "gpu-16",
         "label": "Local reasoning workstation",
+        "quality_profile": "Reasoning",
         "model": "gpt-oss:20b",
         "size": "14GB",
         "min_gpu_gb": 16,
@@ -108,6 +113,7 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
     {
         "id": "gpu-24",
         "label": "24GB coding workstation",
+        "quality_profile": "Code",
         "model": "qwen3-coder:30b",
         "size": "19GB",
         "min_gpu_gb": 24,
@@ -119,6 +125,7 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
     {
         "id": "gpu-80",
         "label": "80GB reasoning server",
+        "quality_profile": "Max",
         "model": "gpt-oss:120b",
         "size": "65GB",
         "min_gpu_gb": 80,

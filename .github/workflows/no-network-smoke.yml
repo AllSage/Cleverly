@@ -1,0 +1,26 @@
+name: No-Network Container Smoke
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  no-network-container-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run no-network container smoke
+        shell: pwsh
+        run: ./ci/no-network-container-smoke.ps1 -Image cleverly:ci-no-network -ContainerName cleverly-no-network-smoke
+
+      - name: Upload no-network report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: no-network-container-smoke
+          path: dist/no-network-container-smoke.json

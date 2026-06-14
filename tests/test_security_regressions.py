@@ -352,6 +352,8 @@ def test_model_onboarding_uses_explicit_offline_model_recommendations():
     route = Path("routes/offline_control_routes.py").read_text(encoding="utf-8")
     doc = Path("docs/model-onboarding.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
+    setup_js = Path("static/js/setupWizard.js").read_text(encoding="utf-8")
+    offline_js = Path("static/js/offlineControl.js").read_text(encoding="utf-8")
     launcher = Path("Cleverly.ps1").read_text(encoding="utf-8")
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
@@ -371,6 +373,13 @@ def test_model_onboarding_uses_explicit_offline_model_recommendations():
         assert source in doc
         assert size in doc
 
+    for profile in ("CPU Safe", "Low VRAM", "Balanced", "Stronger", "Reasoning", "Code", "Max"):
+        assert profile in route
+        assert profile in doc
+
+    assert "quality_profile" in route
+    assert "Quality profile" in setup_js
+    assert "offline-model-profile" in offline_js
     assert "Get-DetectedGpuGb" in launcher
     assert "Get-ModelProfileForGpuGb" in launcher
     assert '$script:PrimaryModelSource = "auto hardware profile"' in launcher
@@ -402,6 +411,7 @@ def test_model_recommendation_tiers_cover_cpu_to_large_gpu(monkeypatch):
     assert routes._model_profile_for_gpu(12)["model"] == "qwen3:14b"
     assert routes._model_profile_for_gpu(16)["model"] == "gpt-oss:20b"
     assert routes._model_profile_for_gpu(24)["model"] == "qwen3-coder:30b"
+    assert routes._model_profile_for_gpu(24)["quality_profile"] == "Code"
     assert routes._model_profile_for_gpu(80)["model"] == "gpt-oss:120b"
 
     monkeypatch.setenv("CLEVERLY_GPU_GB", "24")
@@ -439,8 +449,12 @@ def test_windows_installer_signing_path_requires_release_signature():
 
 def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     smoke = Path("ci/fresh-machine-offline-smoke.ps1").read_text(encoding="utf-8")
+    ci_smoke = Path("ci/no-network-container-smoke.ps1").read_text(encoding="utf-8")
+    workflow = Path(".github/workflows/no-network-smoke.yml").read_text(encoding="utf-8")
     smoke_doc = Path("docs/fresh-machine-offline-test.md").read_text(encoding="utf-8")
+    offline_release = Path("docs/offline-release.md").read_text(encoding="utf-8")
     review = Path("docs/security-review.md").read_text(encoding="utf-8")
+    release = Path("docs/release-checklist.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     security = Path("SECURITY.md").read_text(encoding="utf-8")
 
@@ -453,12 +467,34 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "NetworkMode" in smoke
     assert "socket.create_connection(('1.1.1.1', 80), 3)" in smoke
     assert "127\\.0\\.0\\.1:{0}" in smoke
+    assert "no-network-container-smoke.json" in ci_smoke
+    assert "docker build --pull=false" in ci_smoke
+    assert "--network none" in ci_smoke
+    assert "/api/offline-control/status" in ci_smoke
+    assert "/api/offline-control/models/recommendations" in ci_smoke
+    assert "socket.create_connection(('1.1.1.1', 80), 3)" in ci_smoke
+    assert "CLEVERLY_OFFLINE=0" in ci_smoke
+    assert "expected 64" in ci_smoke
+    assert "No-Network Container Smoke" in workflow
+    assert "actions/upload-artifact@v4" in workflow
+    assert "dist/no-network-container-smoke.json" in workflow
     assert "Fresh Machine Offline Test" in smoke_doc
     assert "does not need internet access" in smoke_doc
+    assert "qwen2.5:7b" not in offline_release
+    assert ".\\Cleverly.ps1 bundle -AllowConnectedPrep -GpuGB 24" in offline_release
+    assert "release-checklist.md" in offline_release
     assert "formal internal review" in review
     assert "not an independent third-party penetration test" in review
     assert "Required Release Gates" in review
+    assert "ci/no-network-container-smoke.ps1" in review
     assert "Windows installer is Authenticode-signed" in review
+    assert "Cleverly Release Checklist" in release
+    assert "No-Network Gates" in release
+    assert "Code Workspace" in release
+    assert "AuthentiCode" not in release
+    assert "Authenticode" in release
+    assert "ci/no-network-container-smoke.ps1" in release
+    assert "docs/release-checklist.md" in readme
     assert "Sensitive Machine Checklist" in readme
     assert "fresh-machine-offline-smoke.ps1" in readme
     assert "docs/security-review.md" in security
@@ -510,10 +546,13 @@ def test_recent_tool_surfaces_opt_out_of_global_button_height():
         (setup_js, ".setup-wizard-btn{height:auto!important"),
         (offline_js, ".offline-tab{height:auto!important"),
         (offline_js, ".offline-btn{height:auto!important"),
+        (offline_js, ".offline-backup-actions{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) auto;gap:8px;align-items:stretch;}"),
+        (offline_js, "@media(max-width:820px){.offline-backup-actions,.offline-backup-actions.import,.offline-backup-steps{grid-template-columns:1fr}}"),
         (code_js, ".code-ws-item{width:100%;height:auto!important"),
         (code_js, ".code-ws-btn{height:auto!important"),
         (code_js, ".code-ws-archive-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;}"),
         (code_js, ".code-ws-archive-actions .code-ws-btn{width:100%;min-width:0;white-space:normal;text-align:center;}"),
+        (code_js, ".code-ws-bottom-actions{display:grid;grid-template-columns:auto auto minmax(140px,1fr) auto;gap:6px;align-items:stretch;}"),
         (tutorials_js, ".tutorials-card{width:100%;height:auto!important"),
         (tutorials_js, ".tutorials-btn{height:auto!important"),
         (loops_js, ".agent-loop-card{width:100%;height:auto!important"),
@@ -524,6 +563,7 @@ def test_recent_tool_surfaces_opt_out_of_global_button_height():
 
 def test_encrypted_app_backup_uses_password_kdf():
     route = Path("routes/backup_routes.py").read_text(encoding="utf-8")
+    ui_js = Path("static/js/offlineControl.js").read_text(encoding="utf-8")
     assert '"/api/backup/encrypted/export"' in route
     assert '"/api/backup/encrypted/import"' in route
     assert "BACKUP_KDF_ITERATIONS = 390_000" in route
@@ -531,6 +571,12 @@ def test_encrypted_app_backup_uses_password_kdf():
     assert "hashes.SHA256()" in route
     assert "Fernet(key).encrypt" in route
     assert "Invalid password or encrypted backup" in route
+    assert "offline-export-pass-confirm" in ui_js
+    assert "Backup passwords do not match" in ui_js
+    assert "Backups leave the container only when you download them" in ui_js
+    assert "approved offline media" in ui_js
+    assert "offline-backup-actions" in ui_js
+    assert "offline-backup-steps" in ui_js
 
 
 def test_offline_frontend_hides_online_feature_entrypoints():

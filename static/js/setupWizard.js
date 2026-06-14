@@ -118,6 +118,7 @@ function renderModel() {
     <div class="setup-wizard-card">
       <h4>${esc(item.label)} ${item.selected ? '<span class="setup-wizard-pill ok">selected</span>' : ''}${item.prepared ? ' <span class="setup-wizard-pill ok">prepared</span>' : ''}</h4>
       <p><strong>${esc(item.model)}</strong> &middot; ${esc(item.size)} &middot; ${esc(item.hardware)}</p>
+      <p><strong>Quality profile:</strong> ${esc(item.quality_profile || 'General')}</p>
       <p>${esc(item.best_for)}</p>
       <div class="setup-wizard-command">${esc(item.setup_command || item.prep_command)}</div>
       <button class="setup-wizard-btn" data-copy-command="${esc(item.setup_command || item.prep_command)}">Copy Setup</button>
@@ -137,6 +138,7 @@ function renderModel() {
     <div class="setup-wizard-card">
       <h4>Auto Hardware Pick</h4>
       <p><strong>${esc(selected?.model || 'Unknown')}</strong> is selected for ${_detectedGpuGb == null ? 'the detected machine' : esc(_detectedGpuGb + ' GB GPU VRAM')}.</p>
+      <p><strong>Quality profile:</strong> ${esc(selected?.quality_profile || 'General')}</p>
       <div class="setup-wizard-command">${esc(selected?.auto_setup_command || selected?.auto_prep_command || '.\\Cleverly.ps1 setup -AllowConnectedPrep')}</div>
       <button class="setup-wizard-btn" data-copy-command="${esc(selected?.auto_setup_command || selected?.auto_prep_command || '.\\Cleverly.ps1 setup -AllowConnectedPrep')}">Copy Auto Setup</button>
       <button class="setup-wizard-btn" data-use-model="${esc(selected?.model || '')}">Use Selected Tag</button>

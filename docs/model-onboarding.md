@@ -14,15 +14,15 @@ http://ollama:11434/v1
 These tags were checked against the Ollama library on 2026-06-13. Cleverly uses
 the same table when connected prep or bundle runs without `-Model`.
 
-| GPU memory | Ollama tag | Size shown by Ollama | Good fit |
-|---:|---:|---:|---|
-| CPU-only / 0-3GB | `llama3.2:3b` | 2.0GB | Fast first boot, simple private chat, notes, light code review |
-| 4-7GB | `qwen3:4b` | 2.5GB | Better local reasoning with small VRAM |
-| 8-11GB | `qwen3:8b` | 5.2GB | General chat, summaries, and modest code work |
-| 12-15GB | `qwen3:14b` | 9.3GB | Stronger local reasoning and coding |
-| 16-23GB | `gpt-oss:20b` | 14GB | Open-weight local reasoning and agent workflows |
-| 24-79GB | `qwen3-coder:30b` | 19GB | Best default for local repo editing and Code Workspace on a 24GB GPU |
-| 80GB+ | `gpt-oss:120b` | 65GB | Large local reasoning model on workstation/server-class GPU memory |
+| GPU memory | Profile | Ollama tag | Size shown by Ollama | Good fit |
+|---:|---|---:|---:|---|
+| CPU-only / 0-3GB | CPU Safe | `llama3.2:3b` | 2.0GB | Fast first boot, simple private chat, notes, light code review |
+| 4-7GB | Low VRAM | `qwen3:4b` | 2.5GB | Better local reasoning with small VRAM |
+| 8-11GB | Balanced | `qwen3:8b` | 5.2GB | General chat, summaries, and modest code work |
+| 12-15GB | Stronger | `qwen3:14b` | 9.3GB | Stronger local reasoning and coding |
+| 16-23GB | Reasoning | `gpt-oss:20b` | 14GB | Open-weight local reasoning and agent workflows |
+| 24-79GB | Code | `qwen3-coder:30b` | 19GB | Best default for local repo editing and Code Workspace on a 24GB GPU |
+| 80GB+ | Max | `gpt-oss:120b` | 65GB | Large local reasoning model on workstation/server-class GPU memory |
 
 Sources:
 

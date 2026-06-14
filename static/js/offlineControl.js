@@ -63,7 +63,15 @@ function ensureStyles() {
     .offline-doc-section h4{margin:0 0 8px;font-size:13px;}
     .offline-doc-section ul{margin:0;padding-left:18px;font-size:12px;line-height:1.5;}
     .offline-proof-badge{font-size:9px;opacity:.72;margin-left:6px;white-space:nowrap;}
+    .offline-model-profile{display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:999px;padding:2px 7px;margin:4px 0;font-size:10px;font-weight:700;text-transform:uppercase;}
+    .offline-backup-actions{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) auto;gap:8px;align-items:stretch;}
+    .offline-backup-actions.import{grid-template-columns:minmax(120px,1fr) auto auto;}
+    .offline-backup-actions .offline-input,.offline-backup-actions .offline-btn{width:100%;box-sizing:border-box;}
+    .offline-backup-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px;}
+    .offline-backup-step{border:1px solid var(--border);border-radius:8px;padding:9px;background:color-mix(in srgb,var(--bg) 42%,transparent);font-size:12px;line-height:1.35;}
+    .offline-backup-step strong{display:block;margin-bottom:3px;}
     @media(max-width:820px){.offline-grid,.offline-two,.offline-mini-checks,.offline-readiness{grid-template-columns:1fr}.offline-check{grid-template-columns:1fr}.offline-control-body{overflow:auto}.offline-shell{height:auto;min-height:680px}}
+    @media(max-width:820px){.offline-backup-actions,.offline-backup-actions.import,.offline-backup-steps{grid-template-columns:1fr}}
   `;
   document.head.appendChild(style);
 }
@@ -166,7 +174,7 @@ function renderModels() {
   const selectedRec = _recommendations.find(item => item.selected) || _modelProfile || null;
   const recRows = _recommendations.map(item => `
     <tr>
-      <td><strong>${esc(item.label)}</strong>${item.selected ? ' <span class="offline-pill ok">selected</span>' : ''}${item.prepared ? ' <span class="offline-pill ok">prepared</span>' : ''}<div style="opacity:.65">${esc(item.hardware)}</div></td>
+      <td><strong>${esc(item.label)}</strong>${item.selected ? ' <span class="offline-pill ok">selected</span>' : ''}${item.prepared ? ' <span class="offline-pill ok">prepared</span>' : ''}<div class="offline-model-profile">${esc(item.quality_profile || 'General')}</div><div style="opacity:.65">${esc(item.hardware)}</div></td>
       <td><strong>${esc(item.model)}</strong><div style="opacity:.65">${esc(item.size)}</div></td>
       <td>${esc(item.best_for || '')}</td>
       <td><div class="offline-pre" style="max-height:96px;">${esc(item.setup_command || item.prep_command)}</div></td>
@@ -188,7 +196,7 @@ function renderModels() {
     <div class="offline-card" style="margin-bottom:12px;">
       <div class="offline-card-title">Hardware-Based Pull Target</div>
       <div class="offline-card-value">${selectedRec ? esc(selectedRec.model) : 'Unknown'}</div>
-      <div class="offline-card-note">${_detectedGpuGb == null ? 'GPU memory not detected yet.' : esc(_detectedGpuGb + ' GB GPU VRAM detected')} &middot; connected setup auto-picks this when no -Model is passed.</div>
+      <div class="offline-card-note">${_detectedGpuGb == null ? 'GPU memory not detected yet.' : esc(_detectedGpuGb + ' GB GPU VRAM detected')} &middot; quality profile: ${esc(selectedRec?.quality_profile || 'General')} &middot; connected setup auto-picks this when no -Model is passed.</div>
       <div class="offline-pre" style="margin-top:8px;max-height:96px;">${esc(selectedRec?.auto_setup_command || selectedRec?.auto_prep_command || '.\\Cleverly.ps1 setup -AllowConnectedPrep')}</div>
     </div>
     <table class="offline-table" style="margin-bottom:12px;">
@@ -275,19 +283,25 @@ function renderHelp() {
 
 function renderBackups() {
   return `
+    <div class="offline-backup-steps">
+      <div class="offline-backup-step"><strong>1. Export</strong>Backups leave the container only when you download them.</div>
+      <div class="offline-backup-step"><strong>2. Store</strong>Use approved offline media, not a synced folder.</div>
+      <div class="offline-backup-step"><strong>3. Restore</strong>Import only on a trusted Cleverly machine.</div>
+    </div>
     <div class="offline-two">
       <div class="offline-card">
         <div class="offline-card-title">Encrypted Export</div>
-        <div class="offline-row">
-          <input class="offline-input" type="password" id="offline-export-pass" placeholder="Backup password" style="flex:1">
+        <div class="offline-backup-actions">
+          <input class="offline-input" type="password" id="offline-export-pass" placeholder="Backup password">
+          <input class="offline-input" type="password" id="offline-export-pass-confirm" placeholder="Confirm password">
           <button class="offline-btn primary" id="offline-export-encrypted">Export</button>
         </div>
-        <div class="offline-card-note">The backup is encrypted before it leaves the app response.</div>
+        <div class="offline-card-note">The backup is encrypted before it leaves the app response. Keep the password outside Cleverly.</div>
       </div>
       <div class="offline-card">
         <div class="offline-card-title">Encrypted Import</div>
-        <div class="offline-row">
-          <input class="offline-input" type="password" id="offline-import-pass" placeholder="Backup password" style="flex:1">
+        <div class="offline-backup-actions import">
+          <input class="offline-input" type="password" id="offline-import-pass" placeholder="Backup password">
           <input type="file" id="offline-import-file" accept=".json,.cleverly-backup" style="display:none">
           <button class="offline-btn" id="offline-pick-import">Choose File</button>
           <button class="offline-btn primary" id="offline-import-encrypted">Import</button>
@@ -432,7 +446,9 @@ async function refreshHelp() {
 
 async function exportEncrypted() {
   const password = el('offline-export-pass')?.value || '';
+  const confirm = el('offline-export-pass-confirm')?.value || '';
   if (password.length < 8) throw new Error('Use at least 8 characters for the backup password');
+  if (password !== confirm) throw new Error('Backup passwords do not match');
   const { text } = await backupApi('/api/backup/encrypted/export', { password });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   downloadText(`cleverly_encrypted_backup_${stamp}.json`, text);
@@ -440,7 +456,7 @@ async function exportEncrypted() {
     method: 'POST',
     body: JSON.stringify({ action: 'encrypted_backup_exported', detail: { filename: `cleverly_encrypted_backup_${stamp}.json` } }),
   }).catch(() => {});
-  setBackupOutput('Encrypted backup exported.');
+  setBackupOutput('Encrypted backup exported. Store it on approved offline media and keep the password separate.');
 }
 
 async function importEncrypted() {
@@ -455,7 +471,7 @@ async function importEncrypted() {
     method: 'POST',
     body: JSON.stringify({ action: 'encrypted_backup_imported', detail: { filename: file.name } }),
   }).catch(() => {});
-  setBackupOutput(data.message || 'Encrypted backup imported.');
+  setBackupOutput(`${data.message || 'Encrypted backup imported.'}\nRun Offline Control status checks before loading sensitive data.`);
 }
 
 async function refreshAbout() {
