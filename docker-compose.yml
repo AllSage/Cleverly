@@ -137,6 +137,7 @@ services:
 
   chromadb:
     image: docker.io/chromadb/chroma:latest
+    pull_policy: never
     init: true
     security_opt:
       - no-new-privileges:true
@@ -150,6 +151,7 @@ services:
 
   searxng:
     image: docker.io/searxng/searxng:latest
+    pull_policy: never
     init: true
     cap_drop:
       - ALL
@@ -188,6 +190,7 @@ services:
 
   ntfy:
     image: docker.io/binwiederhier/ntfy
+    pull_policy: never
     init: true
     security_opt:
       - no-new-privileges:true

@@ -40,6 +40,10 @@ dist\fresh-machine-offline-smoke.json
 - `http://127.0.0.1:7000/api/health` returns 200.
 - The local proxy is bound to `127.0.0.1`.
 - The Code Workspace worker has Docker `network_mode` set to `none`.
+- The app and worker containers report `read_only` root filesystems.
+- The app and worker containers report `no-new-privileges:true`.
+- The app and worker containers drop Linux capabilities.
+- The JSON report includes OS, PowerShell, and Docker runtime metadata.
 - The app container cannot open outbound TCP to `1.1.1.1:80`.
 
 Any failed check means the machine is not ready for sensitive data.

@@ -49,6 +49,12 @@ class AuditEventRequest(BaseModel):
     detail: dict[str, Any] = Field(default_factory=dict)
 
 
+class SetPrimaryModelRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=240)
+    source: str = Field(default="offline-control", max_length=80)
+    detected_gpu_gb: float | None = Field(default=None, ge=0)
+
+
 MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
     {
         "id": "cpu",
@@ -174,6 +180,34 @@ def _read_primary_model_manifest() -> dict[str, Any]:
         except Exception:
             continue
     return {}
+
+
+def _primary_model_manifest_path() -> Path:
+    return Path(os.getenv("DATA_DIR") or DATA_DIR) / "cleverly-primary-model.json"
+
+
+def _write_primary_model_manifest(model: str, source: str, detected_gpu_gb: float | None = None) -> dict[str, Any]:
+    model = model.strip()
+    if not model:
+        raise ValueError("model is required")
+    payload: dict[str, Any] = {
+        "primary_model": model,
+        "source": source.strip() or "offline-control",
+        "updated_at": datetime.now().isoformat(),
+    }
+    if detected_gpu_gb is not None:
+        payload["detected_gpu_gb"] = max(0.0, round(float(detected_gpu_gb), 1))
+    for item in MODEL_RECOMMENDATIONS:
+        if item["model"] == model:
+            payload["quality_profile"] = item.get("quality_profile", "")
+            payload["hardware"] = item.get("hardware", "")
+            break
+    path = _primary_model_manifest_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp.replace(path)
+    return payload
 
 
 def _detected_gpu_gb() -> float:
@@ -668,7 +702,34 @@ def setup_offline_control_routes() -> APIRouter:
 
     @router.get("/models/local")
     def local_models():
-        return {"ok": True, "models": _scan_local_models(), "roots": [str(p) for p in _candidate_roots()]}
+        return {
+            "ok": True,
+            "models": _scan_local_models(),
+            "roots": [str(p) for p in _candidate_roots()],
+            "primary_model": _read_primary_model_manifest().get("primary_model", ""),
+        }
+
+    @router.get("/models/primary")
+    def primary_model():
+        manifest = _read_primary_model_manifest()
+        return {
+            "ok": True,
+            "manifest": manifest,
+            "primary_model": manifest.get("primary_model", ""),
+            "manifest_path": str(_primary_model_manifest_path()),
+        }
+
+    @router.post("/models/primary")
+    def set_primary_model(body: SetPrimaryModelRequest, request: Request):
+        try:
+            manifest = _write_primary_model_manifest(body.model, body.source, body.detected_gpu_gb)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        settings = load_settings()
+        settings["default_model"] = body.model.strip()
+        save_settings(settings)
+        append_audit("primary_model_selected", manifest, user=get_current_user(request) or "")
+        return {"ok": True, "manifest": manifest, "primary_model": manifest["primary_model"]}
 
     @router.get("/models/recommendations")
     def model_recommendations():

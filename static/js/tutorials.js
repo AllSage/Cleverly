@@ -5,9 +5,25 @@ const MODAL_ID = 'tutorials-modal';
 
 let _open = false;
 let _wired = false;
-let _selected = 'first-run';
+let _selected = 'first-10';
 
 const GUIDES = [
+  {
+    id: 'first-10',
+    title: 'First 10 minutes',
+    kicker: 'Start here',
+    summary: 'Run the shortest safe path: setup, primary model, offline proof, backup drill, and first chat.',
+    image: '/static/tutorials/first-10-minutes.svg',
+    actionLabel: 'Open Setup',
+    actionIds: ['welcome-setup-btn'],
+    steps: [
+      'Open Setup and confirm Docker starts in sealed offline mode.',
+      'Choose or make primary the local model prepared for this machine.',
+      'Run Offline Check and save the report before sensitive work.',
+      'Run Test Restore with an encrypted backup when data will be preserved.',
+      'Start a new chat after readiness is acceptable.',
+    ],
+  },
   {
     id: 'first-run',
     title: 'First run',

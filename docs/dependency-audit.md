@@ -10,6 +10,19 @@ The lock file is intentionally not the only install path because some packages
 resolve to platform-specific wheels. Use it to compare a prepared offline image
 against the reviewed environment.
 
+## Generate The Local SBOM
+
+Before shipping a release, generate a local dependency snapshot:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\generate-sbom.ps1
+```
+
+This writes `dist\sbom\cleverly-sbom.json` and
+`dist\sbom\cleverly-sbom.json.sha256`. It does not contact the internet; it
+hashes reviewed release files, reads `package-lock.json`, runs
+`pip freeze --all`, and inspects already-built Docker images when present.
+
 ## Refresh The Lock Snapshot
 
 On a connected prep machine after installing dependencies:

@@ -191,6 +191,11 @@ def test_code_workspace_is_wired_as_admin_only_offline_tool():
     assert "Commit without a passing local test run" in ui_js
     assert "Resolve the pending proposed diff before committing." in ui_js
     assert "code-ws-bottom-actions" in ui_js
+    assert "cleverly-code-workspace-safety" in ui_js
+    assert "code-ws-safety-level" in ui_js
+    assert "Review Only safety level blocks file writes." in ui_js
+    assert "Apply With Tests requires a test command before manual diff apply." in ui_js
+    assert "Switch Safety Level to Commit Allowed before committing." in ui_js
     assert "steps: list[dict[str, Any]] = [" in agent
     assert '"phase": "plan"' in agent
     assert '"plan": plan' in agent

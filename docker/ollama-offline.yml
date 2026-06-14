@@ -26,6 +26,7 @@ services:
   ollama:
     container_name: ${CLEVERLY_OLLAMA_CONTAINER_NAME:-cleverly-ollama}
     image: ${OLLAMA_IMAGE:-cleverly-ollama:local}
+    pull_policy: never
     init: true
     volumes:
       - ./data/ollama:/root/.ollama

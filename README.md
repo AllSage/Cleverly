@@ -276,6 +276,22 @@ See [docs/release-checklist.md](docs/release-checklist.md),
 [docs/fresh-machine-offline-test.md](docs/fresh-machine-offline-test.md), and
 [docs/security-review.md](docs/security-review.md).
 
+### Offline Release Build
+
+On a connected, non-sensitive release workstation, the wrapper below runs the
+local checks, writes an SBOM, runs the no-network container smoke, builds the
+offline bundle, and packages installer artifacts:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-offline-release.ps1 -Model qwen3-coder:30b -RequireSignature
+```
+
+For dependency-only review, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\generate-sbom.ps1
+```
+
 ### Windows Installer
 
 Cleverly includes a per-user Windows installer project. Local test builds can
@@ -385,6 +401,10 @@ Tests**, and **Restore** in the Code panel before committing changes. You can
 also manually create snapshots, restore the latest snapshot, or export the
 patched repo archive.
 
+Safety Level defaults to **Apply With Tests**. **Review Only** blocks Save,
+Apply, and Commit for inspection-only sessions. **Commit Allowed** must be
+selected before the Commit button can run.
+
 The Code Workspace model key is intentionally blank by default. Set it in the
 Code panel or with `manage_settings` before expecting an agent to use a specific
 coding model, for example `GLM-5.2`. In offline mode, Code Workspace only uses
@@ -400,9 +420,11 @@ started manually.
 
 `Cleverly.ps1 start` starts the offline app, bundled Ollama, networkless code
 worker, and local proxy with `--pull never`. Manual full Compose can also start
-ChromaDB, SearXNG, and ntfy when those support images are prepared. Cleverly and
-bundled services run on an internal-only Docker network by default. Only the
-proxy publishes a host port, and it binds to `127.0.0.1`.
+ChromaDB, SearXNG, and ntfy when those support images are prepared. Those
+support services and the bundled Ollama overlays use `pull_policy: never`, so a
+missing image fails closed instead of pulling from the internet during runtime.
+Cleverly and bundled services run on an internal-only Docker network by default.
+Only the proxy publishes a host port, and it binds to `127.0.0.1`.
 
 The Cleverly service runs as a non-root UID/GID, drops Linux capabilities, uses
 `no-new-privileges`, mounts the application filesystem read-only, and uses tmpfs

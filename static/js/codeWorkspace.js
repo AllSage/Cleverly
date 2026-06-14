@@ -3,6 +3,7 @@ import uiModule from './ui.js';
 
 const API = '/api/code-workspaces';
 const MODAL_ID = 'code-workspace-modal';
+const SAFETY_STORAGE_KEY = 'cleverly-code-workspace-safety';
 
 let _open = false;
 let _selected = '';
@@ -17,6 +18,7 @@ let _pendingTestPassed = false;
 let _snapshots = [];
 let _lastRunPassed = false;
 let _lastRunCommand = '';
+let _safetyLevel = localStorage.getItem(SAFETY_STORAGE_KEY) || 'apply-tests';
 
 function el(id) { return document.getElementById(id); }
 function esc(s) { return uiModule.esc(s == null ? '' : String(s)); }
@@ -56,6 +58,8 @@ function ensureStyles() {
     .code-ws-btn:disabled{opacity:.45;cursor:not-allowed;}
     .code-ws-output{height:138px;overflow:auto;background:#0f1117;color:#e7eaf0;border:1px solid var(--border);border-radius:8px;padding:9px;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;}
     .code-ws-path{font-size:12px;opacity:.75;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .code-ws-safety{margin-top:6px;border:1px solid var(--border);border-radius:6px;padding:7px;background:color-mix(in srgb,var(--bg) 46%,transparent);font-size:11px;line-height:1.35;opacity:.84;}
+    .code-ws-safety strong{display:block;font-size:12px;margin-bottom:2px;color:#67e8f9;}
     @media(max-width:760px){
       .code-workspace-body{overflow:auto;}
       .code-ws-shell{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto;min-height:100%;}
@@ -133,6 +137,15 @@ function renderShell() {
           <button class="code-ws-btn" id="code-ws-save-model-key">Save</button>
         </div>
         <div class="code-ws-head" style="display:block;">
+          <label for="code-ws-safety-level" style="display:block;font-size:11px;font-weight:800;margin-bottom:5px;">Safety Level</label>
+          <select class="code-ws-input" id="code-ws-safety-level" style="width:100%;">
+            <option value="review-only">Review Only</option>
+            <option value="apply-tests">Apply With Tests</option>
+            <option value="commit-allowed">Commit Allowed</option>
+          </select>
+          <div class="code-ws-safety" id="code-ws-safety-note"></div>
+        </div>
+        <div class="code-ws-head" style="display:block;">
           <textarea class="code-ws-task" id="code-ws-agent-task" placeholder="Ask the coding agent to change this repo."></textarea>
           <div class="code-ws-toolbar" style="margin-top:6px;">
             <button class="code-ws-btn primary" id="code-ws-agent-run">Draft Diff</button>
@@ -197,14 +210,60 @@ function setOutput(text) {
   if (out) out.textContent = text || '';
 }
 
+function safetyNote() {
+  if (_safetyLevel === 'review-only') {
+    return {
+      title: 'Review Only',
+      body: 'The model can draft diffs and you can inspect files, but Save, Apply, and Commit are blocked.',
+    };
+  }
+  if (_safetyLevel === 'commit-allowed') {
+    return {
+      title: 'Commit Allowed',
+      body: 'File writes, tested diffs, and commits are enabled. Keep a passing local command before committing.',
+    };
+  }
+  return {
+    title: 'Apply With Tests',
+    body: 'Save is enabled. Diff apply requires a test command and validation before permanent changes.',
+  };
+}
+
+function syncSafetyControls() {
+  const select = el('code-ws-safety-level');
+  if (select) select.value = _safetyLevel;
+  const note = el('code-ws-safety-note');
+  if (note) {
+    const info = safetyNote();
+    note.innerHTML = `<strong>${esc(info.title)}</strong><span>${esc(info.body)}</span>`;
+  }
+  const commitBtn = el('code-ws-commit');
+  if (commitBtn) {
+    commitBtn.disabled = _safetyLevel !== 'commit-allowed';
+    commitBtn.title = _safetyLevel === 'commit-allowed'
+      ? 'Commit workspace changes'
+      : 'Switch Safety Level to Commit Allowed before committing.';
+  }
+  renderReviewGate();
+}
+
+function setSafetyLevel(value) {
+  const next = ['review-only', 'apply-tests', 'commit-allowed'].includes(value) ? value : 'apply-tests';
+  _safetyLevel = next;
+  localStorage.setItem(SAFETY_STORAGE_KEY, next);
+  syncSafetyControls();
+}
+
 function renderReviewGate() {
   const review = el('code-ws-review');
   if (!review) return;
   review.classList.toggle('hidden', !_pendingDiff);
   const applyBtn = el('code-ws-apply-proposed');
   if (applyBtn) {
-    applyBtn.disabled = !_pendingDiff || !_pendingTestPassed;
-    applyBtn.title = _pendingTestPassed ? 'Apply the tested proposed diff' : 'Run Tests must pass before Apply is enabled';
+    applyBtn.disabled = !_pendingDiff || !_pendingTestPassed || _safetyLevel === 'review-only';
+    applyBtn.title = _safetyLevel === 'review-only'
+      ? 'Review Only safety level blocks applying proposed diffs.'
+      : (_pendingTestPassed ? 'Apply the tested proposed diff' : 'Run Tests must pass before Apply is enabled');
   }
   const gate = el('code-ws-review-gate');
   if (!gate) return;
@@ -389,6 +448,10 @@ async function saveFile() {
     setOutput('Select a file first.');
     return;
   }
+  if (_safetyLevel === 'review-only') {
+    setOutput('Review Only safety level blocks file writes.');
+    return;
+  }
   const content = el('code-ws-editor')?.value || '';
   const data = await api(`/${encodeURIComponent(_selected)}/file`, {
     method: 'PUT',
@@ -400,6 +463,10 @@ async function saveFile() {
 
 async function applyPatch() {
   if (!_selected) return;
+  if (_safetyLevel === 'review-only') {
+    setOutput('Review Only safety level blocks applying diffs.');
+    return;
+  }
   const diff = el('code-ws-editor')?.value || '';
   if (!diff.trim()) {
     setOutput('Paste a unified diff before applying.');
@@ -427,6 +494,9 @@ async function applyPatch() {
       await loadTree('');
       return;
     }
+  } else if (_safetyLevel === 'apply-tests') {
+    setOutput('Apply With Tests requires a test command before manual diff apply.');
+    return;
   } else {
     const ok = await confirmAction('Apply diff without a test command? A rollback snapshot will be created first.', {
       confirmText: 'Apply Diff',
@@ -470,6 +540,10 @@ async function applyProposedDiff() {
   }
   if (!_pendingTestPassed) {
     setOutput('Run Tests must pass on the proposed diff before Apply is enabled.');
+    return;
+  }
+  if (_safetyLevel === 'review-only') {
+    setOutput('Review Only safety level blocks applying proposed diffs.');
     return;
   }
   await api(`/${encodeURIComponent(_selected)}/snapshots`, {
@@ -711,6 +785,10 @@ async function showDiff() {
 
 async function commit() {
   if (!_selected) return;
+  if (_safetyLevel !== 'commit-allowed') {
+    setOutput('Switch Safety Level to Commit Allowed before committing.');
+    return;
+  }
   if (_pendingDiff) {
     setOutput('Resolve the pending proposed diff before committing.');
     return;
@@ -756,6 +834,7 @@ function wireControls() {
     await settings({ code_workspace_model_key: value.trim() });
     setOutput(value.trim() ? `Saved model key: ${value.trim()}` : 'Cleared model key.');
   }));
+  el('code-ws-safety-level')?.addEventListener('change', e => setSafetyLevel(e.target.value || 'apply-tests'));
   el('code-ws-save-file')?.addEventListener('click', guarded(saveFile));
   el('code-ws-apply-patch')?.addEventListener('click', guarded(applyPatch));
   el('code-ws-run')?.addEventListener('click', guarded(runCommand));
@@ -786,6 +865,7 @@ function wireControls() {
   el('code-ws-status')?.addEventListener('click', guarded(showStatus));
   el('code-ws-diff')?.addEventListener('click', guarded(showDiff));
   el('code-ws-commit')?.addEventListener('click', guarded(commit));
+  syncSafetyControls();
 }
 
 function wireModal() {

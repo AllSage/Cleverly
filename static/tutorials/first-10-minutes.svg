@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" role="img" aria-labelledby="title desc">
+  <title id="title">First 10 minutes guide</title>
+  <desc id="desc">A five-step local setup path for Cleverly showing setup, model, offline proof, backup drill, and first chat.</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#151827"/>
+      <stop offset="1" stop-color="#0b111c"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="450" fill="#070b12"/>
+  <path d="M0 75h800M0 150h800M0 225h800M0 300h800M0 375h800M80 0v450M160 0v450M240 0v450M320 0v450M400 0v450M480 0v450M560 0v450M640 0v450M720 0v450" stroke="#112436" stroke-width="1" opacity=".5"/>
+  <rect x="46" y="42" width="708" height="360" rx="16" fill="url(#panel)" stroke="#a855f7" stroke-opacity=".7"/>
+  <text x="84" y="96" fill="#f0e7ff" font-family="Arial, sans-serif" font-size="32" font-weight="700">First 10 minutes</text>
+  <text x="86" y="128" fill="#67e8f9" font-family="Arial, sans-serif" font-size="16">A short safe path before sensitive work starts.</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="84" y="168" width="128" height="142" rx="12" fill="#0f172a" stroke="#16c8d8" stroke-opacity=".7"/>
+    <rect x="222" y="168" width="128" height="142" rx="12" fill="#0f172a" stroke="#a855f7" stroke-opacity=".7"/>
+    <rect x="360" y="168" width="128" height="142" rx="12" fill="#0f172a" stroke="#34d399" stroke-opacity=".7"/>
+    <rect x="498" y="168" width="128" height="142" rx="12" fill="#0f172a" stroke="#fbbf24" stroke-opacity=".7"/>
+    <rect x="636" y="168" width="80" height="142" rx="12" fill="#0f172a" stroke="#60a5fa" stroke-opacity=".7"/>
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="5">
+      <path d="M130 220h36M148 202v36" stroke="#16c8d8"/>
+      <path d="M262 218h48M262 236h48M262 202h48" stroke="#a855f7"/>
+      <path d="m397 225 16 16 37-44" stroke="#34d399"/>
+      <path d="M535 212h54v42h-54zM548 212v-15a14 14 0 0 1 28 0v15" stroke="#fbbf24"/>
+      <path d="M663 220h28M691 220l-12-12M691 220l-12 12" stroke="#60a5fa"/>
+    </g>
+    <g fill="#dbeafe" font-size="14" font-weight="700" text-anchor="middle">
+      <text x="148" y="336">Setup</text>
+      <text x="286" y="336">Primary model</text>
+      <text x="424" y="336">Offline proof</text>
+      <text x="562" y="336">Restore drill</text>
+      <text x="676" y="336">Chat</text>
+    </g>
+    <g fill="#7dd3fc" font-size="12" text-anchor="middle">
+      <text x="148" y="358">sealed mode</text>
+      <text x="286" y="358">local only</text>
+      <text x="424" y="358">save report</text>
+      <text x="562" y="358">no import</text>
+      <text x="676" y="358">ready</text>
+    </g>
+  </g>
+</svg>

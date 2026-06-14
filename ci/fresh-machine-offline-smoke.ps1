@@ -20,6 +20,12 @@ $Launcher = Join-Path $Root "Cleverly.ps1"
 $ReportFullPath = if ([System.IO.Path]::IsPathRooted($ReportPath)) { $ReportPath } else { Join-Path $Root $ReportPath }
 $UrlPort = ([Uri]$Url).Port
 $Results = New-Object System.Collections.Generic.List[object]
+$Metadata = [ordered]@{
+    host = $env:COMPUTERNAME
+    os = [System.Environment]::OSVersion.VersionString
+    powershell = $PSVersionTable.PSVersion.ToString()
+    docker_version = ""
+}
 
 function Add-Result([string]$Name, [string]$Status, [string]$Detail) {
     $Results.Add([pscustomobject]@{
@@ -60,9 +66,52 @@ function Invoke-Launcher([string]$Action) {
     Add-Result "launcher:$Action" "ok" "Cleverly.ps1 $Action completed"
 }
 
+function Get-DockerValue([string]$Container, [string]$Format) {
+    $oldErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $value = & docker inspect $Container --format $Format 2>$null
+        if ($LASTEXITCODE -eq 0) { return ($value | Select-Object -First 1) }
+    } finally {
+        $ErrorActionPreference = $oldErrorActionPreference
+    }
+    return ""
+}
+
+function Test-ContainerHardening([string]$Container, [string]$ExpectedNetworkMode) {
+    $networkMode = Get-DockerValue $Container "{{.HostConfig.NetworkMode}}"
+    if ($networkMode -like $ExpectedNetworkMode) {
+        Add-Result "$Container-network" "ok" "$Container network mode is $networkMode"
+    } else {
+        Add-Result "$Container-network" "fail" "$Container network mode is $networkMode, expected $ExpectedNetworkMode"
+    }
+
+    $readOnly = Get-DockerValue $Container "{{.HostConfig.ReadonlyRootfs}}"
+    if ($readOnly -eq "true") {
+        Add-Result "$Container-readonly-rootfs" "ok" "$Container read_only root filesystem is enabled"
+    } else {
+        Add-Result "$Container-readonly-rootfs" "warn" "$Container read_only root filesystem is $readOnly"
+    }
+
+    $securityOpt = Get-DockerValue $Container "{{json .HostConfig.SecurityOpt}}"
+    if ($securityOpt -match "no-new-privileges:true") {
+        Add-Result "$Container-no-new-privileges" "ok" "$Container has no-new-privileges:true"
+    } else {
+        Add-Result "$Container-no-new-privileges" "fail" "$Container missing no-new-privileges:true"
+    }
+
+    $capDrop = Get-DockerValue $Container "{{json .HostConfig.CapDrop}}"
+    if ($capDrop -match "ALL") {
+        Add-Result "$Container-cap-drop" "ok" "$Container drops all Linux capabilities"
+    } else {
+        Add-Result "$Container-cap-drop" "warn" "$Container cap_drop is $capDrop"
+    }
+}
+
 Push-Location $Root
 try {
     Require-Command "docker"
+    $Metadata.docker_version = (& docker version --format "{{json .}}" 2>$null) -join "`n"
     if (-not (Test-Path -LiteralPath $Launcher)) {
         Add-Result "launcher" "fail" "Cleverly.ps1 not found"
         throw "launcher missing"
@@ -92,12 +141,8 @@ try {
         Add-Result "proxy-bind" "fail" "proxy ports did not show 127.0.0.1 binding: $ps"
     }
 
-    $workerNetwork = docker inspect cleverly-code-worker --format "{{.HostConfig.NetworkMode}}" 2>$null
-    if (($workerNetwork | Select-Object -First 1) -eq "none") {
-        Add-Result "code-worker-network" "ok" "code worker network_mode is none"
-    } else {
-        Add-Result "code-worker-network" "fail" "code worker network mode is $workerNetwork"
-    }
+    Test-ContainerHardening "cleverly" "*offline_private*"
+    Test-ContainerHardening "cleverly-code-worker" "none"
 
     $oldErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -120,10 +165,11 @@ $summary = [pscustomobject]@{
     generated_at = (Get-Date).ToString("o")
     url = $Url
     fine_tune = [bool]$FineTune
+    metadata = $Metadata
     results = $Results
-    ok = ($Results | Where-Object status -eq "ok").Count
-    warn = ($Results | Where-Object status -eq "warn").Count
-    fail = ($Results | Where-Object status -eq "fail").Count
+    ok = @($Results | Where-Object status -eq "ok").Count
+    warn = @($Results | Where-Object status -eq "warn").Count
+    fail = @($Results | Where-Object status -eq "fail").Count
 }
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ReportFullPath) | Out-Null

@@ -73,6 +73,10 @@ To override the hardware profile with an exact tag:
 The launcher records the selected tag in `data/cleverly-primary-model.json`
 and writes it into the offline bundle so startup does not guess.
 
+Offline Control can also mark a discovered or recommended model as primary with
+**Make Primary**. That writes the same primary-model manifest and updates the
+default local model setting.
+
 To build a portable transfer bundle instead:
 
 ```powershell

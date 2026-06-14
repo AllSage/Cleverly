@@ -13,6 +13,7 @@ let _roots = [];
 let _recommendations = [];
 let _modelProfile = null;
 let _detectedGpuGb = null;
+let _primaryModel = '';
 let _egress = null;
 let _about = null;
 let _audit = [];
@@ -65,11 +66,13 @@ function ensureStyles() {
     .offline-proof-badge{font-size:9px;opacity:.72;margin-left:6px;white-space:nowrap;}
     .offline-model-profile{display:inline-flex;align-items:center;border:1px solid var(--border);border-radius:999px;padding:2px 7px;margin:4px 0;font-size:10px;font-weight:700;text-transform:uppercase;}
     .offline-backup-actions{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) auto;gap:8px;align-items:stretch;}
-    .offline-backup-actions.import{grid-template-columns:minmax(120px,1fr) auto auto;}
+    .offline-backup-actions.import{grid-template-columns:minmax(120px,1fr) auto auto auto;}
     .offline-backup-actions .offline-input,.offline-backup-actions .offline-btn{width:100%;box-sizing:border-box;}
     .offline-backup-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 12px;}
     .offline-backup-step{border:1px solid var(--border);border-radius:8px;padding:9px;background:color-mix(in srgb,var(--bg) 42%,transparent);font-size:12px;line-height:1.35;}
     .offline-backup-step strong{display:block;margin-bottom:3px;}
+    .offline-model-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;}
+    .offline-model-actions .offline-btn{min-height:28px;font-size:11px;padding:0 8px;}
     @media(max-width:820px){.offline-grid,.offline-two,.offline-mini-checks,.offline-readiness{grid-template-columns:1fr}.offline-check{grid-template-columns:1fr}.offline-control-body{overflow:auto}.offline-shell{height:auto;min-height:680px}}
     @media(max-width:820px){.offline-backup-actions,.offline-backup-actions.import,.offline-backup-steps{grid-template-columns:1fr}}
   `;
@@ -174,18 +177,18 @@ function renderModels() {
   const selectedRec = _recommendations.find(item => item.selected) || _modelProfile || null;
   const recRows = _recommendations.map(item => `
     <tr>
-      <td><strong>${esc(item.label)}</strong>${item.selected ? ' <span class="offline-pill ok">selected</span>' : ''}${item.prepared ? ' <span class="offline-pill ok">prepared</span>' : ''}<div class="offline-model-profile">${esc(item.quality_profile || 'General')}</div><div style="opacity:.65">${esc(item.hardware)}</div></td>
+      <td><strong>${esc(item.label)}</strong>${item.selected ? ' <span class="offline-pill ok">selected</span>' : ''}${item.prepared ? ' <span class="offline-pill ok">prepared</span>' : ''}${_primaryModel === item.model ? ' <span class="offline-pill ok">primary</span>' : ''}<div class="offline-model-profile">${esc(item.quality_profile || 'General')}</div><div style="opacity:.65">${esc(item.hardware)}</div></td>
       <td><strong>${esc(item.model)}</strong><div style="opacity:.65">${esc(item.size)}</div></td>
       <td>${esc(item.best_for || '')}</td>
-      <td><div class="offline-pre" style="max-height:96px;">${esc(item.setup_command || item.prep_command)}</div></td>
+      <td><div class="offline-pre" style="max-height:96px;">${esc(item.setup_command || item.prep_command)}</div><div class="offline-model-actions"><button class="offline-btn" data-primary-model="${esc(item.model)}">Make Primary</button><button class="offline-btn" data-fill-model="${esc(item.model)}">Use Tag</button></div></td>
     </tr>
   `).join('');
   const modelRows = _models.map(item => `
     <tr>
-      <td><strong>${esc(item.name)}</strong><div style="opacity:.65">${esc(item.kind)}</div></td>
+      <td><strong>${esc(item.name)}</strong>${_primaryModel === item.model_id ? ' <span class="offline-pill ok">primary</span>' : ''}<div style="opacity:.65">${esc(item.kind)}</div></td>
       <td>${esc(item.path || item.model_id || '')}</td>
       <td>${item.size ? esc(Math.round(item.size / 1024 / 1024) + ' MB') : ''}</td>
-      <td>${item.registerable ? '<span class="offline-pill ok">ready</span>' : '<span class="offline-pill warn">serve first</span>'}</td>
+      <td>${item.registerable ? '<span class="offline-pill ok">ready</span>' : '<span class="offline-pill warn">serve first</span>'}<div class="offline-model-actions"><button class="offline-btn" data-fill-model="${esc(item.model_id || item.name)}">Use Tag</button><button class="offline-btn" data-primary-model="${esc(item.model_id || item.name)}">Make Primary</button></div></td>
     </tr>
   `).join('');
   return `
@@ -196,8 +199,9 @@ function renderModels() {
     <div class="offline-card" style="margin-bottom:12px;">
       <div class="offline-card-title">Hardware-Based Pull Target</div>
       <div class="offline-card-value">${selectedRec ? esc(selectedRec.model) : 'Unknown'}</div>
-      <div class="offline-card-note">${_detectedGpuGb == null ? 'GPU memory not detected yet.' : esc(_detectedGpuGb + ' GB GPU VRAM detected')} &middot; quality profile: ${esc(selectedRec?.quality_profile || 'General')} &middot; connected setup auto-picks this when no -Model is passed.</div>
+      <div class="offline-card-note">${_detectedGpuGb == null ? 'GPU memory not detected yet.' : esc(_detectedGpuGb + ' GB GPU VRAM detected')} &middot; quality profile: ${esc(selectedRec?.quality_profile || 'General')} &middot; primary: ${esc(_primaryModel || 'not set')}.</div>
       <div class="offline-pre" style="margin-top:8px;max-height:96px;">${esc(selectedRec?.auto_setup_command || selectedRec?.auto_prep_command || '.\\Cleverly.ps1 setup -AllowConnectedPrep')}</div>
+      <div class="offline-model-actions"><button class="offline-btn primary" data-primary-model="${esc(selectedRec?.model || '')}">Make Recommended Primary</button><button class="offline-btn" data-fill-model="${esc(selectedRec?.model || '')}">Use Recommended Tag</button></div>
     </div>
     <table class="offline-table" style="margin-bottom:12px;">
       <thead><tr><th>Tier</th><th>Model</th><th>Best For</th><th>Manual Setup</th></tr></thead>
@@ -304,6 +308,7 @@ function renderBackups() {
           <input class="offline-input" type="password" id="offline-import-pass" placeholder="Backup password">
           <input type="file" id="offline-import-file" accept=".json,.cleverly-backup" style="display:none">
           <button class="offline-btn" id="offline-pick-import">Choose File</button>
+          <button class="offline-btn" id="offline-test-restore">Test Restore</button>
           <button class="offline-btn primary" id="offline-import-encrypted">Import</button>
         </div>
         <div class="offline-card-note" id="offline-import-file-label">No file selected.</div>
@@ -378,6 +383,7 @@ async function scanModels() {
   const data = localData;
   _models = data.models || [];
   _roots = data.roots || [];
+  _primaryModel = recData.prepared_model || data.primary_model || '';
   _recommendations = recData.recommendations || [];
   _modelProfile = recData.selected_profile || null;
   _detectedGpuGb = recData.detected_gpu_gb;
@@ -398,6 +404,18 @@ async function registerModel() {
   await refreshStatus();
   _tab = 'models';
   render();
+}
+
+async function setPrimaryModel(model) {
+  const tag = (model || '').trim();
+  if (!tag) throw new Error('Model tag is required');
+  const data = await api('/models/primary', {
+    method: 'POST',
+    body: JSON.stringify({ model: tag, source: 'offline-control', detected_gpu_gb: _detectedGpuGb }),
+  });
+  _primaryModel = data.primary_model || tag;
+  uiModule.showToast(`Primary model set: ${_primaryModel}`);
+  await scanModels();
 }
 
 function downloadText(filename, text) {
@@ -459,14 +477,20 @@ async function exportEncrypted() {
   setBackupOutput('Encrypted backup exported. Store it on approved offline media and keep the password separate.');
 }
 
-async function importEncrypted() {
+async function importEncrypted(dryRun = false) {
   const password = el('offline-import-pass')?.value || '';
   const file = el('offline-import-file')?.files?.[0];
   if (password.length < 8) throw new Error('Backup password is required');
   if (!file) throw new Error('Choose an encrypted backup file first');
   const text = await file.text();
   const backup = JSON.parse(text);
-  const { data } = await backupApi('/api/backup/encrypted/import', { password, backup });
+  const { data } = await backupApi('/api/backup/encrypted/import', { password, backup, dry_run: dryRun });
+  if (dryRun) {
+    const summary = data.summary || {};
+    const sections = summary.recognized_sections || [];
+    setBackupOutput(`${data.message || 'Restore drill passed.'}\nRecognized sections: ${sections.join(', ') || 'none'}\nNo data was imported.`);
+    return;
+  }
   await api('/audit', {
     method: 'POST',
     body: JSON.stringify({ action: 'encrypted_backup_imported', detail: { filename: file.name } }),
@@ -510,6 +534,16 @@ function wireRendered() {
   el('offline-scan-models')?.addEventListener('click', guarded(scanModels));
   el('offline-register-model')?.addEventListener('click', guarded(registerModel));
   el('offline-run-benchmark')?.addEventListener('click', guarded(runBenchmark));
+  document.querySelectorAll('[data-fill-model]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const value = btn.getAttribute('data-fill-model') || '';
+      if (el('offline-model-id')) el('offline-model-id').value = value;
+      if (el('offline-bench-model')) el('offline-bench-model').value = value;
+    });
+  });
+  document.querySelectorAll('[data-primary-model]').forEach(btn => {
+    btn.addEventListener('click', guarded(() => setPrimaryModel(btn.getAttribute('data-primary-model') || '')));
+  });
   el('offline-refresh-audit')?.addEventListener('click', guarded(refreshAudit));
   el('offline-refresh-help')?.addEventListener('click', guarded(refreshHelp));
   el('offline-help-report')?.addEventListener('click', guarded(() => exportReport('html')));
@@ -520,7 +554,8 @@ function wireRendered() {
     const file = el('offline-import-file')?.files?.[0];
     if (label) label.textContent = file ? file.name : 'No file selected.';
   });
-  el('offline-import-encrypted')?.addEventListener('click', guarded(importEncrypted));
+  el('offline-test-restore')?.addEventListener('click', guarded(() => importEncrypted(true)));
+  el('offline-import-encrypted')?.addEventListener('click', guarded(() => importEncrypted(false)));
   el('offline-refresh-about')?.addEventListener('click', guarded(refreshAbout));
 }
 

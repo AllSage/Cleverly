@@ -67,6 +67,45 @@ function Invoke-CleverlyCommand {
     }
 }
 
+function Invoke-PowerShellScript {
+    param(
+        [string]$Path,
+        [string[]]$ExtraArgs = @()
+    )
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Script was not found: $Path"
+    }
+    $argList = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", ('"{0}"' -f $Path)
+    ) + $ExtraArgs
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "powershell.exe"
+    $psi.Arguments = ($argList -join " ")
+    $psi.WorkingDirectory = $Root
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.CreateNoWindow = $true
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $psi
+    [void]$process.Start()
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+
+    return [pscustomobject]@{
+        Action = [System.IO.Path]::GetFileName($Path)
+        ExitCode = $process.ExitCode
+        StdOut = $stdout
+        StdErr = $stderr
+    }
+}
+
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Cleverly"
 $form.StartPosition = "CenterScreen"
@@ -85,13 +124,21 @@ $subtitle.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 $subtitle.SetBounds(18, 42, 520, 22)
 $form.Controls.Add($subtitle)
 
+$state = New-Object System.Windows.Forms.Label
+$state.Text = "Status: Ready"
+$state.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+$state.Anchor = "Top,Right"
+$state.TextAlign = "MiddleRight"
+$state.SetBounds(470, 52, 256, 20)
+$form.Controls.Add($state)
+
 $output = New-Object System.Windows.Forms.TextBox
 $output.Multiline = $true
 $output.ScrollBars = "Vertical"
 $output.ReadOnly = $true
 $output.Font = New-Object System.Drawing.Font("Consolas", 9)
 $output.Anchor = "Top,Bottom,Left,Right"
-$output.SetBounds(16, 116, 710, 344)
+$output.SetBounds(16, 154, 710, 306)
 $form.Controls.Add($output)
 
 $buttons = New-Object System.Collections.ArrayList
@@ -108,12 +155,25 @@ function Set-ButtonsEnabled {
     }
 }
 
+function Open-LocalPath {
+    param(
+        [string]$Path,
+        [string]$MissingMessage
+    )
+    if (Test-Path -LiteralPath $Path) {
+        Start-Process $Path
+    } else {
+        Write-OutputBox $MissingMessage
+    }
+}
+
 function Run-Action {
     param(
         [string]$Action,
         [string[]]$ExtraArgs = @()
     )
     Set-ButtonsEnabled $false
+    $state.Text = "Status: Running $Action"
     Write-OutputBox ""
     Write-OutputBox ("==> " + $Action)
     [System.Windows.Forms.Application]::DoEvents()
@@ -125,9 +185,35 @@ function Run-Action {
     } catch {
         Write-OutputBox ("ERROR: " + $_.Exception.Message)
     } finally {
+        $state.Text = "Status: Ready"
         Set-ButtonsEnabled $true
     }
 }
+
+function Run-Script {
+    param(
+        [string]$Name,
+        [string]$Path,
+        [string[]]$ExtraArgs = @()
+    )
+    Set-ButtonsEnabled $false
+    $state.Text = "Status: Running $Name"
+    Write-OutputBox ""
+    Write-OutputBox ("==> " + $Name)
+    [System.Windows.Forms.Application]::DoEvents()
+    try {
+        $result = Invoke-PowerShellScript -Path $Path -ExtraArgs $ExtraArgs
+        if ($result.StdOut) { Write-OutputBox $result.StdOut.TrimEnd() }
+        if ($result.StdErr) { Write-OutputBox $result.StdErr.TrimEnd() }
+        Write-OutputBox ("exit_code: " + $result.ExitCode)
+    } catch {
+        Write-OutputBox ("ERROR: " + $_.Exception.Message)
+    } finally {
+        $state.Text = "Status: Ready"
+        Set-ButtonsEnabled $true
+    }
+}
+
 
 $start = New-Button "Start" 16 74 { Run-Action "start" @("-NoOpen") }
 $stop = New-Button "Stop" 136 74 { Run-Action "stop" }
@@ -135,8 +221,14 @@ $restart = New-Button "Restart" 256 74 { Run-Action "restart" @("-NoOpen") }
 $status = New-Button "Status" 376 74 { Run-Action "status" }
 $doctor = New-Button "Doctor" 496 74 { Run-Action "doctor" }
 $logs = New-Button "Logs" 616 74 { Run-Action "logs" }
+$setup = New-Button "Setup" 16 116 { Run-Action "setup" @("-NoOpen") }
+$bundle = New-Button "Open Bundle" 136 116 { Open-LocalPath (Join-Path $Root "dist\cleverly-offline-bundle") "Offline bundle folder not found. Run bundle on a connected prep machine first." }
+$logFolder = New-Button "Open Logs" 256 116 { Open-LocalPath (Join-Path $Root "logs") "Logs folder not found yet. Start Cleverly first." }
+$checklist = New-Button "Checklist" 376 116 { Open-LocalPath (Join-Path $Root "docs\release-checklist.md") "release-checklist.md was not found." }
+$smoke = New-Button "Offline Smoke" 496 116 { Run-Script "Offline Smoke" (Join-Path $Root "ci\fresh-machine-offline-smoke.ps1") @("-SkipRestart") }
+$readme = New-Button "README" 616 116 { Open-LocalPath (Join-Path $Root "README.md") "README.md was not found." }
 
-@($start, $stop, $restart, $status, $doctor, $logs) | ForEach-Object {
+@($start, $stop, $restart, $status, $doctor, $logs, $setup, $bundle, $logFolder, $checklist, $smoke, $readme) | ForEach-Object {
     [void]$buttons.Add($_)
     $form.Controls.Add($_)
 }

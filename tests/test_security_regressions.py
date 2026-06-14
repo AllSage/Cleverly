@@ -128,6 +128,8 @@ def test_docker_compose_exposes_only_local_proxy_by_default():
     assert "host.docker.internal:host-gateway" not in compose
     assert "offline_private:" in compose
     assert "internal: true" in compose
+    assert "pull_policy: never" in compose
+    assert compose.count("pull_policy: never") >= 3
 
 
 def test_cleverly_container_has_baseline_hardening():
@@ -378,8 +380,14 @@ def test_model_onboarding_uses_explicit_offline_model_recommendations():
         assert profile in doc
 
     assert "quality_profile" in route
+    assert "SetPrimaryModelRequest" in route
+    assert '@router.post("/models/primary")' in route
+    assert "_write_primary_model_manifest" in route
     assert "Quality profile" in setup_js
     assert "offline-model-profile" in offline_js
+    assert "data-primary-model" in offline_js
+    assert "Make Primary" in offline_js
+    assert "/models/primary" in offline_js
     assert "Get-DetectedGpuGb" in launcher
     assert "Get-ModelProfileForGpuGb" in launcher
     assert '$script:PrimaryModelSource = "auto hardware profile"' in launcher
@@ -395,6 +403,7 @@ def test_model_onboarding_uses_explicit_offline_model_recommendations():
     assert ".\\Cleverly.ps1 prep -AllowConnectedPrep -GpuGB 24" in doc
     assert ".\\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen3-coder:30b" in doc
     assert ".\\Cleverly.ps1 prep -AllowConnectedPrep -Model llama3.2:3b" in doc
+    assert "Make Primary" in doc
     assert "Do not run model pulls on the" in doc
     assert "Code Workspace model key is blank by default" in doc
     assert "auto-pick from" in readme
@@ -421,6 +430,7 @@ def test_model_recommendation_tiers_cover_cpu_to_large_gpu(monkeypatch):
 def test_windows_installer_signing_path_requires_release_signature():
     installer = Path("installer/Cleverly.iss").read_text(encoding="utf-8")
     script = Path("scripts/build-windows-installer.ps1").read_text(encoding="utf-8")
+    launcher_gui = Path("Cleverly-Launcher.ps1").read_text(encoding="utf-8")
     doc = Path("docs/windows-installer.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
 
@@ -444,12 +454,21 @@ def test_windows_installer_signing_path_requires_release_signature():
     assert "Authenticode" in doc
     assert "release-checklist.md" in doc
     assert "-RequireSignature" in doc
+    assert "Status: Ready" in launcher_gui
+    assert "$state.Text" in launcher_gui
+    assert "Open Bundle" in launcher_gui
+    assert "Open Logs" in launcher_gui
+    assert "release-checklist.md" in launcher_gui
+    assert "fresh-machine-offline-smoke.ps1" in launcher_gui
+    assert "Open Bundle" in doc
     assert "Windows Installer" in readme
 
 
 def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     smoke = Path("ci/fresh-machine-offline-smoke.ps1").read_text(encoding="utf-8")
     ci_smoke = Path("ci/no-network-container-smoke.ps1").read_text(encoding="utf-8")
+    release_script = Path("scripts/build-offline-release.ps1").read_text(encoding="utf-8")
+    sbom_script = Path("scripts/generate-sbom.ps1").read_text(encoding="utf-8")
     workflow = Path(".github/workflows/no-network-smoke.yml").read_text(encoding="utf-8")
     smoke_doc = Path("docs/fresh-machine-offline-test.md").read_text(encoding="utf-8")
     offline_release = Path("docs/offline-release.md").read_text(encoding="utf-8")
@@ -465,6 +484,10 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "cleverly-ollama:local" in smoke
     assert "cleverly-code-worker" in smoke
     assert "NetworkMode" in smoke
+    assert "ReadonlyRootfs" in smoke
+    assert "no-new-privileges:true" in smoke
+    assert "CapDrop" in smoke
+    assert "docker version --format" in smoke
     assert "socket.create_connection(('1.1.1.1', 80), 3)" in smoke
     assert "127\\.0\\.0\\.1:{0}" in smoke
     assert "no-network-container-smoke.json" in ci_smoke
@@ -478,8 +501,21 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "No-Network Container Smoke" in workflow
     assert "actions/upload-artifact@v4" in workflow
     assert "dist/no-network-container-smoke.json" in workflow
+    assert "scripts\\generate-sbom.ps1" in release_script
+    assert "ci\\no-network-container-smoke.ps1" in release_script
+    assert "release-manifest.json" in release_script
+    assert "checksums.sha256" in release_script
+    assert "Cleverly.ps1" in release_script
+    assert "node --check" in release_script
+    assert "pytest -q" in release_script
+    assert "Get-FileHash" in sbom_script
+    assert "pip freeze --all" in sbom_script
+    assert "package-lock.json" in sbom_script
+    assert "docker image inspect" in sbom_script
+    assert "cleverly-sbom.json.sha256" in sbom_script
     assert "Fresh Machine Offline Test" in smoke_doc
     assert "does not need internet access" in smoke_doc
+    assert "Docker runtime metadata" in smoke_doc
     assert "qwen2.5:7b" not in offline_release
     assert ".\\Cleverly.ps1 bundle -AllowConnectedPrep -GpuGB 24" in offline_release
     assert "release-checklist.md" in offline_release
@@ -487,6 +523,8 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "not an independent third-party penetration test" in review
     assert "Required Release Gates" in review
     assert "ci/no-network-container-smoke.ps1" in review
+    assert "scripts/generate-sbom.ps1" in review
+    assert "Encrypted backup **Test Restore**" in review
     assert "Windows installer is Authenticode-signed" in review
     assert "Cleverly Release Checklist" in release
     assert "No-Network Gates" in release
@@ -494,8 +532,14 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "AuthentiCode" not in release
     assert "Authenticode" in release
     assert "ci/no-network-container-smoke.ps1" in release
+    assert "scripts/build-offline-release.ps1" in release
+    assert "scripts/generate-sbom.ps1" in release
+    assert "Test Restore" in release
+    assert "Safety Level" in release
     assert "docs/release-checklist.md" in readme
     assert "Sensitive Machine Checklist" in readme
+    assert "scripts\\build-offline-release.ps1" in readme
+    assert "scripts\\generate-sbom.ps1" in readme
     assert "fresh-machine-offline-smoke.ps1" in readme
     assert "docs/security-review.md" in security
     assert "docs/windows-installer.md" in security
@@ -577,6 +621,12 @@ def test_encrypted_app_backup_uses_password_kdf():
     assert "approved offline media" in ui_js
     assert "offline-backup-actions" in ui_js
     assert "offline-backup-steps" in ui_js
+    assert "dry_run" in route
+    assert "_summarize_backup_payload" in route
+    assert "Restore drill passed" in route
+    assert "offline-test-restore" in ui_js
+    assert "Test Restore" in ui_js
+    assert "No data was imported" in ui_js
 
 
 def test_offline_frontend_hides_online_feature_entrypoints():
@@ -699,6 +749,7 @@ def test_offline_tutorials_are_bundled_and_wired_to_ui():
     assert "aspect-ratio:16/9" in tutorials_js
 
     assets = [
+        "static/tutorials/first-10-minutes.svg",
         "static/tutorials/first-run.svg",
         "static/tutorials/offline-readiness.svg",
         "static/tutorials/model-onboarding.svg",
@@ -714,6 +765,9 @@ def test_offline_tutorials_are_bundled_and_wired_to_ui():
         assert "https://" not in source
         assert 'href="http' not in source
         assert "xlink:href=\"http" not in source
+
+    assert "First 10 minutes" in tutorials_js
+    assert "Test Restore" in tutorials_js
 
     for token in ("fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket", "https://", "http://"):
         assert token not in tutorials_js
@@ -803,6 +857,8 @@ def test_ollama_overlays_use_persistent_model_cache_and_auto_seed():
     assert "./data/ollama:/root/.ollama" in offline
     assert "cleverly-ollama:local" in connected
     assert "cleverly-ollama:local" in offline
+    assert "pull_policy: never" in connected
+    assert "pull_policy: never" in offline
     assert "container_name: ${CLEVERLY_OLLAMA_CONTAINER_NAME:-cleverly-ollama}" in connected
     assert "container_name: ${CLEVERLY_OLLAMA_CONTAINER_NAME:-cleverly-ollama}" in offline
     assert "ollama.com/install.sh" in local_image
