@@ -120,13 +120,18 @@ Before declaring a sensitive-machine release ready:
 - `node --check` passes for changed frontend modules.
 - Docker image builds successfully.
 - `scripts/generate-sbom.ps1` produces a reviewed SBOM and checksum.
+- `scripts/run-static-security.ps1` produces a reviewed local static-security
+  report without contacting external advisory services.
 - `ci/no-network-container-smoke.ps1` passes and produces a local report.
 - Fresh-machine offline smoke test passes on the target class of computer.
+- `ci/fresh-machine-proof.ps1` passes on the target machine and its proof hash
+  is retained with the release.
 - Offline Control reports zero failed checks.
 - Egress proof reports outbound TCP blocked.
 - The selected local model is marked primary before bundle export.
 - Encrypted backup **Test Restore** passes without importing data.
 - Code Workspace Safety Level behavior is verified.
+- Code Workspace Allowed Paths enforcement is verified.
 - Windows installer is Authenticode-signed for release distribution.
 - README sensitive-machine checklist and `docs/release-checklist.md` are
   followed.

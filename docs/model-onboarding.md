@@ -77,6 +77,10 @@ Offline Control can also mark a discovered or recommended model as primary with
 **Make Primary**. That writes the same primary-model manifest and updates the
 default local model setting.
 
+Use **Pick Best Model** in Offline Control when you want Cleverly to choose from
+the hardware profile table automatically. Use **Verify Primary** after loading
+or sealing data to confirm the selected tag appears in the local model scan.
+
 To build a portable transfer bundle instead:
 
 ```powershell

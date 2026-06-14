@@ -14,8 +14,9 @@ machine. Keep the generated reports with the release artifact.
 
 ## Local Verification
 
-Use `scripts/build-offline-release.ps1` for the full release wrapper and
-`scripts/generate-sbom.ps1` for the dependency snapshot.
+Use `scripts/build-offline-release.ps1` for the full release wrapper,
+`scripts/generate-sbom.ps1` for the dependency snapshot, and
+`scripts/make-release.ps1` for a named release candidate folder.
 
 - Prefer the full release wrapper when building an artifact set:
 
@@ -30,6 +31,7 @@ Use `scripts/build-offline-release.ps1` for the full release wrapper and
 - Build the Windows app or installer when shipping Windows artifacts.
 - Generate the local SBOM with `scripts/generate-sbom.ps1` and keep
   `dist\sbom\cleverly-sbom.json` plus `cleverly-sbom.json.sha256`.
+- Run `scripts/run-static-security.ps1` and keep `static-security.json`.
 
 ## No-Network Gates
 
@@ -37,6 +39,8 @@ Use `scripts/build-offline-release.ps1` for the full release wrapper and
   `dist/no-network-container-smoke.json`.
 - Run `ci/fresh-machine-offline-smoke.ps1` on the target class of computer and
   keep `dist/fresh-machine-offline-smoke.json`.
+- Run `ci/fresh-machine-proof.ps1` on the target machine and keep
+  `dist/fresh-machine-proof.json` plus its `.sha256` file.
 - In Offline Control, run **Test No Internet** and export a local report.
 - Confirm Offline Control shows zero failed checks.
 - Confirm the proxy binds only to `127.0.0.1`.
@@ -61,6 +65,8 @@ Use `scripts/build-offline-release.ps1` for the full release wrapper and
 - Confirm Safety Level starts at **Apply With Tests**.
 - Confirm **Review Only** blocks Save, Apply, and Commit.
 - Confirm **Commit Allowed** is required before a commit can run.
+- Confirm Allowed Paths blocks writes and patches outside the configured
+  repo-relative prefixes.
 - Apply a manual diff with a test command and confirm validation happens before
   the permanent patch.
 - Confirm a snapshot is created before a manual diff apply.

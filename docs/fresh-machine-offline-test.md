@@ -31,6 +31,15 @@ The script writes:
 dist\fresh-machine-offline-smoke.json
 ```
 
+For release proof, run the wrapper:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ci\fresh-machine-proof.ps1
+```
+
+It writes `dist\fresh-machine-proof.json` and
+`dist\fresh-machine-proof.json.sha256`.
+
 ## What It Checks
 
 - Docker is available.
@@ -45,5 +54,7 @@ dist\fresh-machine-offline-smoke.json
 - The app and worker containers drop Linux capabilities.
 - The JSON report includes OS, PowerShell, and Docker runtime metadata.
 - The app container cannot open outbound TCP to `1.1.1.1:80`.
+- The proof wrapper confirms runtime Compose files use `pull_policy: never` and
+  records a SHA-256 hash of the smoke report.
 
 Any failed check means the machine is not ready for sensitive data.

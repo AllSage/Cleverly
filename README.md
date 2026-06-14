@@ -267,6 +267,8 @@ client data:
 - Open **Setup** or **Offline** and confirm zero failed offline-policy checks.
 - Run **Test No Internet** in Offline Control.
 - Run `.\ci\fresh-machine-offline-smoke.ps1` and keep the JSON report.
+- Run `.\ci\fresh-machine-proof.ps1` on the offline target and keep the JSON
+  report plus `.sha256` file.
 - Confirm the UI is only at `http://127.0.0.1:7000`.
 - Do not pass `-HostData` unless visible host folders are intentional.
 - Do not set `CLEVERLY_ALLOW_NETWORK` unless accepting the break-glass risk.
@@ -286,10 +288,22 @@ offline bundle, and packages installer artifacts:
 powershell -ExecutionPolicy Bypass -File .\scripts\build-offline-release.ps1 -Model qwen3-coder:30b -RequireSignature
 ```
 
+For a named release-candidate folder with a target-machine proof note:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\make-release.ps1 -Version 1.0.0-rc1 -Model qwen3-coder:30b -RequireSignature -Zip
+```
+
 For dependency-only review, run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\generate-sbom.ps1
+```
+
+For local static-security checks that do not contact advisory services:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-static-security.ps1
 ```
 
 ### Windows Installer
@@ -404,6 +418,10 @@ patched repo archive.
 Safety Level defaults to **Apply With Tests**. **Review Only** blocks Save,
 Apply, and Commit for inspection-only sessions. **Commit Allowed** must be
 selected before the Commit button can run.
+
+Allowed Paths can further restrict Code Workspace writes. Enter comma-separated
+repo-relative prefixes such as `src, tests, README.md`; Save, Apply, validation,
+and agent drafts are blocked outside those prefixes.
 
 The Code Workspace model key is intentionally blank by default. Set it in the
 Code panel or with `manage_settings` before expecting an agent to use a specific

@@ -23,10 +23,12 @@ class CreateWorkspaceRequest(BaseModel):
 class FileWriteRequest(BaseModel):
     path: str = Field(max_length=500)
     content: str = Field(max_length=code_workspace.MAX_FILE_BYTES)
+    allowed_paths: list[str] = Field(default_factory=list, max_length=code_workspace.MAX_ALLOWED_PREFIXES)
 
 
 class PatchRequest(BaseModel):
     diff: str = Field(max_length=code_workspace.MAX_PATCH_BYTES)
+    allowed_paths: list[str] = Field(default_factory=list, max_length=code_workspace.MAX_ALLOWED_PREFIXES)
 
 
 class RunRequest(BaseModel):
@@ -48,12 +50,14 @@ class AgentRequest(BaseModel):
     test_command: str = Field(default="", max_length=400)
     max_rounds: int = Field(default=2, ge=1, le=3)
     selected_paths: list[str] = Field(default_factory=list, max_length=12)
+    allowed_paths: list[str] = Field(default_factory=list, max_length=code_workspace.MAX_ALLOWED_PREFIXES)
     apply_changes: bool = False
 
 
 class ValidateDiffRequest(BaseModel):
     diff: str = Field(max_length=code_workspace.MAX_PATCH_BYTES)
     test_command: str = Field(min_length=1, max_length=400)
+    allowed_paths: list[str] = Field(default_factory=list, max_length=code_workspace.MAX_ALLOWED_PREFIXES)
 
 
 def _owner(request: Request) -> str:
@@ -147,14 +151,14 @@ def setup_code_workspace_routes() -> APIRouter:
     @router.put("/{workspace_id}/file")
     def code_workspace_write(workspace_id: str, body: FileWriteRequest, request: Request):
         try:
-            return {"ok": True, **code_workspace.write_file(workspace_id, body.path, body.content, owner=_owner(request))}
+            return {"ok": True, **code_workspace.write_file(workspace_id, body.path, body.content, owner=_owner(request), allowed_paths=body.allowed_paths)}
         except code_workspace.CodeWorkspaceError as exc:
             raise _bad(exc)
 
     @router.post("/{workspace_id}/patch")
     def code_workspace_patch(workspace_id: str, body: PatchRequest, request: Request):
         try:
-            result = {"ok": True, **code_workspace.apply_unified_diff(workspace_id, body.diff, owner=_owner(request))}
+            result = {"ok": True, **code_workspace.apply_unified_diff(workspace_id, body.diff, owner=_owner(request), allowed_paths=body.allowed_paths)}
             append_audit("code_workspace_patch_applied", {
                 "workspace_id": workspace_id,
                 "exit_code": result.get("exit_code"),
@@ -170,7 +174,7 @@ def setup_code_workspace_routes() -> APIRouter:
         snapshot = None
         try:
             snapshot = code_workspace.create_snapshot(workspace_id, "Before proposed diff validation", owner=owner)
-            patch = code_workspace.apply_unified_diff(workspace_id, body.diff, owner=owner)
+            patch = code_workspace.apply_unified_diff(workspace_id, body.diff, owner=owner, allowed_paths=body.allowed_paths)
             if patch.get("exit_code") != 0:
                 return {"ok": True, "valid": False, "snapshot": snapshot, "patch": patch, "test": None}
             test = code_workspace.run_command(
@@ -223,6 +227,7 @@ def setup_code_workspace_routes() -> APIRouter:
                 test_command=body.test_command,
                 max_rounds=body.max_rounds,
                 selected_paths=body.selected_paths,
+                allowed_paths=body.allowed_paths,
                 apply_changes=body.apply_changes,
             )
             append_audit("code_workspace_agent_draft", {

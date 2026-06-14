@@ -138,7 +138,7 @@ $output.ScrollBars = "Vertical"
 $output.ReadOnly = $true
 $output.Font = New-Object System.Drawing.Font("Consolas", 9)
 $output.Anchor = "Top,Bottom,Left,Right"
-$output.SetBounds(16, 154, 710, 306)
+$output.SetBounds(16, 194, 710, 266)
 $form.Controls.Add($output)
 
 $buttons = New-Object System.Collections.ArrayList
@@ -227,8 +227,14 @@ $logFolder = New-Button "Open Logs" 256 116 { Open-LocalPath (Join-Path $Root "l
 $checklist = New-Button "Checklist" 376 116 { Open-LocalPath (Join-Path $Root "docs\release-checklist.md") "release-checklist.md was not found." }
 $smoke = New-Button "Offline Smoke" 496 116 { Run-Script "Offline Smoke" (Join-Path $Root "ci\fresh-machine-offline-smoke.ps1") @("-SkipRestart") }
 $readme = New-Button "README" 616 116 { Open-LocalPath (Join-Path $Root "README.md") "README.md was not found." }
+$makeRelease = New-Button "Make Release" 16 156 { Run-Script "Make Release" (Join-Path $Root "scripts\make-release.ps1") @("-SkipBundle", "-SkipInstaller", "-AllowDirty") }
+$freshProof = New-Button "Fresh Proof" 136 156 { Run-Script "Fresh Proof" (Join-Path $Root "ci\fresh-machine-proof.ps1") @("-SkipRestart") }
+$securityScan = New-Button "Security Scan" 256 156 { Run-Script "Security Scan" (Join-Path $Root "scripts\run-static-security.ps1") @("-WarnOnly") }
+$releaseFolder = New-Button "Release Folder" 376 156 { Open-LocalPath (Join-Path $Root "dist\release-candidates") "No release candidate folder found yet." }
+$sbom = New-Button "SBOM" 496 156 { Run-Script "SBOM" (Join-Path $Root "scripts\generate-sbom.ps1") @("-SkipDocker") }
+$proofFolder = New-Button "Proofs" 616 156 { Open-LocalPath (Join-Path $Root "dist") "dist folder not found yet." }
 
-@($start, $stop, $restart, $status, $doctor, $logs, $setup, $bundle, $logFolder, $checklist, $smoke, $readme) | ForEach-Object {
+@($start, $stop, $restart, $status, $doctor, $logs, $setup, $bundle, $logFolder, $checklist, $smoke, $readme, $makeRelease, $freshProof, $securityScan, $releaseFolder, $sbom, $proofFolder) | ForEach-Object {
     [void]$buttons.Add($_)
     $form.Controls.Add($_)
 }

@@ -32,6 +32,7 @@ MAX_AGENT_FILES = 12
 MAX_AGENT_FILE_BYTES = 20_000
 MAX_AGENT_TREE_ENTRIES = 600
 WORKER_POLL_SECONDS = 0.2
+MAX_ALLOWED_PREFIXES = 24
 
 SKIP_DIRS = {
     ".git",
@@ -164,6 +165,65 @@ def _safe_path(workspace: Path, rel_path: str = "") -> Path:
     if target != workspace and workspace not in target.parents:
         raise CodeWorkspaceError("Path escaped workspace")
     return target
+
+
+def _normalize_allowed_paths(allowed_paths: Iterable[str] | None = None) -> list[str]:
+    out: list[str] = []
+    for raw in list(allowed_paths or [])[:MAX_ALLOWED_PREFIXES]:
+        value = (raw or "").strip().replace("\\", "/").strip("/")
+        if not value:
+            continue
+        parts = _path_parts(value)
+        if "\x00" in value or _is_absolute_like(value) or ".." in parts or ".git" in parts:
+            raise CodeWorkspaceError("Invalid allowed path prefix")
+        normalized = "/".join(parts)
+        if normalized and normalized not in out:
+            out.append(normalized)
+    return out
+
+
+def _is_allowed_path(rel_path: str, allowed_paths: Iterable[str] | None = None) -> bool:
+    allowed = _normalize_allowed_paths(allowed_paths)
+    if not allowed:
+        return True
+    rel = "/".join(_path_parts(rel_path))
+    return any(rel == prefix or rel.startswith(prefix + "/") for prefix in allowed)
+
+
+def _require_allowed_path(rel_path: str, allowed_paths: Iterable[str] | None = None) -> None:
+    if not _is_allowed_path(rel_path, allowed_paths):
+        raise CodeWorkspaceError(f"Path is outside the workspace allowlist: {rel_path}")
+
+
+def _diff_paths(diff: str) -> list[str]:
+    paths: list[str] = []
+    for line in (diff or "").splitlines():
+        candidates: list[str] = []
+        if line.startswith("diff --git "):
+            parts = line.split()
+            candidates.extend(parts[2:4])
+        elif line.startswith(("--- ", "+++ ")):
+            candidates.append(line[4:].strip().split("\t", 1)[0])
+        for item in candidates:
+            value = item.strip().strip('"')
+            if not value or value == "/dev/null":
+                continue
+            if value.startswith(("a/", "b/")):
+                value = value[2:]
+            if value and value not in paths:
+                paths.append(value)
+    return paths
+
+
+def _require_diff_allowed(diff: str, allowed_paths: Iterable[str] | None = None) -> None:
+    allowed = _normalize_allowed_paths(allowed_paths)
+    if not allowed:
+        return
+    paths = _diff_paths(diff)
+    if not paths:
+        raise CodeWorkspaceError("Could not identify patch paths for allowlist enforcement")
+    for rel in paths:
+        _require_allowed_path(rel, allowed)
 
 
 def _path_parts(raw_path: str) -> list[str]:
@@ -623,9 +683,10 @@ def read_file(workspace_id: str, rel_path: str, *, owner: str = "", root: str | 
     return {"path": path.relative_to(workspace).as_posix(), "content": content, "size": len(content)}
 
 
-def write_file(workspace_id: str, rel_path: str, content: str, *, owner: str = "", root: str | Path | None = None) -> dict[str, Any]:
+def write_file(workspace_id: str, rel_path: str, content: str, *, owner: str = "", root: str | Path | None = None, allowed_paths: Iterable[str] | None = None) -> dict[str, Any]:
     if len(content.encode("utf-8")) > MAX_FILE_BYTES:
         raise CodeWorkspaceError(f"File exceeds {MAX_FILE_BYTES} byte write limit")
+    _require_allowed_path(rel_path, allowed_paths)
     workspace, _ = _require_workspace(workspace_id, owner=owner, root=root)
     path = _safe_path(workspace, rel_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -634,9 +695,10 @@ def write_file(workspace_id: str, rel_path: str, content: str, *, owner: str = "
     return {"path": path.relative_to(workspace).as_posix(), "size": len(content), "exit_code": 0}
 
 
-def apply_unified_diff(workspace_id: str, diff: str, *, owner: str = "", root: str | Path | None = None) -> dict[str, Any]:
+def apply_unified_diff(workspace_id: str, diff: str, *, owner: str = "", root: str | Path | None = None, allowed_paths: Iterable[str] | None = None) -> dict[str, Any]:
     if len(diff.encode("utf-8")) > MAX_PATCH_BYTES:
         raise CodeWorkspaceError("Patch is too large")
+    _require_diff_allowed(diff, allowed_paths)
     workspace, _ = _require_workspace(workspace_id, owner=owner, root=root)
     check = _run(["git", "apply", "--check", "--whitespace=nowarn"], workspace, input_text=diff, timeout=30)
     if check["exit_code"] != 0:

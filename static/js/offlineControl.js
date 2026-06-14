@@ -73,8 +73,11 @@ function ensureStyles() {
     .offline-backup-step strong{display:block;margin-bottom:3px;}
     .offline-model-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;}
     .offline-model-actions .offline-btn{min-height:28px;font-size:11px;padding:0 8px;}
+    .offline-lifecycle-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px;}
+    .offline-lifecycle-card{border:1px solid var(--border);border-radius:8px;padding:10px;background:color-mix(in srgb,var(--panel) 66%,transparent);font-size:12px;line-height:1.35;}
+    .offline-lifecycle-card strong{display:block;margin-bottom:4px;color:#67e8f9;}
     @media(max-width:820px){.offline-grid,.offline-two,.offline-mini-checks,.offline-readiness{grid-template-columns:1fr}.offline-check{grid-template-columns:1fr}.offline-control-body{overflow:auto}.offline-shell{height:auto;min-height:680px}}
-    @media(max-width:820px){.offline-backup-actions,.offline-backup-actions.import,.offline-backup-steps{grid-template-columns:1fr}}
+    @media(max-width:820px){.offline-backup-actions,.offline-backup-actions.import,.offline-backup-steps,.offline-lifecycle-grid{grid-template-columns:1fr}}
   `;
   document.head.appendChild(style);
 }
@@ -115,6 +118,7 @@ function renderTabs() {
     ['audit', 'Audit'],
     ['help', 'Help'],
     ['backups', 'Backups'],
+    ['lifecycle', 'Lifecycle'],
     ['about', 'About'],
   ];
   return `
@@ -201,7 +205,7 @@ function renderModels() {
       <div class="offline-card-value">${selectedRec ? esc(selectedRec.model) : 'Unknown'}</div>
       <div class="offline-card-note">${_detectedGpuGb == null ? 'GPU memory not detected yet.' : esc(_detectedGpuGb + ' GB GPU VRAM detected')} &middot; quality profile: ${esc(selectedRec?.quality_profile || 'General')} &middot; primary: ${esc(_primaryModel || 'not set')}.</div>
       <div class="offline-pre" style="margin-top:8px;max-height:96px;">${esc(selectedRec?.auto_setup_command || selectedRec?.auto_prep_command || '.\\Cleverly.ps1 setup -AllowConnectedPrep')}</div>
-      <div class="offline-model-actions"><button class="offline-btn primary" data-primary-model="${esc(selectedRec?.model || '')}">Make Recommended Primary</button><button class="offline-btn" data-fill-model="${esc(selectedRec?.model || '')}">Use Recommended Tag</button></div>
+      <div class="offline-model-actions"><button class="offline-btn primary" id="offline-pick-best-model">Pick Best Model</button><button class="offline-btn" id="offline-verify-primary">Verify Primary</button><button class="offline-btn primary" data-primary-model="${esc(selectedRec?.model || '')}">Make Recommended Primary</button><button class="offline-btn" data-fill-model="${esc(selectedRec?.model || '')}">Use Recommended Tag</button></div>
     </div>
     <table class="offline-table" style="margin-bottom:12px;">
       <thead><tr><th>Tier</th><th>Model</th><th>Best For</th><th>Manual Setup</th></tr></thead>
@@ -230,6 +234,7 @@ function renderModels() {
       <thead><tr><th>Name</th><th>Path / Model ID</th><th>Size</th><th>Use</th></tr></thead>
       <tbody>${modelRows || '<tr><td colspan="4" style="opacity:.65">No local model files found yet.</td></tr>'}</tbody>
     </table>
+    <pre class="offline-pre" id="offline-model-output" style="margin-top:12px;"></pre>
   `;
 }
 
@@ -318,6 +323,34 @@ function renderBackups() {
   `;
 }
 
+function renderLifecycle() {
+  const storage = _status?.storage || {};
+  const sealed = storage.sealed ? 'Verified' : 'Review';
+  return `
+    <div class="offline-lifecycle-grid">
+      <div class="offline-lifecycle-card"><strong>1. Export</strong>Create an encrypted backup only when data should leave sealed storage.</div>
+      <div class="offline-lifecycle-card"><strong>2. Test Restore</strong>Use Backups -> Test Restore to decrypt and inspect sections without importing.</div>
+      <div class="offline-lifecycle-card"><strong>3. Verify Storage</strong>Current sealed-storage state: ${esc(sealed)}.</div>
+      <div class="offline-lifecycle-card"><strong>4. Wipe</strong>Use Settings Admin Danger Zone for intentional category wipes.</div>
+    </div>
+    <div class="offline-card">
+      <div class="offline-card-title">Sensitive Data Lifecycle</div>
+      <div class="offline-card-note">Destructive wipes stay behind admin confirmation in Settings. This panel keeps export, restore drill, and storage verification together.</div>
+      <div class="offline-model-actions">
+        <button class="offline-btn primary" id="offline-lifecycle-backups">Open Backups</button>
+        <button class="offline-btn" id="offline-lifecycle-report">Export Assurance Report</button>
+        <button class="offline-btn" id="offline-lifecycle-settings">Open Admin Settings</button>
+      </div>
+      <pre class="offline-pre" style="margin-top:10px;">Default data mode: ${esc(storage.mode || 'unknown')}
+Data path: ${esc(storage.paths?.data_dir || storage.data_dir || '')}
+Host data intentional: ${storage.host_data_enabled ? 'yes' : 'no'}
+Backup export: encrypted before download
+Restore drill: decrypts without importing
+Wipe controls: admin-only category confirmation</pre>
+    </div>
+  `;
+}
+
 function renderAbout() {
   const about = _about || {};
   const notices = about.notice_files || [];
@@ -354,7 +387,8 @@ function render() {
         : _tab === 'audit' ? renderAudit()
           : _tab === 'help' ? renderHelp()
             : _tab === 'backups' ? renderBackups()
-              : renderAbout();
+              : _tab === 'lifecycle' ? renderLifecycle()
+                : renderAbout();
   host.innerHTML = `<div class="offline-shell">${renderTabs()}<section class="offline-panel">${panel}</section></div>`;
   wireRendered();
 }
@@ -416,6 +450,21 @@ async function setPrimaryModel(model) {
   _primaryModel = data.primary_model || tag;
   uiModule.showToast(`Primary model set: ${_primaryModel}`);
   await scanModels();
+}
+
+async function pickBestModel() {
+  const data = await api('/models/primary/auto', { method: 'POST', body: JSON.stringify({}) });
+  _primaryModel = data.primary_model || '';
+  uiModule.showToast(`Best model selected: ${_primaryModel}`);
+  await scanModels();
+}
+
+async function verifyPrimaryModel() {
+  const data = await api('/models/primary/verify');
+  const message = `${data.detail}\nLocal models scanned: ${data.local_model_count}`;
+  const out = el('offline-model-output') || el('offline-backup-output');
+  if (out) out.textContent = message;
+  uiModule.showToast(data.loaded ? `Primary model found: ${data.primary_model}` : data.detail, data.loaded ? 'success' : 'warning');
 }
 
 function downloadText(filename, text) {
@@ -534,6 +583,8 @@ function wireRendered() {
   el('offline-scan-models')?.addEventListener('click', guarded(scanModels));
   el('offline-register-model')?.addEventListener('click', guarded(registerModel));
   el('offline-run-benchmark')?.addEventListener('click', guarded(runBenchmark));
+  el('offline-pick-best-model')?.addEventListener('click', guarded(pickBestModel));
+  el('offline-verify-primary')?.addEventListener('click', guarded(verifyPrimaryModel));
   document.querySelectorAll('[data-fill-model]').forEach(btn => {
     btn.addEventListener('click', () => {
       const value = btn.getAttribute('data-fill-model') || '';
@@ -556,6 +607,9 @@ function wireRendered() {
   });
   el('offline-test-restore')?.addEventListener('click', guarded(() => importEncrypted(true)));
   el('offline-import-encrypted')?.addEventListener('click', guarded(() => importEncrypted(false)));
+  el('offline-lifecycle-backups')?.addEventListener('click', () => { _tab = 'backups'; render(); });
+  el('offline-lifecycle-report')?.addEventListener('click', guarded(() => exportReport('html')));
+  el('offline-lifecycle-settings')?.addEventListener('click', () => document.getElementById('settings-btn')?.click());
   el('offline-refresh-about')?.addEventListener('click', guarded(refreshAbout));
 }
 

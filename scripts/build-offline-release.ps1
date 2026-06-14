@@ -103,6 +103,11 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "SBOM generation failed" }
     }
 
+    Invoke-Step "Static security checks" {
+        & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\run-static-security.ps1") -ReportPath (Join-Path $ReleaseFullPath "static-security.json")
+        if ($LASTEXITCODE -ne 0) { throw "static security checks failed" }
+    }
+
     Invoke-Step "No-network container smoke" {
         & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "ci\no-network-container-smoke.ps1") -Image $Image
         if ($LASTEXITCODE -ne 0) { throw "no-network container smoke failed" }
@@ -156,6 +161,7 @@ try {
         reports = @(
             "cleverly-sbom.json",
             "cleverly-sbom.json.sha256",
+            "static-security.json",
             "no-network-container-smoke.json",
             "checksums.sha256"
         )

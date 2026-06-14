@@ -5,22 +5,40 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: no-network-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: pwsh
 
 jobs:
   no-network-container-smoke:
+    name: No-network container smoke
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       - name: Run no-network container smoke
-        shell: pwsh
         run: ./ci/no-network-container-smoke.ps1 -Image cleverly:ci-no-network -ContainerName cleverly-no-network-smoke
 
       - name: Upload no-network report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: no-network-container-smoke
           path: dist/no-network-container-smoke.json
+          if-no-files-found: error
+          retention-days: 14

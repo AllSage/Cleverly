@@ -4,6 +4,7 @@ import uiModule from './ui.js';
 const API = '/api/code-workspaces';
 const MODAL_ID = 'code-workspace-modal';
 const SAFETY_STORAGE_KEY = 'cleverly-code-workspace-safety';
+const ALLOWLIST_STORAGE_KEY = 'cleverly-code-workspace-allowlist';
 
 let _open = false;
 let _selected = '';
@@ -19,6 +20,7 @@ let _snapshots = [];
 let _lastRunPassed = false;
 let _lastRunCommand = '';
 let _safetyLevel = localStorage.getItem(SAFETY_STORAGE_KEY) || 'apply-tests';
+let _allowedPaths = localStorage.getItem(ALLOWLIST_STORAGE_KEY) || '';
 
 function el(id) { return document.getElementById(id); }
 function esc(s) { return uiModule.esc(s == null ? '' : String(s)); }
@@ -146,6 +148,11 @@ function renderShell() {
           <div class="code-ws-safety" id="code-ws-safety-note"></div>
         </div>
         <div class="code-ws-head" style="display:block;">
+          <label for="code-ws-allowlist" style="display:block;font-size:11px;font-weight:800;margin-bottom:5px;">Allowed Paths</label>
+          <input class="code-ws-input" id="code-ws-allowlist" placeholder="Optional: src, tests, README.md" style="width:100%;">
+          <div class="code-ws-safety"><strong>Path Guardrail</strong><span>Comma-separated prefixes limit Save, Apply, validation, and agent changes. Leave blank to allow the whole workspace.</span></div>
+        </div>
+        <div class="code-ws-head" style="display:block;">
           <textarea class="code-ws-task" id="code-ws-agent-task" placeholder="Ask the coding agent to change this repo."></textarea>
           <div class="code-ws-toolbar" style="margin-top:6px;">
             <button class="code-ws-btn primary" id="code-ws-agent-run">Draft Diff</button>
@@ -252,6 +259,24 @@ function setSafetyLevel(value) {
   _safetyLevel = next;
   localStorage.setItem(SAFETY_STORAGE_KEY, next);
   syncSafetyControls();
+}
+
+function allowedPathList() {
+  return (_allowedPaths || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean)
+    .slice(0, 24);
+}
+
+function syncAllowlistControl() {
+  const input = el('code-ws-allowlist');
+  if (input) input.value = _allowedPaths;
+}
+
+function setAllowedPaths(value) {
+  _allowedPaths = value || '';
+  localStorage.setItem(ALLOWLIST_STORAGE_KEY, _allowedPaths);
 }
 
 function renderReviewGate() {
@@ -455,7 +480,7 @@ async function saveFile() {
   const content = el('code-ws-editor')?.value || '';
   const data = await api(`/${encodeURIComponent(_selected)}/file`, {
     method: 'PUT',
-    body: JSON.stringify({ path: _currentFile, content }),
+    body: JSON.stringify({ path: _currentFile, content, allowed_paths: allowedPathList() }),
   });
   markWorkspaceDirty();
   setOutput(`Saved ${data.path}`);
@@ -478,7 +503,7 @@ async function applyPatch() {
     setOutput('Validating manual diff on a temporary snapshot before apply...');
     validation = await api(`/${encodeURIComponent(_selected)}/validate-diff`, {
       method: 'POST',
-      body: JSON.stringify({ diff, test_command: command }),
+      body: JSON.stringify({ diff, test_command: command, allowed_paths: allowedPathList() }),
     });
     if (!validation.valid) {
       const test = validation.test || {};
@@ -514,7 +539,7 @@ async function applyPatch() {
   });
   const data = await api(`/${encodeURIComponent(_selected)}/patch`, {
     method: 'POST',
-    body: JSON.stringify({ diff }),
+    body: JSON.stringify({ diff, allowed_paths: allowedPathList() }),
   });
   if (validation?.valid) {
     _lastRunPassed = true;
@@ -552,7 +577,7 @@ async function applyProposedDiff() {
   });
   const data = await api(`/${encodeURIComponent(_selected)}/patch`, {
     method: 'POST',
-    body: JSON.stringify({ diff: _pendingDiff }),
+    body: JSON.stringify({ diff: _pendingDiff, allowed_paths: allowedPathList() }),
   });
   _lastRunPassed = true;
   _lastRunCommand = _pendingValidation?.test?.command || (el('code-ws-command')?.value || '').trim();
@@ -583,7 +608,7 @@ async function validateProposedDiff() {
   setOutput('Validating proposed diff on a temporary snapshot...');
   const data = await api(`/${encodeURIComponent(_selected)}/validate-diff`, {
     method: 'POST',
-    body: JSON.stringify({ diff: _pendingDiff, test_command: command }),
+    body: JSON.stringify({ diff: _pendingDiff, test_command: command, allowed_paths: allowedPathList() }),
   });
   _pendingValidation = data;
   _pendingTestPassed = !!data.valid;
@@ -628,6 +653,7 @@ async function runAgent() {
       test_command: testCommand.trim(),
       max_rounds: 2,
       selected_paths: _currentFile ? [_currentFile] : [],
+      allowed_paths: allowedPathList(),
       apply_changes: false,
     }),
   });
@@ -835,6 +861,7 @@ function wireControls() {
     setOutput(value.trim() ? `Saved model key: ${value.trim()}` : 'Cleared model key.');
   }));
   el('code-ws-safety-level')?.addEventListener('change', e => setSafetyLevel(e.target.value || 'apply-tests'));
+  el('code-ws-allowlist')?.addEventListener('input', e => setAllowedPaths(e.target.value || ''));
   el('code-ws-save-file')?.addEventListener('click', guarded(saveFile));
   el('code-ws-apply-patch')?.addEventListener('click', guarded(applyPatch));
   el('code-ws-run')?.addEventListener('click', guarded(runCommand));
@@ -866,6 +893,7 @@ function wireControls() {
   el('code-ws-diff')?.addEventListener('click', guarded(showDiff));
   el('code-ws-commit')?.addEventListener('click', guarded(commit));
   syncSafetyControls();
+  syncAllowlistControl();
 }
 
 function wireModal() {

@@ -9,6 +9,7 @@ import socket
 import subprocess
 import sys
 import html
+import hashlib
 import time
 import uuid
 from datetime import datetime
@@ -208,6 +209,34 @@ def _write_primary_model_manifest(model: str, source: str, detected_gpu_gb: floa
     tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     tmp.replace(path)
     return payload
+
+
+def _verify_primary_model_loaded() -> dict[str, Any]:
+    manifest = _read_primary_model_manifest()
+    primary = str(manifest.get("primary_model") or "").strip()
+    models = _scan_local_models()
+    matches = []
+    if primary:
+        needle = primary.lower()
+        for item in models:
+            values = [
+                str(item.get("model_id") or ""),
+                str(item.get("name") or ""),
+                str(item.get("path") or ""),
+            ]
+            if any(needle == value.lower() or needle in value.lower() for value in values if value):
+                matches.append(item)
+    return {
+        "primary_model": primary,
+        "loaded": bool(primary and matches),
+        "matches": matches,
+        "local_model_count": len(models),
+        "detail": (
+            f"Primary model {primary} was found in local model scan."
+            if primary and matches
+            else ("No primary model is set." if not primary else f"Primary model {primary} was not found in local model scan.")
+        ),
+    }
 
 
 def _detected_gpu_gb() -> float:
@@ -565,7 +594,7 @@ def _status_payload(request: Request) -> dict[str, Any]:
 def _report_payload(request: Request) -> dict[str, Any]:
     status = _status_payload(request)
     root = _repo_root()
-    return {
+    payload = {
         "ok": True,
         "generated_at": datetime.now().isoformat(),
         "product": "Cleverly",
@@ -580,6 +609,11 @@ def _report_payload(request: Request) -> dict[str, Any]:
             "Run Test No Internet and keep this report.",
         ],
     }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    digest = hashlib.sha256(canonical).hexdigest()
+    payload["report_hash"] = digest
+    payload["signature"] = f"sha256:{digest}"
+    return payload
 
 
 def _html_report(report: dict[str, Any]) -> str:
@@ -597,6 +631,7 @@ def _html_report(report: dict[str, Any]) -> str:
 <html lang="en"><head><meta charset="utf-8"><title>Cleverly Offline Report</title>
 <style>body{{font:14px/1.45 system-ui,sans-serif;background:#101216;color:#eef1f5;margin:24px}}table{{border-collapse:collapse;width:100%;margin:14px 0}}td,th{{border:1px solid #2a2f38;padding:8px;text-align:left;vertical-align:top}}.score{{font-size:42px;font-weight:800}}</style></head>
 <body><h1>Cleverly Offline Report</h1><p>Generated: {html.escape(str(report.get('generated_at','')))}</p>
+<p>Report hash: <code>{html.escape(str(report.get('signature','')))}</code></p>
 <div class="score">{html.escape(str(readiness.get('score','?')))}%</div><p>{html.escape(str(readiness.get('label','')))}</p>
 <h2>Readiness Checks</h2><table><thead><tr><th>Status</th><th>Check</th><th>Detail</th></tr></thead><tbody>{rows}</tbody></table>
 <h2>Recent Audit</h2><table><thead><tr><th>Time</th><th>Action</th><th>Detail</th></tr></thead><tbody>{audit_rows}</tbody></table>
@@ -730,6 +765,27 @@ def setup_offline_control_routes() -> APIRouter:
         save_settings(settings)
         append_audit("primary_model_selected", manifest, user=get_current_user(request) or "")
         return {"ok": True, "manifest": manifest, "primary_model": manifest["primary_model"]}
+
+    @router.post("/models/primary/auto")
+    def set_auto_primary_model(request: Request):
+        detected_gpu_gb = _detected_gpu_gb()
+        selected = _model_profile_for_gpu(detected_gpu_gb)
+        manifest = _write_primary_model_manifest(selected["model"], "auto hardware profile", detected_gpu_gb)
+        settings = load_settings()
+        settings["default_model"] = selected["model"]
+        save_settings(settings)
+        append_audit("primary_model_auto_selected", manifest, user=get_current_user(request) or "")
+        return {"ok": True, "manifest": manifest, "selected_profile": selected, "primary_model": manifest["primary_model"]}
+
+    @router.get("/models/primary/verify")
+    def verify_primary_model(request: Request):
+        result = _verify_primary_model_loaded()
+        append_audit("primary_model_verified", {
+            "primary_model": result["primary_model"],
+            "loaded": result["loaded"],
+            "local_model_count": result["local_model_count"],
+        }, user=get_current_user(request) or "")
+        return {"ok": True, **result}
 
     @router.get("/models/recommendations")
     def model_recommendations():

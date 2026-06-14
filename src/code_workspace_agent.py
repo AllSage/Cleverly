@@ -231,6 +231,7 @@ async def run_agent(
     test_command: str = "",
     max_rounds: int = 2,
     selected_paths: list[str] | None = None,
+    allowed_paths: list[str] | None = None,
     apply_changes: bool = False,
     root=None,
 ) -> dict[str, Any]:
@@ -241,8 +242,12 @@ async def run_agent(
     url, model, headers = resolve_model_key(key, owner=owner)
 
     snapshot = code_workspace.create_snapshot(workspace_id, "Before agent run", owner=owner, root=root)
-    listing = _repo_listing(workspace_id, owner, root=root)
-    paths = list(selected_paths or [])
+    allowed = code_workspace._normalize_allowed_paths(allowed_paths)
+    listing = [
+        row for row in _repo_listing(workspace_id, owner, root=root)
+        if code_workspace._is_allowed_path(row.get("path", ""), allowed)
+    ]
+    paths = [path for path in list(selected_paths or []) if code_workspace._is_allowed_path(path, allowed)]
     plan = ""
     if not paths:
         try:
@@ -287,7 +292,7 @@ async def run_agent(
             final_diff = diff
             steps.append({"phase": "draft", "round": round_no, "exit_code": 0})
             break
-        patch_result = code_workspace.apply_unified_diff(workspace_id, diff, owner=owner, root=root)
+        patch_result = code_workspace.apply_unified_diff(workspace_id, diff, owner=owner, root=root, allowed_paths=allowed)
         steps.append({"phase": "patch", "round": round_no, "exit_code": patch_result.get("exit_code"), "stderr": patch_result.get("stderr", "")})
         if patch_result.get("exit_code") != 0:
             prior = patch_result.get("stderr") or patch_result.get("stdout") or "Patch failed"
@@ -312,6 +317,7 @@ async def run_agent(
         "plan": plan,
         "snapshot": snapshot,
         "selected_paths": [f["path"] for f in files],
+        "allowed_paths": allowed,
         "proposed_diff": final_diff if not apply_changes else "",
         "applied_diff": final_diff if apply_changes else "",
         "test_result": test_result,

@@ -84,6 +84,24 @@ def test_code_workspace_applies_unified_diff(tmp_path):
     assert cw.read_file(meta["id"], "app.txt", owner="alice", root=tmp_path)["content"] == "new\n"
 
 
+@pytest.mark.skipif(not GIT_AVAILABLE, reason="git is required for patch application")
+def test_code_workspace_allowed_paths_gate_writes_and_patches(tmp_path):
+    meta = cw.create_workspace("Allowlist Demo", owner="alice", root=tmp_path)
+    cw.write_file(meta["id"], "src/app.txt", "old\n", owner="alice", root=tmp_path, allowed_paths=["src"])
+
+    with pytest.raises(cw.CodeWorkspaceError, match="allowlist"):
+        cw.write_file(meta["id"], "docs/readme.md", "x\n", owner="alice", root=tmp_path, allowed_paths=["src"])
+
+    diff = """diff --git a/docs/readme.md b/docs/readme.md
+--- a/docs/readme.md
++++ b/docs/readme.md
+@@ -0,0 +1 @@
++x
+"""
+    with pytest.raises(cw.CodeWorkspaceError, match="allowlist"):
+        cw.apply_unified_diff(meta["id"], diff, owner="alice", root=tmp_path, allowed_paths=["src"])
+
+
 def test_code_workspace_imports_archive_without_network(tmp_path):
     archive = tmp_path / "repo.zip"
     with zipfile.ZipFile(archive, "w") as zf:
@@ -178,6 +196,8 @@ def test_code_workspace_is_wired_as_admin_only_offline_tool():
     assert "code-ws-agent-run" in ui_js
     assert "code-ws-apply-proposed" in ui_js
     assert "ValidateDiffRequest" in routes
+    assert "allowed_paths" in routes
+    assert "MAX_ALLOWED_PREFIXES" in ui_js or "allowed_paths" in ui_js
     assert '@router.post("/{workspace_id}/validate-diff")' in routes
     assert "Before proposed diff validation" in routes
     assert "code_workspace_diff_validated" in routes
@@ -192,7 +212,10 @@ def test_code_workspace_is_wired_as_admin_only_offline_tool():
     assert "Resolve the pending proposed diff before committing." in ui_js
     assert "code-ws-bottom-actions" in ui_js
     assert "cleverly-code-workspace-safety" in ui_js
+    assert "cleverly-code-workspace-allowlist" in ui_js
     assert "code-ws-safety-level" in ui_js
+    assert "code-ws-allowlist" in ui_js
+    assert "allowed_paths" in ui_js
     assert "Review Only safety level blocks file writes." in ui_js
     assert "Apply With Tests requires a test command before manual diff apply." in ui_js
     assert "Switch Safety Level to Commit Allowed before committing." in ui_js

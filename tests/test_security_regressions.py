@@ -277,6 +277,14 @@ def test_offline_control_center_is_admin_gated_and_local_only():
     assert "welcome-readiness" in index_html
     assert "/api/backup/encrypted/export" in ui_js
     assert "/api/backup/encrypted/import" in ui_js
+    assert "hashlib.sha256" in route
+    assert "report_hash" in route
+    assert "signature" in route
+    assert "sha256:" in route
+    assert "Lifecycle" in ui_js
+    assert "Sensitive Data Lifecycle" in ui_js
+    assert "offline-lifecycle-grid" in ui_js
+    assert "Open Admin Settings" in ui_js
     assert "/models/recommendations" in setup_js
     assert "/egress-test" in setup_js
     assert 'placeholder="Model tag you pulled"' in setup_js
@@ -382,11 +390,18 @@ def test_model_onboarding_uses_explicit_offline_model_recommendations():
     assert "quality_profile" in route
     assert "SetPrimaryModelRequest" in route
     assert '@router.post("/models/primary")' in route
+    assert '@router.post("/models/primary/auto")' in route
+    assert '@router.get("/models/primary/verify")' in route
+    assert "_verify_primary_model_loaded" in route
     assert "_write_primary_model_manifest" in route
     assert "Quality profile" in setup_js
     assert "offline-model-profile" in offline_js
     assert "data-primary-model" in offline_js
     assert "Make Primary" in offline_js
+    assert "Pick Best Model" in offline_js
+    assert "Verify Primary" in offline_js
+    assert "/models/primary/auto" in offline_js
+    assert "/models/primary/verify" in offline_js
     assert "/models/primary" in offline_js
     assert "Get-DetectedGpuGb" in launcher
     assert "Get-ModelProfileForGpuGb" in launcher
@@ -404,6 +419,8 @@ def test_model_onboarding_uses_explicit_offline_model_recommendations():
     assert ".\\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen3-coder:30b" in doc
     assert ".\\Cleverly.ps1 prep -AllowConnectedPrep -Model llama3.2:3b" in doc
     assert "Make Primary" in doc
+    assert "Pick Best Model" in doc
+    assert "Verify Primary" in doc
     assert "Do not run model pulls on the" in doc
     assert "Code Workspace model key is blank by default" in doc
     assert "auto-pick from" in readme
@@ -460,6 +477,11 @@ def test_windows_installer_signing_path_requires_release_signature():
     assert "Open Logs" in launcher_gui
     assert "release-checklist.md" in launcher_gui
     assert "fresh-machine-offline-smoke.ps1" in launcher_gui
+    assert "make-release.ps1" in launcher_gui
+    assert "fresh-machine-proof.ps1" in launcher_gui
+    assert "run-static-security.ps1" in launcher_gui
+    assert "Make Release" in launcher_gui
+    assert "Fresh Proof" in launcher_gui
     assert "Open Bundle" in doc
     assert "Windows Installer" in readme
 
@@ -468,7 +490,10 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     smoke = Path("ci/fresh-machine-offline-smoke.ps1").read_text(encoding="utf-8")
     ci_smoke = Path("ci/no-network-container-smoke.ps1").read_text(encoding="utf-8")
     release_script = Path("scripts/build-offline-release.ps1").read_text(encoding="utf-8")
+    make_release = Path("scripts/make-release.ps1").read_text(encoding="utf-8")
     sbom_script = Path("scripts/generate-sbom.ps1").read_text(encoding="utf-8")
+    static_security = Path("scripts/run-static-security.ps1").read_text(encoding="utf-8")
+    proof_script = Path("ci/fresh-machine-proof.ps1").read_text(encoding="utf-8")
     workflow = Path(".github/workflows/no-network-smoke.yml").read_text(encoding="utf-8")
     smoke_doc = Path("docs/fresh-machine-offline-test.md").read_text(encoding="utf-8")
     offline_release = Path("docs/offline-release.md").read_text(encoding="utf-8")
@@ -502,6 +527,7 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "actions/upload-artifact@v4" in workflow
     assert "dist/no-network-container-smoke.json" in workflow
     assert "scripts\\generate-sbom.ps1" in release_script
+    assert "scripts\\run-static-security.ps1" in release_script
     assert "ci\\no-network-container-smoke.ps1" in release_script
     assert "release-manifest.json" in release_script
     assert "checksums.sha256" in release_script
@@ -513,9 +539,21 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "package-lock.json" in sbom_script
     assert "docker image inspect" in sbom_script
     assert "cleverly-sbom.json.sha256" in sbom_script
+    assert "build-offline-release.ps1" in make_release
+    assert "RELEASE-CANDIDATE.txt" in make_release
+    assert "Compress-Archive" in make_release
+    assert "Working tree is not clean" in make_release
+    assert "hardcoded-secret-like-value" in static_security
+    assert "offline-surface-external-url" in static_security
+    assert "static-security.json" in static_security
+    assert "fresh-machine-proof.json" in proof_script
+    assert "fresh-machine-proof.json.sha256" in proof_script
+    assert "pull_policy: never" in proof_script
+    assert "fresh-machine-offline-smoke.ps1" in proof_script
     assert "Fresh Machine Offline Test" in smoke_doc
     assert "does not need internet access" in smoke_doc
     assert "Docker runtime metadata" in smoke_doc
+    assert "fresh-machine-proof.json.sha256" in smoke_doc
     assert "qwen2.5:7b" not in offline_release
     assert ".\\Cleverly.ps1 bundle -AllowConnectedPrep -GpuGB 24" in offline_release
     assert "release-checklist.md" in offline_release
@@ -524,6 +562,8 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "Required Release Gates" in review
     assert "ci/no-network-container-smoke.ps1" in review
     assert "scripts/generate-sbom.ps1" in review
+    assert "scripts/run-static-security.ps1" in review
+    assert "ci/fresh-machine-proof.ps1" in review
     assert "Encrypted backup **Test Restore**" in review
     assert "Windows installer is Authenticode-signed" in review
     assert "Cleverly Release Checklist" in release
@@ -534,12 +574,19 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "ci/no-network-container-smoke.ps1" in release
     assert "scripts/build-offline-release.ps1" in release
     assert "scripts/generate-sbom.ps1" in release
+    assert "scripts/make-release.ps1" in release
+    assert "scripts/run-static-security.ps1" in release
+    assert "ci/fresh-machine-proof.ps1" in release
     assert "Test Restore" in release
     assert "Safety Level" in release
+    assert "Allowed Paths" in release
     assert "docs/release-checklist.md" in readme
     assert "Sensitive Machine Checklist" in readme
     assert "scripts\\build-offline-release.ps1" in readme
     assert "scripts\\generate-sbom.ps1" in readme
+    assert "scripts\\make-release.ps1" in readme
+    assert "scripts\\run-static-security.ps1" in readme
+    assert "fresh-machine-proof.ps1" in readme
     assert "fresh-machine-offline-smoke.ps1" in readme
     assert "docs/security-review.md" in security
     assert "docs/windows-installer.md" in security
@@ -591,7 +638,7 @@ def test_recent_tool_surfaces_opt_out_of_global_button_height():
         (offline_js, ".offline-tab{height:auto!important"),
         (offline_js, ".offline-btn{height:auto!important"),
         (offline_js, ".offline-backup-actions{display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) auto;gap:8px;align-items:stretch;}"),
-        (offline_js, "@media(max-width:820px){.offline-backup-actions,.offline-backup-actions.import,.offline-backup-steps{grid-template-columns:1fr}}"),
+        (offline_js, "@media(max-width:820px){.offline-backup-actions,.offline-backup-actions.import,.offline-backup-steps,.offline-lifecycle-grid{grid-template-columns:1fr}}"),
         (code_js, ".code-ws-item{width:100%;height:auto!important"),
         (code_js, ".code-ws-btn{height:auto!important"),
         (code_js, ".code-ws-archive-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;}"),
