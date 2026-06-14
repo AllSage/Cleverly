@@ -80,13 +80,15 @@ try {
         "2. Run load-cleverly.cmd from the bundle when present.",
         "3. Run seal-data.cmd when prepared data/model files are included.",
         "4. Run powershell -NoLogo -NoProfile -File .\ci\fresh-machine-proof.ps1.",
-        "5. Keep fresh-machine-proof.json with this release."
+        "5. Open release-dashboard.html and review all evidence.",
+        "6. Keep fresh-machine-proof.json, model-integrity.json, SBOM, static-security report, and checksums with this release.",
+        "7. Create or verify the annotated release tag with scripts\create-release-tag.ps1."
     ) | Set-Content -LiteralPath $notePath -Encoding UTF8
 
     if ($Zip) {
         $zipPath = Join-Path $releaseRoot "$Version.zip"
         if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
-        Compress-Archive -LiteralPath (Join-Path $releaseDir "*") -DestinationPath $zipPath -Force
+        Compress-Archive -Path (Join-Path $releaseDir "*") -DestinationPath $zipPath -Force
         Write-Host ("Release candidate zip: " + $zipPath) -ForegroundColor Green
     }
 

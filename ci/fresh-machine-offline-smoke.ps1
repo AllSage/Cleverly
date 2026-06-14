@@ -157,6 +157,32 @@ try {
     } else {
         Add-Result "egress" "ok" "app container could not reach 1.1.1.1:80"
     }
+
+    $ErrorActionPreference = "Continue"
+    try {
+        & docker exec cleverly python -c "import socket; socket.getaddrinfo('example.com', 80)" *> $null
+        $dnsExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $oldErrorActionPreference
+    }
+    if ($dnsExitCode -eq 0) {
+        Add-Result "dns-leak" "fail" "app container resolved example.com"
+    } else {
+        Add-Result "dns-leak" "ok" "app container could not resolve example.com"
+    }
+
+    $ErrorActionPreference = "Continue"
+    try {
+        & docker exec cleverly python -c "import socket; socket.create_connection(('example.com', 443), 3)" *> $null
+        $httpsExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $oldErrorActionPreference
+    }
+    if ($httpsExitCode -eq 0) {
+        Add-Result "https-egress" "fail" "app container reached example.com:443"
+    } else {
+        Add-Result "https-egress" "ok" "app container could not reach example.com:443"
+    }
 } finally {
     Pop-Location
 }

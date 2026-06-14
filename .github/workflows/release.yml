@@ -1,0 +1,107 @@
+name: Release Artifacts
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release or release-candidate label"
+        required: true
+        default: "manual-rc"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-artifacts-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  release-artifacts:
+    name: Release artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          npm ci
+
+      - name: Build release evidence
+        run: |
+          ./scripts/build-offline-release.ps1 -SkipBundle -SkipInstaller -Image cleverly:release-ci
+          ./scripts/write-release-dashboard.ps1 -ReleaseDir dist/release
+
+      - name: Package release evidence
+        run: |
+          $version = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "${{ inputs.version }}" } else { "${{ github.ref_name }}" }
+          $safeVersion = $version -replace '[^A-Za-z0-9._-]', '-'
+          $zip = "dist/cleverly-release-$safeVersion.zip"
+          if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+          Compress-Archive -Path dist/release/* -DestinationPath $zip -Force
+          "RELEASE_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Attest release archive
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: ${{ env.RELEASE_ZIP }}
+
+      - name: Attest SBOM
+        uses: actions/attest-sbom@10926c72720ffc3f7b666661c8e55b1344e2a365 # v2
+        with:
+          subject-path: ${{ env.RELEASE_ZIP }}
+          sbom-path: dist/release/cleverly-sbom.json
+
+      - name: Upload release evidence artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cleverly-release-evidence
+          path: |
+            ${{ env.RELEASE_ZIP }}
+            dist/release/release-manifest.json
+            dist/release/release-dashboard.html
+            dist/release/release-dashboard.json
+            dist/release/checksums.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "${{ env.RELEASE_ZIP }}" `
+            "dist/release/checksums.sha256" `
+            "dist/release/release-dashboard.html" `
+            "dist/release/release-dashboard.json" `
+            --title "Cleverly ${{ github.ref_name }}" `
+            --notes "Automated release evidence for ${{ github.sha }}. Build offline model bundles and signed installers on the connected release workstation before sensitive-machine deployment." `
+            --verify-tag

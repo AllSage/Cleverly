@@ -276,7 +276,8 @@ client data:
 
 See [docs/release-checklist.md](docs/release-checklist.md),
 [docs/fresh-machine-offline-test.md](docs/fresh-machine-offline-test.md), and
-[docs/security-review.md](docs/security-review.md).
+[docs/security-review.md](docs/security-review.md). For the exact security
+boundary, read [docs/threat-model.md](docs/threat-model.md).
 
 ### Offline Release Build
 
@@ -294,6 +295,11 @@ For a named release-candidate folder with a target-machine proof note:
 powershell -ExecutionPolicy Bypass -File .\scripts\make-release.ps1 -Version 1.0.0-rc1 -Model qwen3-coder:30b -RequireSignature -Zip
 ```
 
+The release wrapper writes `release-manifest.json`, `checksums.sha256`,
+`cleverly-sbom.json`, `static-security.json`, `model-integrity.json`,
+`release-dashboard.html`, `release-dashboard.json`, and no-network smoke
+evidence into the release folder.
+
 For dependency-only review, run:
 
 ```powershell
@@ -305,6 +311,40 @@ For local static-security checks that do not contact advisory services:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-static-security.ps1
 ```
+
+For model release evidence:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\write-model-integrity.ps1 -Model qwen3-coder:30b -ExpectedGpuGB 24
+```
+
+To create an annotated release-candidate tag:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\create-release-tag.ps1 -Version v0.1.0-rc1 -Push
+```
+
+### Pipeline And Branch Protection
+
+GitHub Actions includes:
+
+- **Cleverly CI**: Python tests, JavaScript syntax checks, PowerShell parser
+  checks, Docker Compose validation, static security scan, and no-network
+  container smoke.
+- **Security Analysis**: CodeQL plus Dependency Review on pull requests.
+- **Release Artifacts**: tag/manual release evidence build, release dashboard,
+  SBOM/model/security reports, artifact upload, and GitHub artifact
+  attestations.
+
+After pushing the workflows, configure branch protection from an authenticated
+GitHub admin shell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\configure-branch-protection.ps1
+```
+
+Use `-RequirePullRequest` when you want `main` to accept only reviewed pull
+requests.
 
 ### Windows Installer
 

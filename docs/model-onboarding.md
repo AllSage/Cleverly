@@ -73,6 +73,20 @@ To override the hardware profile with an exact tag:
 The launcher records the selected tag in `data/cleverly-primary-model.json`
 and writes it into the offline bundle so startup does not guess.
 
+Before shipping a release, write a model integrity manifest:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\write-model-integrity.ps1 `
+  -Model qwen3-coder:30b `
+  -SourceUrl https://ollama.com/library/qwen3-coder `
+  -ExpectedSize 19GB `
+  -ExpectedGpuGB 24
+```
+
+If you have a local model directory available, pass `-ModelPath` to hash the
+files. Without `-ModelPath`, the manifest is marked `metadata-only`; this is
+still useful for release review, but it is not a byte-for-byte model proof.
+
 Offline Control can also mark a discovered or recommended model as primary with
 **Make Primary**. That writes the same primary-model manifest and updates the
 default local model setting.

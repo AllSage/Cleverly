@@ -40,6 +40,10 @@ powershell -ExecutionPolicy Bypass -File .\ci\fresh-machine-proof.ps1
 It writes `dist\fresh-machine-proof.json` and
 `dist\fresh-machine-proof.json.sha256`.
 
+The smoke test checks loopback binding, Docker hardening, raw TCP egress,
+external DNS resolution, and HTTPS egress from the app container. Any successful
+external DNS or HTTPS connection is a failed sensitive-machine proof.
+
 ## What It Checks
 
 - Docker is available.

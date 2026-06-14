@@ -8,6 +8,8 @@ onboarding, Code Workspace, backup/export, launcher, and offline operator flows.
 Reviewer: internal project review. This is a formal internal review artifact,
 not an independent third-party penetration test.
 
+Canonical threat model: [threat-model.md](threat-model.md).
+
 ## Security Objective
 
 Cleverly is intended to run as a private local AI workspace. The hardened target
@@ -118,14 +120,23 @@ Before declaring a sensitive-machine release ready:
 
 - Full test suite passes.
 - `node --check` passes for changed frontend modules.
+- GitHub Actions **Cleverly CI** passes on the release commit.
+- GitHub CodeQL and Dependency Review are enabled for repository changes.
+- Branch protection requires the release-readiness status checks before merge.
 - Docker image builds successfully.
 - `scripts/generate-sbom.ps1` produces a reviewed SBOM and checksum.
 - `scripts/run-static-security.ps1` produces a reviewed local static-security
   report without contacting external advisory services.
+- `scripts/write-model-integrity.ps1` produces a model manifest for the
+  selected primary model.
 - `ci/no-network-container-smoke.ps1` passes and produces a local report.
 - Fresh-machine offline smoke test passes on the target class of computer.
 - `ci/fresh-machine-proof.ps1` passes on the target machine and its proof hash
   is retained with the release.
+- `scripts/write-release-dashboard.ps1` produces `release-dashboard.html` and
+  `release-dashboard.json`.
+- Release tags are annotated and release artifacts are attached with GitHub
+  artifact attestations where hosted release workflow support is available.
 - Offline Control reports zero failed checks.
 - Egress proof reports outbound TCP blocked.
 - The selected local model is marked primary before bundle export.

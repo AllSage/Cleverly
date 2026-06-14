@@ -6,11 +6,30 @@ machine. Keep the generated reports with the release artifact.
 ## Source State
 
 - Confirm the branch is correct and the git working tree is clean.
+- Confirm the release commit has a passing **Cleverly CI** workflow.
+- Confirm **Security Analysis** has run CodeQL on the release commit.
+- Confirm branch protection is enabled for `main` with required status checks.
 - Confirm license notices and `/licenses` upstream notices are present.
 - Confirm README, SECURITY, model onboarding, and offline release docs match
   the release behavior.
 - Confirm the root `LICENSE` and bundled notices have not been rewritten
   accidentally.
+- Confirm [threat-model.md](threat-model.md) still matches the release.
+
+## Hosted Pipeline
+
+- Keep `.github/workflows/ci.yml`, `.github/workflows/security.yml`, and
+  `.github/workflows/release.yml` enabled.
+- Use `scripts/configure-branch-protection.ps1` from an authenticated GitHub
+  admin shell to require the release-readiness checks:
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\scripts\configure-branch-protection.ps1
+  ```
+
+- For a stricter team workflow, add `-RequirePullRequest`.
+- Do not put signing certificates, model files, or private release data in
+  GitHub Actions logs or artifacts.
 
 ## Local Verification
 
@@ -32,6 +51,10 @@ Use `scripts/build-offline-release.ps1` for the full release wrapper,
 - Generate the local SBOM with `scripts/generate-sbom.ps1` and keep
   `dist\sbom\cleverly-sbom.json` plus `cleverly-sbom.json.sha256`.
 - Run `scripts/run-static-security.ps1` and keep `static-security.json`.
+- Run `scripts/write-model-integrity.ps1` or confirm the release wrapper wrote
+  `model-integrity.json`.
+- Run `scripts/write-release-dashboard.ps1` or confirm the release wrapper
+  wrote `release-dashboard.html` and `release-dashboard.json`.
 
 ## No-Network Gates
 
@@ -52,7 +75,8 @@ Use `scripts/build-offline-release.ps1` for the full release wrapper,
 - Choose the model from the hardware quality profile table in
   `docs/model-onboarding.md`.
 - Pull models only on a connected, non-sensitive prep machine.
-- Record the selected primary model in the bundle manifest.
+- Record the selected primary model in the bundle manifest and
+  `model-integrity.json`.
 - In Offline Control, confirm the intended model is marked **primary** or use
   **Make Primary** before exporting the bundle.
 - Confirm sealed Docker data mode is the default startup path.
@@ -78,12 +102,18 @@ Use `scripts/build-offline-release.ps1` for the full release wrapper,
 - Build the installer with `scripts/build-windows-installer.ps1`.
 - For release distribution, pass `-RequireSignature`.
 - Verify Authenticode signature status is valid.
+- Re-check the output with `scripts/verify-windows-installer-signature.ps1
+  -RequireTrusted`.
 - Save checksums and the installer-generated release checklist.
 
 ## Final Packaging
 
+- Create an annotated release tag with `scripts/create-release-tag.ps1`.
 - Save Docker images with the launcher bundle or documented manual process.
 - Include load, seal, start, and README helper files in the offline bundle.
+- Include `release-dashboard.html`, `release-dashboard.json`,
+  `model-integrity.json`, SBOM, static-security report, no-network smoke report,
+  fresh-machine proof report, and checksums.
 - Copy artifacts by trusted removable media only.
 - On the offline target, run load, seal, start, Offline Control, and smoke
   checks before importing sensitive data.

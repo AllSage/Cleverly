@@ -493,14 +493,26 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     make_release = Path("scripts/make-release.ps1").read_text(encoding="utf-8")
     sbom_script = Path("scripts/generate-sbom.ps1").read_text(encoding="utf-8")
     static_security = Path("scripts/run-static-security.ps1").read_text(encoding="utf-8")
+    model_integrity = Path("scripts/write-model-integrity.ps1").read_text(encoding="utf-8")
+    release_dashboard = Path("scripts/write-release-dashboard.ps1").read_text(encoding="utf-8")
+    tag_script = Path("scripts/create-release-tag.ps1").read_text(encoding="utf-8")
+    branch_protection = Path("scripts/configure-branch-protection.ps1").read_text(encoding="utf-8")
+    signature_verify = Path("scripts/verify-windows-installer-signature.ps1").read_text(encoding="utf-8")
     proof_script = Path("ci/fresh-machine-proof.ps1").read_text(encoding="utf-8")
     workflow = Path(".github/workflows/no-network-smoke.yml").read_text(encoding="utf-8")
+    full_ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    security_workflow = Path(".github/workflows/security.yml").read_text(encoding="utf-8")
+    release_workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    dependabot = Path(".github/dependabot.yml").read_text(encoding="utf-8")
     smoke_doc = Path("docs/fresh-machine-offline-test.md").read_text(encoding="utf-8")
     offline_release = Path("docs/offline-release.md").read_text(encoding="utf-8")
     review = Path("docs/security-review.md").read_text(encoding="utf-8")
     release = Path("docs/release-checklist.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     security = Path("SECURITY.md").read_text(encoding="utf-8")
+    threat = Path("docs/threat-model.md").read_text(encoding="utf-8")
+    installer_doc = Path("docs/windows-installer.md").read_text(encoding="utf-8")
+    model_doc = Path("docs/model-onboarding.md").read_text(encoding="utf-8")
 
     assert "fresh-machine-offline-smoke.json" in smoke
     assert "Cleverly.ps1" in smoke
@@ -514,6 +526,10 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "CapDrop" in smoke
     assert "docker version --format" in smoke
     assert "socket.create_connection(('1.1.1.1', 80), 3)" in smoke
+    assert "socket.getaddrinfo('example.com', 80)" in smoke
+    assert "socket.create_connection(('example.com', 443), 3)" in smoke
+    assert "dns-leak" in smoke
+    assert "https-egress" in smoke
     assert "127\\.0\\.0\\.1:{0}" in smoke
     assert "no-network-container-smoke.json" in ci_smoke
     assert "docker build --pull=false" in ci_smoke
@@ -524,13 +540,42 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "CLEVERLY_OFFLINE=0" in ci_smoke
     assert "expected 64" in ci_smoke
     assert "No-Network Container Smoke" in workflow
-    assert "actions/upload-artifact@v4" in workflow
+    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in workflow
     assert "dist/no-network-container-smoke.json" in workflow
+    assert "Cleverly CI" in full_ci
+    assert "Release readiness" in full_ci
+    assert "python -m pytest -q" in full_ci
+    assert "node --check" in full_ci
+    assert "[System.Management.Automation.Language.Parser]::ParseFile" in full_ci
+    assert "docker compose config" in full_ci
+    assert "run-static-security.ps1" in full_ci
+    assert "no-network-container-smoke.ps1" in full_ci
+    assert "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065" in full_ci
+    assert "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020" in full_ci
+    assert "persist-credentials: false" in full_ci
+    assert "Security Analysis" in security_workflow
+    assert "github/codeql-action/init@b0c4fd77f6c559021d78430ec4d0d169ae74a4eb" in security_workflow
+    assert "dependency-review-action@281a49d4cbb0a72c9575a50d18f6deb515a11deb" in security_workflow
+    assert "fail-on-severity: high" in security_workflow
+    assert "Release Artifacts" in release_workflow
+    assert "id-token: write" in release_workflow
+    assert "attestations: write" in release_workflow
+    assert "actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45" in release_workflow
+    assert "actions/attest-sbom@10926c72720ffc3f7b666661c8e55b1344e2a365" in release_workflow
+    assert "gh release create" in release_workflow
+    assert "github-actions" in dependabot
+    assert "package-ecosystem: \"pip\"" in dependabot
+    assert "package-ecosystem: \"npm\"" in dependabot
     assert "scripts\\generate-sbom.ps1" in release_script
     assert "scripts\\run-static-security.ps1" in release_script
+    assert "scripts\\write-model-integrity.ps1" in release_script
+    assert "scripts\\write-release-dashboard.ps1" in release_script
     assert "ci\\no-network-container-smoke.ps1" in release_script
     assert "release-manifest.json" in release_script
     assert "checksums.sha256" in release_script
+    assert "model-integrity.json" in release_script
+    assert "release-dashboard.html" in release_script
+    assert "release-dashboard.json" in release_script
     assert "Cleverly.ps1" in release_script
     assert "node --check" in release_script
     assert "pytest -q" in release_script
@@ -546,6 +591,24 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "hardcoded-secret-like-value" in static_security
     assert "offline-surface-external-url" in static_security
     assert "static-security.json" in static_security
+    assert "verification_state" in model_integrity
+    assert "metadata-only" in model_integrity
+    assert "Get-FileHash" in model_integrity
+    assert "release-dashboard.html" in release_dashboard
+    assert "release-dashboard.json" in release_dashboard
+    assert "Static Security" in release_dashboard
+    assert "No-Network Smoke" in release_dashboard
+    assert "Model Integrity" in release_dashboard
+    assert "git tag -a" in tag_script
+    assert "git push origin $Version" in tag_script
+    assert "Working tree is not clean" in tag_script
+    assert "required_status_checks" in branch_protection
+    assert "Release readiness" in branch_protection
+    assert "No-network container smoke" in branch_protection
+    assert "CodeQL" in branch_protection
+    assert "gh api --method PUT" in branch_protection
+    assert "Get-AuthenticodeSignature" in signature_verify
+    assert "RequireTrusted" in signature_verify
     assert "fresh-machine-proof.json" in proof_script
     assert "fresh-machine-proof.json.sha256" in proof_script
     assert "pull_policy: never" in proof_script
@@ -554,19 +617,30 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "does not need internet access" in smoke_doc
     assert "Docker runtime metadata" in smoke_doc
     assert "fresh-machine-proof.json.sha256" in smoke_doc
+    assert "external DNS resolution" in smoke_doc
+    assert "HTTPS egress" in smoke_doc
     assert "qwen2.5:7b" not in offline_release
     assert ".\\Cleverly.ps1 bundle -AllowConnectedPrep -GpuGB 24" in offline_release
     assert "release-checklist.md" in offline_release
     assert "formal internal review" in review
     assert "not an independent third-party penetration test" in review
+    assert "threat-model.md" in review
     assert "Required Release Gates" in review
+    assert "Cleverly CI" in review
+    assert "CodeQL" in review
+    assert "Dependency Review" in review
+    assert "Branch protection" in review
     assert "ci/no-network-container-smoke.ps1" in review
     assert "scripts/generate-sbom.ps1" in review
     assert "scripts/run-static-security.ps1" in review
+    assert "scripts/write-model-integrity.ps1" in review
+    assert "scripts/write-release-dashboard.ps1" in review
     assert "ci/fresh-machine-proof.ps1" in review
     assert "Encrypted backup **Test Restore**" in review
     assert "Windows installer is Authenticode-signed" in review
     assert "Cleverly Release Checklist" in release
+    assert "Hosted Pipeline" in release
+    assert "configure-branch-protection.ps1" in release
     assert "No-Network Gates" in release
     assert "Code Workspace" in release
     assert "AuthentiCode" not in release
@@ -576,7 +650,13 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "scripts/generate-sbom.ps1" in release
     assert "scripts/make-release.ps1" in release
     assert "scripts/run-static-security.ps1" in release
+    assert "scripts/write-model-integrity.ps1" in release
+    assert "scripts/write-release-dashboard.ps1" in release
+    assert "scripts/create-release-tag.ps1" in release
+    assert "scripts/verify-windows-installer-signature.ps1" in release
     assert "ci/fresh-machine-proof.ps1" in release
+    assert "model-integrity.json" in release
+    assert "release-dashboard.html" in release
     assert "Test Restore" in release
     assert "Safety Level" in release
     assert "Allowed Paths" in release
@@ -586,10 +666,21 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "scripts\\generate-sbom.ps1" in readme
     assert "scripts\\make-release.ps1" in readme
     assert "scripts\\run-static-security.ps1" in readme
+    assert "scripts\\write-model-integrity.ps1" in readme
+    assert "scripts\\create-release-tag.ps1" in readme
+    assert "scripts\\configure-branch-protection.ps1" in readme
+    assert "release-dashboard.html" in readme
+    assert "Cleverly CI" in readme
     assert "fresh-machine-proof.ps1" in readme
     assert "fresh-machine-offline-smoke.ps1" in readme
+    assert "docs/threat-model.md" in security
     assert "docs/security-review.md" in security
     assert "docs/windows-installer.md" in security
+    assert "Protected Assets" in threat
+    assert "Out-Of-Scope Threats" in threat
+    assert "Required Operator Proof" in threat
+    assert "verify-windows-installer-signature.ps1" in installer_doc
+    assert "write-model-integrity.ps1" in model_doc
 
 
 def test_focus_cards_are_local_waiting_ui_only():

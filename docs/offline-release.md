@@ -6,7 +6,8 @@ services run on an internal Docker network, and only a local proxy is published
 on `127.0.0.1:${APP_PORT:-7000}`.
 
 For release sign-off, use this runbook with
-[release-checklist.md](release-checklist.md).
+[release-checklist.md](release-checklist.md) and keep the generated
+`release-dashboard.html` with the release folder.
 
 ## What Offline Mode Changes
 
@@ -76,6 +77,7 @@ OLLAMA_MODEL=qwen3-coder:30b docker compose --env-file .env \
 ```
 
 Set `OLLAMA_MODEL` to the exact tag you want as the primary offline model.
+Record that tag in `model-integrity.json` before shipping the release.
 Cleverly will register `http://ollama:11434/v1` and make the selected model the
 default when no default model is already configured.
 

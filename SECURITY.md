@@ -29,6 +29,8 @@ Security fixes are handled on the default branch until formal releases are cut.
 - Use [docs/fresh-machine-offline-test.md](docs/fresh-machine-offline-test.md)
   and [docs/security-review.md](docs/security-review.md) as release gates for
   sensitive-machine installs.
+- Review [docs/threat-model.md](docs/threat-model.md) before using Cleverly on
+  a machine that cannot leak data.
 - Release Windows installers should be Authenticode-signed; see
   [docs/windows-installer.md](docs/windows-installer.md).
 

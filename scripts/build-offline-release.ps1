@@ -108,6 +108,16 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "static security checks failed" }
     }
 
+    Invoke-Step "Model integrity manifest" {
+        $args = @(
+            "-OutputPath", (Join-Path $ReleaseFullPath "model-integrity.json")
+        )
+        if ($Model) { $args += @("-Model", $Model) }
+        if ($GpuGB -ge 0) { $args += @("-ExpectedGpuGB", ([string]$GpuGB)) }
+        & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\write-model-integrity.ps1") @args
+        if ($LASTEXITCODE -ne 0) { throw "model integrity manifest failed" }
+    }
+
     Invoke-Step "No-network container smoke" {
         & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "ci\no-network-container-smoke.ps1") -Image $Image
         if ($LASTEXITCODE -ne 0) { throw "no-network container smoke failed" }
@@ -162,12 +172,22 @@ try {
             "cleverly-sbom.json",
             "cleverly-sbom.json.sha256",
             "static-security.json",
+            "model-integrity.json",
+            "model-integrity.json.sha256",
             "no-network-container-smoke.json",
+            "release-dashboard.html",
+            "release-dashboard.json",
             "checksums.sha256"
         )
     }
     $manifestPath = Join-Path $ReleaseFullPath "release-manifest.json"
     $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+    $checksumPath = Write-Checksums -Path $ReleaseFullPath
+
+    Invoke-Step "Release dashboard" {
+        & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\write-release-dashboard.ps1") -ReleaseDir $ReleaseFullPath
+        if ($LASTEXITCODE -ne 0) { throw "release dashboard failed" }
+    }
     $checksumPath = Write-Checksums -Path $ReleaseFullPath
 
     Write-Host ("Release manifest: " + $manifestPath) -ForegroundColor Green

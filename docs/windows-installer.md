@@ -33,6 +33,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 `
 `-RequireSignature` refuses to produce a release artifact unless signing
 succeeds and `Get-AuthenticodeSignature` reports `Valid`.
 
+After the build, verify the installer again:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-windows-installer-signature.ps1 `
+  -Path .\dist\installer\CleverlySetup-1.0.0.exe `
+  -RequireTrusted
+```
+
 The build script writes a release checklist next to the installer by default.
 Keep that checklist with the release artifact after completing the offline smoke
 test, Offline Control no-internet proof, and report export.
