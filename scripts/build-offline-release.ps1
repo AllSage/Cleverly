@@ -55,6 +55,15 @@ function Get-PythonExe {
     return "python"
 }
 
+function Get-PowerShellExe {
+    foreach ($candidate in @("powershell", "pwsh")) {
+        if (Get-Command $candidate -ErrorAction SilentlyContinue) {
+            return $candidate
+        }
+    }
+    throw "PowerShell executable not found"
+}
+
 function Write-Checksums {
     param([string]$Path)
     $checksumPath = Join-Path $ReleaseFullPath "checksums.sha256"
@@ -76,6 +85,7 @@ function Write-Checksums {
 
 Push-Location $Root
 try {
+    $PowerShellExe = Get-PowerShellExe
     New-Item -ItemType Directory -Force -Path $ReleaseFullPath | Out-Null
 
     if (-not $SkipTests) {
@@ -99,12 +109,12 @@ try {
     }
 
     Invoke-Step "Local SBOM" {
-        & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\generate-sbom.ps1") -OutputPath (Join-Path $ReleaseFullPath "cleverly-sbom.json")
+        & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\generate-sbom.ps1") -OutputPath (Join-Path $ReleaseFullPath "cleverly-sbom.json")
         if ($LASTEXITCODE -ne 0) { throw "SBOM generation failed" }
     }
 
     Invoke-Step "Static security checks" {
-        & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\run-static-security.ps1") -ReportPath (Join-Path $ReleaseFullPath "static-security.json")
+        & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\run-static-security.ps1") -ReportPath (Join-Path $ReleaseFullPath "static-security.json")
         if ($LASTEXITCODE -ne 0) { throw "static security checks failed" }
     }
 
@@ -114,12 +124,12 @@ try {
         )
         if ($Model) { $args += @("-Model", $Model) }
         if ($GpuGB -ge 0) { $args += @("-ExpectedGpuGB", ([string]$GpuGB)) }
-        & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\write-model-integrity.ps1") @args
+        & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\write-model-integrity.ps1") @args
         if ($LASTEXITCODE -ne 0) { throw "model integrity manifest failed" }
     }
 
     Invoke-Step "No-network container smoke" {
-        & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "ci\no-network-container-smoke.ps1") -Image $Image
+        & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "ci\no-network-container-smoke.ps1") -Image $Image
         if ($LASTEXITCODE -ne 0) { throw "no-network container smoke failed" }
         $smoke = Join-Path $Root "dist\no-network-container-smoke.json"
         if (Test-Path -LiteralPath $smoke) {
@@ -133,7 +143,7 @@ try {
             if ($FineTune) { $args += "-FineTune" }
             if ($Model) { $args += @("-Model", $Model) }
             if ($GpuGB -ge 0) { $args += @("-GpuGB", ([string]$GpuGB)) }
-            & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "Cleverly.ps1") @args
+            & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "Cleverly.ps1") @args
             if ($LASTEXITCODE -ne 0) { throw "bundle failed" }
             if (Test-Path -LiteralPath $BundleFullPath) {
                 Copy-Item -LiteralPath $BundleFullPath -Destination (Join-Path $ReleaseFullPath "cleverly-offline-bundle") -Recurse -Force
@@ -146,7 +156,7 @@ try {
             $args = @()
             if ($RequireSignature) { $args += "-RequireSignature" }
             if ($CertificatePath) { $args += @("-CertificatePath", $CertificatePath) }
-            & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\build-windows-installer.ps1") @args
+            & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\build-windows-installer.ps1") @args
             if ($LASTEXITCODE -ne 0) { throw "installer build failed" }
             $installerOut = Join-Path $Root "dist\installer"
             if (Test-Path -LiteralPath $installerOut) {
@@ -185,7 +195,7 @@ try {
     $checksumPath = Write-Checksums -Path $ReleaseFullPath
 
     Invoke-Step "Release dashboard" {
-        & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\write-release-dashboard.ps1") -ReleaseDir $ReleaseFullPath
+        & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\write-release-dashboard.ps1") -ReleaseDir $ReleaseFullPath
         if ($LASTEXITCODE -ne 0) { throw "release dashboard failed" }
     }
     $checksumPath = Write-Checksums -Path $ReleaseFullPath

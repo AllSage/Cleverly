@@ -567,6 +567,8 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "package-ecosystem: \"pip\"" in dependabot
     assert "package-ecosystem: \"npm\"" in dependabot
     assert "scripts\\generate-sbom.ps1" in release_script
+    assert "Get-PowerShellExe" in release_script
+    assert '"pwsh"' in release_script
     assert "scripts\\run-static-security.ps1" in release_script
     assert "scripts\\write-model-integrity.ps1" in release_script
     assert "scripts\\write-release-dashboard.ps1" in release_script
@@ -585,6 +587,7 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "docker image inspect" in sbom_script
     assert "cleverly-sbom.json.sha256" in sbom_script
     assert "build-offline-release.ps1" in make_release
+    assert "Get-PowerShellExe" in make_release
     assert "RELEASE-CANDIDATE.txt" in make_release
     assert "Compress-Archive" in make_release
     assert "Working tree is not clean" in make_release
