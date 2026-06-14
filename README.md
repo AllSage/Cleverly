@@ -14,6 +14,7 @@ It runs on your hardware, with your data.
 - **Chat**: local models and API providers, including Ollama, OpenAI-compatible endpoints, OpenRouter, and OpenAI.
 - **Agent tools**: MCP, web, files, shell, skills, memory, and task workflows.
 - **Code Workspace**: import a local repo archive, edit files, apply diffs, run offline test/build commands, inspect git status/diff, and commit changes inside the sealed Docker data volume.
+- **Agent Loops**: bundled offline workflow templates for tests, builds, security checks, docs sync, model onboarding, and release smoke runs.
 - **Cookbook**: hardware-aware model recommendations, downloads, and serving via vLLM, llama.cpp, and related engines.
 - **Training Lab**: offline-only starter text training with local datasets and saved model artifacts.
 - **Deep Research**: multi-step source gathering and synthesis into visual reports.
@@ -25,30 +26,44 @@ It runs on your hardware, with your data.
 - **Calendar**: local-first calendar with CalDAV sync and `.ics` import/export.
 - **Mobile / PWA**: responsive interface with installable app behavior.
 
+In Docker offline/sealed mode, internet-dependent actions such as web research,
+external model endpoints, Cookbook downloads, email/calendar sync, webhooks, and
+cloud APIs are hidden or blocked unless you intentionally enable break-glass
+network access.
+
 ## Start Here
 
-Pick the path that matches your machine.
+Default behavior:
 
-### Windows Offline App
+- `.\Cleverly.ps1 start` is offline-only. It uses sealed Docker volumes, binds
+  the UI to `127.0.0.1:7000`, and never pulls images or models.
+- `.\Cleverly.ps1 setup -AllowConnectedPrep` is the easiest first-run command
+  for a connected, non-sensitive prep machine. It builds/pulls what is needed,
+  auto-picks a model from detected GPU memory, seals data into Docker volumes,
+  and starts Cleverly.
+- There is no hidden cloud model default. If no model is explicitly set during
+  connected setup, Cleverly chooses a local Ollama model from the hardware table
+  below.
 
-Use this after the Docker images and local model have already been prepared:
+### Easiest Windows Setup
+
+Run this on a connected machine that is allowed to download Docker images and
+the selected local model:
 
 ```powershell
-.\Cleverly.ps1 start -FineTune
+.\Cleverly.ps1 setup -AllowConnectedPrep
 ```
 
-If you did not build the optional fine-tune image, use:
+For a 24GB GPU target, force the hardware tier:
 
 ```powershell
-.\Cleverly.ps1 start
+.\Cleverly.ps1 setup -AllowConnectedPrep -GpuGB 24
 ```
 
-The launcher uses sealed Docker named volumes by default. If you are migrating
-prepared files from `data/` and `logs/`, stop Cleverly and copy them into the
-sealed volumes once:
+For a specific model tag, force the model:
 
 ```powershell
-.\Cleverly.ps1 seal-data -FineTune
+.\Cleverly.ps1 setup -AllowConnectedPrep -Model qwen3-coder:30b
 ```
 
 Open:
@@ -57,9 +72,23 @@ Open:
 http://127.0.0.1:7000
 ```
 
+After setup, normal starts stay offline:
+
+```powershell
+.\Cleverly.ps1 start
+```
+
+If you built the optional fine-tune image, use:
+
+```powershell
+.\Cleverly.ps1 setup -AllowConnectedPrep -FineTune
+.\Cleverly.ps1 start -FineTune
+```
+
 Common commands:
 
 ```powershell
+.\Cleverly.ps1 setup -AllowConnectedPrep
 .\Cleverly.ps1 start
 .\Cleverly.ps1 start -FineTune
 .\Cleverly.ps1 seal-data -FineTune
@@ -80,10 +109,19 @@ Cleverly-App.cmd
 ```
 
 If images or models are missing, run prep on a connected, non-sensitive machine.
-Pick the primary model at creation time:
+By default, connected prep detects the host GPU memory and chooses a matching
+Ollama model profile. CPU-only machines start with the smallest safe local
+model; a 24GB GPU selects the code-focused `qwen3-coder:30b` profile.
 
 ```powershell
-.\Cleverly.ps1 prep -AllowConnectedPrep -Model qwen2.5:7b -FineTune
+.\Cleverly.ps1 prep -AllowConnectedPrep
+```
+
+Use `-GpuGB` to force a hardware tier, or `-Model` to override the auto pick:
+
+```powershell
+.\Cleverly.ps1 prep -AllowConnectedPrep -GpuGB 24
+.\Cleverly.ps1 prep -AllowConnectedPrep -Model gpt-oss:20b
 ```
 
 Then move the prepared images/data to the offline machine and start again.
@@ -91,7 +129,7 @@ Then move the prepared images/data to the offline machine and start again.
 To make that transfer easier, build a portable offline bundle:
 
 ```powershell
-.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen2.5:7b -FineTune
+.\Cleverly.ps1 bundle -AllowConnectedPrep -FineTune
 ```
 
 It writes `dist\cleverly-offline-bundle`. Copy that folder to the offline
@@ -152,6 +190,10 @@ cleverly-ollama
 
 Use this after images and model data have already been built or loaded:
 
+For manual Compose starts, set `OLLAMA_MODEL=<prepared tag>` in `.env` first.
+The `Cleverly.ps1` launcher sets this automatically from `-Model` or from the
+saved primary-model manifest created during prep.
+
 ```bash
 docker compose --env-file .env \
   -f docker-compose.yml \
@@ -188,14 +230,20 @@ To check a local install without downloading anything:
 
 ### Choose And Pull A Local Model
 
-Run this only on a connected prep machine. The starter example uses
-`qwen2.5:7b`; set `OLLAMA_MODEL` to the exact Ollama tag you want to carry
-offline. With the launcher, pass `-Model` explicitly:
-`.\Cleverly.ps1 prep -AllowConnectedPrep -Model <tag>`.
+Run this only on a connected prep machine. The launcher can auto-pick from
+detected GPU memory:
+
+```powershell
+.\Cleverly.ps1 prep -AllowConnectedPrep
+```
+
+Use `-GpuGB <number>` to force a hardware tier, or pass `-Model <tag>`
+explicitly when you already know the exact Ollama model to carry offline.
+In other words, pass `-Model` only when you want to override the hardware pick.
 
 ```bash
 docker build -f docker/ollama-local.Dockerfile -t cleverly-ollama:local .
-OLLAMA_MODEL=qwen2.5:7b docker compose -f docker-compose.yml -f docker/ollama.yml up -d --build
+OLLAMA_MODEL=qwen3-coder:30b docker compose -f docker-compose.yml -f docker/ollama.yml up -d --build
 ```
 
 This stores Ollama models under `./data/ollama` for transfer. Run
@@ -317,6 +365,12 @@ Use **Code** in the sidebar to work on a complete repo inside Cleverly. Import a
 apply unified diffs, run local test/build commands, inspect git status/diff, and
 commit changes.
 
+Use **Loops** in the sidebar when you want a repeatable local workflow prompt
+for testing, build repair, security review, offline leak checks, docs sync,
+model onboarding, or release smoke testing. Loops are bundled templates only:
+they copy or insert prompts and do not install hooks or contact external
+services.
+
 Code workspaces live under the sealed Docker data volume by default. Network
 fetch/install commands such as `curl`, `wget`, `git pull`, `pip install`, and
 `npm install` are blocked in workspace command runs. Archive imports reject path
@@ -343,9 +397,11 @@ started manually.
 
 ## Docker Notes
 
-Compose starts Cleverly, ChromaDB, SearXNG, ntfy, and the local proxy.
-Cleverly and bundled services run on an internal-only Docker network by
-default. Only the proxy publishes a host port, and it binds to `127.0.0.1`.
+`Cleverly.ps1 start` starts the offline app, bundled Ollama, networkless code
+worker, and local proxy with `--pull never`. Manual full Compose can also start
+ChromaDB, SearXNG, and ntfy when those support images are prepared. Cleverly and
+bundled services run on an internal-only Docker network by default. Only the
+proxy publishes a host port, and it binds to `127.0.0.1`.
 
 The Cleverly service runs as a non-root UID/GID, drops Linux capabilities, uses
 `no-new-privileges`, mounts the application filesystem read-only, and uses tmpfs
@@ -435,6 +491,10 @@ for deployment-level defaults and secrets you want present before first boot.
 | `CLEVERLY_CONTAINER_NAME` | `cleverly` | Main Cleverly Docker container name |
 | `CLEVERLY_PROXY_CONTAINER_NAME` | `cleverly-proxy` | Local proxy Docker container name |
 | `CLEVERLY_OLLAMA_CONTAINER_NAME` | `cleverly-ollama` | Bundled Ollama Docker container name |
+| `OLLAMA_MODEL` | unset | Required for manual bundled-Ollama Compose; the launcher sets it from `-Model` or the saved primary-model manifest |
+| `OLLAMA_IMAGE` | `cleverly-ollama:local` | Bundled Ollama image used by offline startup |
+| `CLEVERLY_AUTO_ADD_OLLAMA` | `1` in Ollama overlays | Auto-register the bundled local Ollama endpoint |
+| `CLEVERLY_OLLAMA_ENDPOINT_NAME` | `Bundled Ollama` | Display name for the auto-registered Ollama endpoint |
 | `PUID` / `PGID` | `1000` / `1000` | UID/GID used by the hardened Docker container |
 | `CLEVERLY_TMPFS_SIZE` | `1g` | Size of the Cleverly `/tmp` tmpfs in Docker |
 | `CLEVERLY_PIDS_LIMIT` | `4096` | Process limit for the Cleverly container |

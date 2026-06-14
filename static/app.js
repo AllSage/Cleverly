@@ -41,6 +41,7 @@ import codeWorkspaceModule from './js/codeWorkspace.js';
 import offlineControlModule from './js/offlineControl.js';
 import setupWizardModule from './js/setupWizard.js';
 import tutorialsModule from './js/tutorials.js';
+import agentLoopsModule from './js/agentLoops.js';
 import groupModule from './js/group.js';
 import * as researchPanelModule from './js/research/panel.js';
 import ttsModule from './js/tts-ai.js';
@@ -59,6 +60,7 @@ window.trainingLabModule = trainingLabModule;
 window.offlineControlModule = offlineControlModule;
 window.setupWizardModule = setupWizardModule;
 window.tutorialsModule = tutorialsModule;
+window.agentLoopsModule = agentLoopsModule;
 
 // Redirect to login on 401 from any fetch
 const _origFetch = window.fetch;
@@ -836,6 +838,17 @@ function initializeEventListeners() {
     });
   }
 
+  const toolAgentLoopsBtn = el('tool-agent-loops-btn');
+  if (toolAgentLoopsBtn) {
+    toolAgentLoopsBtn.addEventListener('click', async () => {
+      if (!agentLoopsModule) return;
+      const Modals = await import('./js/modalManager.js');
+      if (!Modals.toggle('agent-loops-modal')) {
+        agentLoopsModule.open();
+      }
+    });
+  }
+
   const toolCodeWorkspaceBtn = el('tool-code-workspace-btn');
   if (toolCodeWorkspaceBtn) {
     toolCodeWorkspaceBtn.addEventListener('click', async () => {
@@ -1037,6 +1050,7 @@ function initializeEventListeners() {
     '/cookbook': () => document.getElementById('tool-cookbook-btn')?.click(),
     '/training': () => document.getElementById('tool-training-btn')?.click(),
     '/tutorials': () => document.getElementById('tool-tutorials-btn')?.click(),
+    '/loops': () => document.getElementById('tool-agent-loops-btn')?.click(),
     '/code': () => document.getElementById('tool-code-workspace-btn')?.click(),
     '/offline': () => document.getElementById('tool-offline-btn')?.click(),
     '/setup': () => document.getElementById('welcome-setup-btn')?.click(),
@@ -2493,6 +2507,7 @@ function initializeEventListeners() {
     'tool-cookbook':       '#tool-cookbook-btn',
     'tool-training':       '#tool-training-btn',
     'tool-tutorials':      '#tool-tutorials-btn',
+    'tool-agent-loops':    '#tool-agent-loops-btn',
     'tool-code-workspace': '#tool-code-workspace-btn',
     'tool-offline':        '#tool-offline-btn',
     'tool-research':       '#tool-research-btn',
@@ -3598,6 +3613,7 @@ function startCleverlyApp() {
     'rail-cookbook':   'tool-cookbook-btn',
     'rail-training':   'tool-training-btn',
     'rail-tutorials':  'tool-tutorials-btn',
+    'rail-agent-loops':'tool-agent-loops-btn',
     'rail-offline':    'tool-offline-btn',
     'rail-archive':   'tool-library-btn',
     'rail-gallery':   'tool-gallery-btn',

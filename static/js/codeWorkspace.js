@@ -29,6 +29,8 @@ function ensureStyles() {
     .code-ws-editor-grid{grid-template-columns:minmax(210px,260px) 1fr;gap:8px;min-height:0;}
     .code-ws-pane{border:1px solid var(--border);background:color-mix(in srgb,var(--panel) 72%,transparent);border-radius:8px;min-height:0;overflow:hidden;display:flex;flex-direction:column;}
     .code-ws-head{display:flex;gap:6px;align-items:center;padding:8px;border-bottom:1px solid var(--border);}
+    .code-ws-archive-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;}
+    .code-ws-archive-actions .code-ws-btn{width:100%;min-width:0;white-space:normal;text-align:center;}
     .code-ws-list,.code-ws-tree{overflow:auto;padding:6px;min-height:0;}
     .code-ws-item{width:100%;height:auto!important;min-height:32px;margin:0!important;border:0;background:transparent;color:var(--fg);display:flex;gap:6px;align-items:center;text-align:left;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12px;line-height:1.25;}
     .code-ws-item:hover,.code-ws-item.active{background:color-mix(in srgb,var(--accent, #7aa2ff) 18%,transparent);}
@@ -145,7 +147,7 @@ function renderShell() {
             <button class="code-ws-btn" id="code-ws-restore-review">Restore</button>
           </div>
         </div>
-        <div class="code-ws-head">
+        <div class="code-ws-head code-ws-archive-actions">
           <input type="file" id="code-ws-import-file" accept=".zip,.tar,.tgz,.gz" style="display:none">
           <button class="code-ws-btn" id="code-ws-import">Import Archive</button>
           <button class="code-ws-btn" id="code-ws-refresh">Refresh</button>

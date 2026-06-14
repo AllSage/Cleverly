@@ -10,22 +10,24 @@
     - no image pulls during Start
 
   Usage:
+    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 setup -AllowConnectedPrep
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 start
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 stop
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 status
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 doctor
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 logs
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 seal-data -FineTune
-    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 prep -AllowConnectedPrep -Model qwen2.5:7b
-    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen2.5:7b -FineTune
+    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 prep -AllowConnectedPrep
+    powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 bundle -AllowConnectedPrep -FineTune
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 start -FineTune
     powershell -ExecutionPolicy Bypass -File .\Cleverly.ps1 start -FineTune -HostData
 #>
 param(
-    [ValidateSet("start", "stop", "restart", "status", "open", "logs", "prep", "doctor", "bundle", "seal-data")]
+    [ValidateSet("setup", "start", "stop", "restart", "status", "open", "logs", "prep", "doctor", "bundle", "seal-data")]
     [string]$Action = "start",
     [string]$Url = "http://127.0.0.1:7000",
     [string]$Model = "",
+    [double]$GpuGB = -1,
     [string]$BundleDir = "dist\cleverly-offline-bundle",
     [switch]$NoOpen,
     [switch]$AllowConnectedPrep,
@@ -37,6 +39,78 @@ $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
 $PrimaryModelFile = "data\cleverly-primary-model.json"
+$ModelProfiles = @(
+    @{
+        Id = "cpu"
+        Label = "CPU-only safe starter"
+        MinGpuGb = 0.0
+        MaxGpuGb = 4.0
+        Model = "llama3.2:3b"
+        Size = "2.0GB"
+        Hardware = "0-3GB GPU VRAM or CPU-only"
+        BestFor = "Reliable offline startup on CPU-only or very small GPU machines."
+    },
+    @{
+        Id = "gpu-4"
+        Label = "Low VRAM local chat"
+        MinGpuGb = 4.0
+        MaxGpuGb = 8.0
+        Model = "qwen3:4b"
+        Size = "2.5GB"
+        Hardware = "4-7GB GPU VRAM"
+        BestFor = "Better local reasoning than the CPU starter while keeping VRAM headroom."
+    },
+    @{
+        Id = "gpu-8"
+        Label = "Balanced 8GB GPU"
+        MinGpuGb = 8.0
+        MaxGpuGb = 12.0
+        Model = "qwen3:8b"
+        Size = "5.2GB"
+        Hardware = "8-11GB GPU VRAM"
+        BestFor = "General chat, summaries, and modest code tasks on consumer GPUs."
+    },
+    @{
+        Id = "gpu-12"
+        Label = "Stronger local reasoning"
+        MinGpuGb = 12.0
+        MaxGpuGb = 16.0
+        Model = "qwen3:14b"
+        Size = "9.3GB"
+        Hardware = "12-15GB GPU VRAM"
+        BestFor = "Better reasoning and coding when 8B-class models are not enough."
+    },
+    @{
+        Id = "gpu-16"
+        Label = "Local reasoning workstation"
+        MinGpuGb = 16.0
+        MaxGpuGb = 24.0
+        Model = "gpt-oss:20b"
+        Size = "14GB"
+        Hardware = "16-23GB GPU VRAM"
+        BestFor = "Open-weight local reasoning and agent workflows."
+    },
+    @{
+        Id = "gpu-24"
+        Label = "24GB coding workstation"
+        MinGpuGb = 24.0
+        MaxGpuGb = 80.0
+        Model = "qwen3-coder:30b"
+        Size = "19GB"
+        Hardware = "24-79GB GPU VRAM"
+        BestFor = "Best default for local repo editing and Code Workspace on a 24GB GPU."
+    },
+    @{
+        Id = "gpu-80"
+        Label = "80GB reasoning server"
+        MinGpuGb = 80.0
+        MaxGpuGb = -1.0
+        Model = "gpt-oss:120b"
+        Size = "65GB"
+        Hardware = "80GB+ GPU VRAM"
+        BestFor = "Large local reasoning model on workstation/server-class GPU memory."
+    }
+)
 
 function Fail([string]$Message) {
     Write-Host ""
@@ -48,7 +122,7 @@ function Normalize-PrimaryModel([string]$Value) {
     $candidate = ([string]$Value).Trim()
     if (-not $candidate) { return "" }
     if ($candidate.Length -gt 220 -or $candidate -notmatch '^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$') {
-        Fail "Invalid model tag '$candidate'. Use an Ollama model tag such as 'llama3.2:3b', 'qwen2.5:7b', or 'hf.co/org/model:quant'."
+        Fail "Invalid model tag '$candidate'. Use an Ollama model tag such as 'llama3.2:3b', 'qwen3-coder:30b', or 'hf.co/org/model:quant'."
     }
     return $candidate
 }
@@ -80,11 +154,75 @@ function Read-SinglePreparedOllamaModel {
     return Normalize-PrimaryModel ("${modelName}:${tag}")
 }
 
+function Get-DetectedGpuGb {
+    if ($GpuGB -ge 0) { return [math]::Round($GpuGB, 1) }
+    if ($env:CLEVERLY_GPU_GB) {
+        $parsed = 0.0
+        if ([double]::TryParse($env:CLEVERLY_GPU_GB, [ref]$parsed) -and $parsed -ge 0) {
+            return [math]::Round($parsed, 1)
+        }
+    }
+
+    $maxGb = 0.0
+    if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+        $oldPreference = $ErrorActionPreference
+        $ErrorActionPreference = "SilentlyContinue"
+        try {
+            $rows = @(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>$null)
+            if ($LASTEXITCODE -eq 0) {
+                foreach ($row in $rows) {
+                    $mb = 0.0
+                    if ([double]::TryParse(([string]$row).Trim(), [ref]$mb)) {
+                        $gb = $mb / 1024.0
+                        if ($gb -gt $maxGb) { $maxGb = $gb }
+                    }
+                }
+            }
+        } finally {
+            $ErrorActionPreference = $oldPreference
+        }
+    }
+
+    if ($maxGb -le 0 -and (Get-Command Get-CimInstance -ErrorAction SilentlyContinue)) {
+        $oldPreference = $ErrorActionPreference
+        $ErrorActionPreference = "SilentlyContinue"
+        try {
+            $controllers = @(Get-CimInstance Win32_VideoController | Where-Object {
+                $_.AdapterRAM -gt 0 -and $_.Name -notmatch "Basic|Remote|Virtual|DisplayLink"
+            })
+            foreach ($gpu in $controllers) {
+                $gb = [double]$gpu.AdapterRAM / 1GB
+                if ($gb -gt $maxGb) { $maxGb = $gb }
+            }
+        } finally {
+            $ErrorActionPreference = $oldPreference
+        }
+    }
+
+    if ($maxGb -lt 0) { $maxGb = 0 }
+    return [math]::Round($maxGb, 1)
+}
+
+function Get-ModelProfileForGpuGb([double]$DetectedGpuGb) {
+    $gpu = [math]::Max(0.0, $DetectedGpuGb)
+    foreach ($profile in $ModelProfiles) {
+        $min = [double]$profile.MinGpuGb
+        $max = [double]$profile.MaxGpuGb
+        if ($gpu -ge $min -and ($max -lt 0 -or $gpu -lt $max)) {
+            return $profile
+        }
+    }
+    return $ModelProfiles[0]
+}
+
 function Resolve-PrimaryModel([switch]$Require) {
     $explicitModel = Normalize-PrimaryModel $Model
     $envModel = Normalize-PrimaryModel $env:OLLAMA_MODEL
     $savedModel = Read-SavedPrimaryModel
     $singlePreparedModel = Read-SinglePreparedOllamaModel
+    $script:PrimaryModelDetectedGpuGb = $null
+    $script:PrimaryModelProfileId = ""
+    $script:PrimaryModelProfileLabel = ""
 
     if ($explicitModel) {
         $script:PrimaryModelSource = "-Model"
@@ -92,6 +230,14 @@ function Resolve-PrimaryModel([switch]$Require) {
     } elseif ($envModel) {
         $script:PrimaryModelSource = "OLLAMA_MODEL"
         $script:PrimaryModel = $envModel
+    } elseif ($Require -and ($Action -eq "setup" -or $Action -eq "prep" -or $Action -eq "bundle")) {
+        $detectedGpuGb = Get-DetectedGpuGb
+        $profile = Get-ModelProfileForGpuGb $detectedGpuGb
+        $script:PrimaryModelSource = "auto hardware profile"
+        $script:PrimaryModel = Normalize-PrimaryModel ([string]$profile.Model)
+        $script:PrimaryModelDetectedGpuGb = $detectedGpuGb
+        $script:PrimaryModelProfileId = [string]$profile.Id
+        $script:PrimaryModelProfileLabel = [string]$profile.Label
     } elseif ($savedModel) {
         $script:PrimaryModelSource = $PrimaryModelFile
         $script:PrimaryModel = $savedModel
@@ -106,7 +252,7 @@ function Resolve-PrimaryModel([switch]$Require) {
     if ($script:PrimaryModel) {
         $env:OLLAMA_MODEL = $script:PrimaryModel
     } elseif ($Require) {
-        Fail "No primary model selected. Run connected prep or bundle with '-Model <ollama-tag>' on a non-sensitive connected machine, for example '.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen2.5:7b'."
+        Fail "No primary model selected. Run '.\Cleverly.ps1 setup -AllowConnectedPrep' on a non-sensitive connected machine, or pass '-Model <ollama-tag>' to prep/bundle."
     }
     return $script:PrimaryModel
 }
@@ -117,6 +263,9 @@ function Save-PrimaryModelManifest([string]$Reason) {
     [pscustomobject]@{
         primary_model = $script:PrimaryModel
         source = $script:PrimaryModelSource
+        profile_id = $script:PrimaryModelProfileId
+        profile_label = $script:PrimaryModelProfileLabel
+        detected_gpu_gb = $script:PrimaryModelDetectedGpuGb
         reason = $Reason
         written_at = (Get-Date).ToString("o")
     } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $PrimaryModelFile -Encoding UTF8
@@ -142,7 +291,9 @@ function Set-BundlePrimaryModelEnv([string]$BundlePath) {
 }
 
 $env:OLLAMA_IMAGE = if ($env:OLLAMA_IMAGE) { $env:OLLAMA_IMAGE } else { "cleverly-ollama:local" }
-Resolve-PrimaryModel | Out-Null
+if ($Action -ne "setup" -and $Action -ne "prep" -and $Action -ne "bundle") {
+    Resolve-PrimaryModel | Out-Null
+}
 $UseFineTune = $FineTune -or ($env:CLEVERLY_ENABLE_FINETUNE -eq "1")
 if ($UseFineTune) {
     $env:CLEVERLY_FINETUNE_IMAGE = if ($env:CLEVERLY_FINETUNE_IMAGE) { $env:CLEVERLY_FINETUNE_IMAGE } else { "cleverly:finetune" }
@@ -469,6 +620,9 @@ function Prep-Cleverly {
     Require-ConnectedPrep
     Resolve-PrimaryModel -Require | Out-Null
     Write-Host ("Primary model: " + $script:PrimaryModel + " (" + $script:PrimaryModelSource + ")") -ForegroundColor Green
+    if ($script:PrimaryModelSource -eq "auto hardware profile") {
+        Write-Host ("Hardware profile: " + $script:PrimaryModelProfileLabel + " (" + $script:PrimaryModelDetectedGpuGb + " GB GPU VRAM)") -ForegroundColor Green
+    }
     Write-Step "Building Cleverly image"
     docker compose --project-name cleverly --env-file .env.example build cleverly
     if ($LASTEXITCODE -ne 0) { Fail "Failed to build cleverly:local." }
@@ -491,6 +645,23 @@ function Prep-Cleverly {
         docker compose --project-name cleverly --env-file .env.example -f docker-compose.yml -f docker/finetune.yml build cleverly
         if ($LASTEXITCODE -ne 0) { Fail "Failed to build cleverly:finetune." }
     }
+}
+
+function Setup-Cleverly {
+    Write-Step "First-run setup"
+    Write-Host "Default runtime: sealed Docker volumes, local-only UI, no network during normal start." -ForegroundColor Green
+    Write-Host "Connected setup will auto-pick a model from detected GPU memory unless -Model or OLLAMA_MODEL is set." -ForegroundColor Green
+    Prep-Cleverly
+    Write-Step "Stopping any existing Cleverly runtime"
+    docker compose @ComposeArgs down
+    if ($UseSealedData) {
+        Write-Step "Sealing prepared data into Docker volumes"
+        Seal-Data
+    } else {
+        Write-Host "Host folder data mode is enabled by explicit opt-out; skipping sealed-volume copy." -ForegroundColor Yellow
+    }
+    Write-Step "Launching Cleverly"
+    Start-Cleverly
 }
 
 function Invoke-Doctor {
@@ -694,7 +865,6 @@ function Copy-BundleItem {
 function New-CleverlyBundle {
     Require-Docker
     Require-ConnectedPrep
-    Resolve-PrimaryModel -Require | Out-Null
 
     Write-Step "Preparing images and model data"
     Prep-Cleverly
@@ -804,6 +974,7 @@ Run a local check with:
 }
 
 switch ($Action) {
+    "setup" { Setup-Cleverly }
     "start" { Start-Cleverly }
     "stop" { Stop-Cleverly }
     "restart" { Stop-Cleverly; Start-Cleverly }

@@ -51,31 +51,81 @@ class AuditEventRequest(BaseModel):
 
 MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
     {
-        "id": "baseline",
-        "label": "Baseline offline chat",
+        "id": "cpu",
+        "label": "CPU-only safe starter",
         "model": "llama3.2:3b",
         "size": "2.0GB",
-        "hardware": "8GB RAM or better",
-        "best_for": "Fast first boot, private notes, simple code review, and general chat.",
+        "min_gpu_gb": 0,
+        "max_gpu_gb": 4,
+        "hardware": "0-3GB GPU VRAM or CPU-only",
+        "best_for": "Reliable offline startup on CPU-only or very small GPU machines.",
         "source_url": "https://ollama.com/library/llama3.2",
     },
     {
-        "id": "balanced",
-        "label": "Balanced coding and chat",
-        "model": "qwen2.5:7b",
-        "size": "4.7GB",
-        "hardware": "16GB RAM or better; GPU helps but is not required.",
-        "best_for": "Better reasoning, structured output, and coding tasks.",
-        "source_url": "https://ollama.com/library/qwen2.5",
+        "id": "gpu-4",
+        "label": "Low VRAM local chat",
+        "model": "qwen3:4b",
+        "size": "2.5GB",
+        "min_gpu_gb": 4,
+        "max_gpu_gb": 8,
+        "hardware": "4-7GB GPU VRAM",
+        "best_for": "Better local reasoning than the CPU starter while keeping VRAM headroom.",
+        "source_url": "https://ollama.com/library/qwen3",
     },
     {
-        "id": "vision",
-        "label": "Local vision option",
-        "model": "gemma3:4b",
-        "size": "3.3GB",
-        "hardware": "12GB RAM or better; useful when image input matters.",
-        "best_for": "Text plus image workflows on a modest machine.",
-        "source_url": "https://ollama.com/library/gemma3",
+        "id": "gpu-8",
+        "label": "Balanced 8GB GPU",
+        "model": "qwen3:8b",
+        "size": "5.2GB",
+        "min_gpu_gb": 8,
+        "max_gpu_gb": 12,
+        "hardware": "8-11GB GPU VRAM",
+        "best_for": "General chat, summaries, and modest code tasks on consumer GPUs.",
+        "source_url": "https://ollama.com/library/qwen3",
+    },
+    {
+        "id": "gpu-12",
+        "label": "Stronger local reasoning",
+        "model": "qwen3:14b",
+        "size": "9.3GB",
+        "min_gpu_gb": 12,
+        "max_gpu_gb": 16,
+        "hardware": "12-15GB GPU VRAM",
+        "best_for": "Better reasoning and coding when 8B-class models are not enough.",
+        "source_url": "https://ollama.com/library/qwen3",
+    },
+    {
+        "id": "gpu-16",
+        "label": "Local reasoning workstation",
+        "model": "gpt-oss:20b",
+        "size": "14GB",
+        "min_gpu_gb": 16,
+        "max_gpu_gb": 24,
+        "hardware": "16-23GB GPU VRAM",
+        "best_for": "Open-weight local reasoning and agent workflows.",
+        "source_url": "https://ollama.com/library/gpt-oss",
+    },
+    {
+        "id": "gpu-24",
+        "label": "24GB coding workstation",
+        "model": "qwen3-coder:30b",
+        "size": "19GB",
+        "min_gpu_gb": 24,
+        "max_gpu_gb": 80,
+        "hardware": "24-79GB GPU VRAM",
+        "best_for": "Best default for local repo editing and Code Workspace on a 24GB GPU.",
+        "source_url": "https://ollama.com/library/qwen3-coder",
+    },
+    {
+        "id": "gpu-80",
+        "label": "80GB reasoning server",
+        "model": "gpt-oss:120b",
+        "size": "65GB",
+        "min_gpu_gb": 80,
+        "max_gpu_gb": None,
+        "hardware": "80GB+ GPU VRAM",
+        "best_for": "Large local reasoning model on workstation/server-class GPU memory.",
+        "source_url": "https://ollama.com/library/gpt-oss",
     },
 ]
 
@@ -102,6 +152,54 @@ def _read_text(path: Path, limit: int = 20000) -> str:
         return path.read_text(encoding="utf-8", errors="replace")[:limit]
     except Exception:
         return ""
+
+
+def _read_primary_model_manifest() -> dict[str, Any]:
+    for path in (
+        Path(os.getenv("DATA_DIR") or DATA_DIR) / "cleverly-primary-model.json",
+        _repo_root() / "data" / "cleverly-primary-model.json",
+    ):
+        try:
+            if path.exists():
+                raw = path.read_text(encoding="utf-8", errors="replace")
+                data = json.loads(raw)
+                return data if isinstance(data, dict) else {}
+        except Exception:
+            continue
+    return {}
+
+
+def _detected_gpu_gb() -> float:
+    env_value = (os.getenv("CLEVERLY_GPU_GB") or "").strip()
+    if env_value:
+        try:
+            return max(0.0, round(float(env_value), 1))
+        except ValueError:
+            pass
+    manifest = _read_primary_model_manifest()
+    try:
+        if manifest.get("detected_gpu_gb") is not None:
+            return max(0.0, round(float(manifest.get("detected_gpu_gb")), 1))
+    except (TypeError, ValueError):
+        pass
+    try:
+        from services.hwfit.hardware import detect_system
+
+        system = detect_system(fresh=False)
+        if system.get("has_gpu"):
+            return max(0.0, round(float(system.get("gpu_vram_gb") or 0), 1))
+    except Exception:
+        pass
+    return 0.0
+
+
+def _model_profile_for_gpu(gpu_gb: float) -> dict[str, Any]:
+    for item in MODEL_RECOMMENDATIONS:
+        min_gpu = float(item.get("min_gpu_gb") or 0)
+        max_gpu = item.get("max_gpu_gb")
+        if gpu_gb >= min_gpu and (max_gpu is None or gpu_gb < float(max_gpu)):
+            return item
+    return MODEL_RECOMMENDATIONS[0]
 
 
 def _path_exists(path: Path) -> bool:
@@ -567,18 +665,33 @@ def setup_offline_control_routes() -> APIRouter:
 
     @router.get("/models/recommendations")
     def model_recommendations():
+        detected_gpu_gb = _detected_gpu_gb()
+        selected = _model_profile_for_gpu(detected_gpu_gb)
+        manifest = _read_primary_model_manifest()
+        prepared_model = str(manifest.get("primary_model") or "")
         commands = []
         for item in MODEL_RECOMMENDATIONS:
             model = item["model"]
             commands.append({
                 **item,
+                "selected": item["id"] == selected["id"],
+                "prepared": bool(prepared_model and prepared_model == model),
+                "setup_command": f".\\Cleverly.ps1 setup -AllowConnectedPrep -Model {model}",
                 "prep_command": f".\\Cleverly.ps1 prep -AllowConnectedPrep -Model {model}",
                 "bundle_command": f".\\Cleverly.ps1 bundle -AllowConnectedPrep -Model {model}",
+                "auto_setup_command": ".\\Cleverly.ps1 setup -AllowConnectedPrep",
+                "auto_prep_command": ".\\Cleverly.ps1 prep -AllowConnectedPrep",
+                "auto_bundle_command": ".\\Cleverly.ps1 bundle -AllowConnectedPrep",
+                "gpu_override_setup_command": f".\\Cleverly.ps1 setup -AllowConnectedPrep -GpuGB {item['min_gpu_gb']}",
+                "gpu_override_prep_command": f".\\Cleverly.ps1 prep -AllowConnectedPrep -GpuGB {item['min_gpu_gb']}",
                 "register_base_url": "http://ollama:11434/v1",
             })
         return {
             "ok": True,
-            "offline_warning": "Run prep or bundle only on a connected, non-sensitive machine. Do not run these commands on the offline target machine.",
+            "detected_gpu_gb": detected_gpu_gb,
+            "selected_profile": selected,
+            "prepared_model": prepared_model,
+            "offline_warning": "Run setup, prep, or bundle only on a connected, non-sensitive machine. Do not run these commands on the offline target machine.",
             "recommendations": commands,
         }
 

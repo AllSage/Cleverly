@@ -352,11 +352,17 @@ def test_model_onboarding_uses_explicit_offline_model_recommendations():
     route = Path("routes/offline_control_routes.py").read_text(encoding="utf-8")
     doc = Path("docs/model-onboarding.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
+    launcher = Path("Cleverly.ps1").read_text(encoding="utf-8")
+    env_example = Path(".env.example").read_text(encoding="utf-8")
 
     for tag, source, size in (
         ("llama3.2:3b", "https://ollama.com/library/llama3.2", "2.0GB"),
-        ("qwen2.5:7b", "https://ollama.com/library/qwen2.5", "4.7GB"),
-        ("gemma3:4b", "https://ollama.com/library/gemma3", "3.3GB"),
+        ("qwen3:4b", "https://ollama.com/library/qwen3", "2.5GB"),
+        ("qwen3:8b", "https://ollama.com/library/qwen3", "5.2GB"),
+        ("qwen3:14b", "https://ollama.com/library/qwen3", "9.3GB"),
+        ("gpt-oss:20b", "https://ollama.com/library/gpt-oss", "14GB"),
+        ("qwen3-coder:30b", "https://ollama.com/library/qwen3-coder", "19GB"),
+        ("gpt-oss:120b", "https://ollama.com/library/gpt-oss", "65GB"),
     ):
         assert tag in route
         assert source in route
@@ -365,12 +371,41 @@ def test_model_onboarding_uses_explicit_offline_model_recommendations():
         assert source in doc
         assert size in doc
 
+    assert "Get-DetectedGpuGb" in launcher
+    assert "Get-ModelProfileForGpuGb" in launcher
+    assert '$script:PrimaryModelSource = "auto hardware profile"' in launcher
+    assert '[double]$GpuGB = -1' in launcher
+    assert '"setup"' in launcher
+    assert "Setup-Cleverly" in launcher
+    assert "CLEVERLY_GPU_GB" in launcher
+    assert "detected_gpu_gb" in launcher
+    assert "24GB coding workstation" in launcher
+    assert ".\\Cleverly.ps1 setup -AllowConnectedPrep" in doc
+    assert ".\\Cleverly.ps1 setup -AllowConnectedPrep" in readme
+    assert ".\\Cleverly.ps1 prep -AllowConnectedPrep" in doc
+    assert ".\\Cleverly.ps1 prep -AllowConnectedPrep -GpuGB 24" in doc
+    assert ".\\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen3-coder:30b" in doc
     assert ".\\Cleverly.ps1 prep -AllowConnectedPrep -Model llama3.2:3b" in doc
-    assert ".\\Cleverly.ps1 bundle -AllowConnectedPrep -Model llama3.2:3b" in doc
     assert "Do not run model pulls on the" in doc
     assert "Code Workspace model key is blank by default" in doc
-    assert "starter example uses" in readme
+    assert "auto-pick from" in readme
     assert "pass `-Model`" in readme
+    assert "CLEVERLY_GPU_GB=24" in env_example
+
+
+def test_model_recommendation_tiers_cover_cpu_to_large_gpu(monkeypatch):
+    from routes import offline_control_routes as routes
+
+    assert routes._model_profile_for_gpu(0)["model"] == "llama3.2:3b"
+    assert routes._model_profile_for_gpu(4)["model"] == "qwen3:4b"
+    assert routes._model_profile_for_gpu(8)["model"] == "qwen3:8b"
+    assert routes._model_profile_for_gpu(12)["model"] == "qwen3:14b"
+    assert routes._model_profile_for_gpu(16)["model"] == "gpt-oss:20b"
+    assert routes._model_profile_for_gpu(24)["model"] == "qwen3-coder:30b"
+    assert routes._model_profile_for_gpu(80)["model"] == "gpt-oss:120b"
+
+    monkeypatch.setenv("CLEVERLY_GPU_GB", "24")
+    assert routes._detected_gpu_gb() == 24
 
 
 def test_windows_installer_signing_path_requires_release_signature():
@@ -460,6 +495,7 @@ def test_recent_tool_surfaces_opt_out_of_global_button_height():
     offline_js = Path("static/js/offlineControl.js").read_text(encoding="utf-8")
     code_js = Path("static/js/codeWorkspace.js").read_text(encoding="utf-8")
     tutorials_js = Path("static/js/tutorials.js").read_text(encoding="utf-8")
+    loops_js = Path("static/js/agentLoops.js").read_text(encoding="utf-8")
 
     for token in (
         ".welcome-action-btn {\n      height: auto !important;",
@@ -476,8 +512,12 @@ def test_recent_tool_surfaces_opt_out_of_global_button_height():
         (offline_js, ".offline-btn{height:auto!important"),
         (code_js, ".code-ws-item{width:100%;height:auto!important"),
         (code_js, ".code-ws-btn{height:auto!important"),
+        (code_js, ".code-ws-archive-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;}"),
+        (code_js, ".code-ws-archive-actions .code-ws-btn{width:100%;min-width:0;white-space:normal;text-align:center;}"),
         (tutorials_js, ".tutorials-card{width:100%;height:auto!important"),
         (tutorials_js, ".tutorials-btn{height:auto!important"),
+        (loops_js, ".agent-loop-card{width:100%;height:auto!important"),
+        (loops_js, ".agent-loops-btn{height:auto!important"),
     ):
         assert token in source
 
@@ -631,6 +671,49 @@ def test_offline_tutorials_are_bundled_and_wired_to_ui():
 
     for token in ("fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket", "https://", "http://"):
         assert token not in tutorials_js
+
+
+def test_agent_loops_are_bundled_offline_workflow_templates():
+    app_py = Path("app.py").read_text(encoding="utf-8")
+    app_js = Path("static/app.js").read_text(encoding="utf-8")
+    index_html = Path("static/index.html").read_text(encoding="utf-8")
+    loops_js = Path("static/js/agentLoops.js").read_text(encoding="utf-8")
+    modal_manager = Path("static/js/modalManager.js").read_text(encoding="utf-8")
+    slash_commands = Path("static/js/slashCommands.js").read_text(encoding="utf-8")
+    sw_js = Path("static/sw.js").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert '@app.get("/loops")' in app_py
+    assert "agentLoopsModule" in app_js
+    assert "'/loops'" in app_js
+    assert "tool-agent-loops-btn" in index_html
+    assert "rail-agent-loops" in index_html
+    assert "agent-loops-modal" in index_html
+    assert "tool-agent-loops" in index_html
+    assert "agent-loops-modal" in modal_manager
+    assert "loops: ['tool-agent-loops-btn', 'rail-agent-loops']" in slash_commands
+    assert "/static/js/agentLoops.js" in sw_js
+    assert "Agent Loops" in readme
+    assert "do not install hooks or contact external" in readme
+
+    for token in (
+        "Test Until Green",
+        "Build Until Green",
+        "Offline Leak Check",
+        "Security Review Pass",
+        "Docs Sync",
+        "Model Onboarding Check",
+        "Fresh Machine Smoke",
+    ):
+        assert token in loops_js
+
+    assert ".agent-loop-card{width:100%;height:auto!important" in loops_js
+    assert ".agent-loops-btn{height:auto!important" in loops_js
+    assert "Templates are bundled locally" in loops_js
+    assert "do not install hooks" in loops_js
+
+    for token in ("fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket", "https://", "http://"):
+        assert token not in loops_js
 
 
 def test_external_agent_study_packs_are_reference_only():

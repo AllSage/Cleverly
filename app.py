@@ -734,6 +734,10 @@ async def serve_cookbook(request: Request):
 async def serve_training(request: Request):
     return await serve_index(request)
 
+@app.get("/loops")
+async def serve_loops(request: Request):
+    return await serve_index(request)
+
 @app.get("/code")
 async def serve_code(request: Request):
     return await serve_index(request)

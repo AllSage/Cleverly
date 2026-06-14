@@ -10,6 +10,8 @@ let _open = false;
 let _step = 'start';
 let _status = null;
 let _recommendations = [];
+let _modelProfile = null;
+let _detectedGpuGb = null;
 let _localModels = [];
 let _message = '';
 
@@ -111,13 +113,14 @@ function renderStart() {
 }
 
 function renderModel() {
+  const selected = _recommendations.find(item => item.selected) || _modelProfile || null;
   const cards = _recommendations.map(item => `
     <div class="setup-wizard-card">
-      <h4>${esc(item.label)}</h4>
+      <h4>${esc(item.label)} ${item.selected ? '<span class="setup-wizard-pill ok">selected</span>' : ''}${item.prepared ? ' <span class="setup-wizard-pill ok">prepared</span>' : ''}</h4>
       <p><strong>${esc(item.model)}</strong> &middot; ${esc(item.size)} &middot; ${esc(item.hardware)}</p>
       <p>${esc(item.best_for)}</p>
-      <div class="setup-wizard-command">${esc(item.prep_command)}</div>
-      <button class="setup-wizard-btn" data-copy-command="${esc(item.prep_command)}">Copy Prep</button>
+      <div class="setup-wizard-command">${esc(item.setup_command || item.prep_command)}</div>
+      <button class="setup-wizard-btn" data-copy-command="${esc(item.setup_command || item.prep_command)}">Copy Setup</button>
       <button class="setup-wizard-btn" data-use-model="${esc(item.model)}">Use Tag</button>
     </div>
   `).join('');
@@ -130,7 +133,14 @@ function renderModel() {
   `).join('');
   return `
     <h3 class="setup-wizard-title">Model Onboarding</h3>
-    <p class="setup-wizard-copy">Run prep on a connected non-sensitive machine, then move the prepared bundle to the offline machine. Once the model is loaded, register the local Ollama endpoint below.</p>
+    <p class="setup-wizard-copy">Run setup on a connected non-sensitive machine. It prepares the local model, seals Docker data, and starts Cleverly. Once the model is loaded, register the local Ollama endpoint below.</p>
+    <div class="setup-wizard-card">
+      <h4>Auto Hardware Pick</h4>
+      <p><strong>${esc(selected?.model || 'Unknown')}</strong> is selected for ${_detectedGpuGb == null ? 'the detected machine' : esc(_detectedGpuGb + ' GB GPU VRAM')}.</p>
+      <div class="setup-wizard-command">${esc(selected?.auto_setup_command || selected?.auto_prep_command || '.\\Cleverly.ps1 setup -AllowConnectedPrep')}</div>
+      <button class="setup-wizard-btn" data-copy-command="${esc(selected?.auto_setup_command || selected?.auto_prep_command || '.\\Cleverly.ps1 setup -AllowConnectedPrep')}">Copy Auto Setup</button>
+      <button class="setup-wizard-btn" data-use-model="${esc(selected?.model || '')}">Use Selected Tag</button>
+    </div>
     <div class="setup-wizard-grid">${cards || '<div class="setup-wizard-card"><p>No model recommendations loaded.</p></div>'}</div>
     <div class="setup-wizard-card">
       <h4>Register Local Ollama</h4>
@@ -210,6 +220,8 @@ async function refreshStatus() {
 async function loadRecommendations() {
   const data = await api('/models/recommendations');
   _recommendations = data.recommendations || [];
+  _modelProfile = data.selected_profile || null;
+  _detectedGpuGb = data.detected_gpu_gb;
 }
 
 async function scanModels() {

@@ -9,58 +9,90 @@ The first-run Setup wizard and Offline Control use the same local endpoint:
 http://ollama:11434/v1
 ```
 
-## Recommended Starter Models
+## Hardware-Based Pull Profiles
 
-These tags were checked against the Ollama library on 2026-06-13.
+These tags were checked against the Ollama library on 2026-06-13. Cleverly uses
+the same table when connected prep or bundle runs without `-Model`.
 
-| Use | Ollama tag | Size shown by Ollama | Good fit |
-|---|---:|---:|---|
-| Baseline offline chat | `llama3.2:3b` | 2.0GB | Fast first boot, simple private chat, notes, light code review |
-| Balanced chat and coding | `qwen2.5:7b` | 4.7GB | Better reasoning, coding, structured answers |
-| Local vision option | `gemma3:4b` | 3.3GB | Text plus image workflows |
+| GPU memory | Ollama tag | Size shown by Ollama | Good fit |
+|---:|---:|---:|---|
+| CPU-only / 0-3GB | `llama3.2:3b` | 2.0GB | Fast first boot, simple private chat, notes, light code review |
+| 4-7GB | `qwen3:4b` | 2.5GB | Better local reasoning with small VRAM |
+| 8-11GB | `qwen3:8b` | 5.2GB | General chat, summaries, and modest code work |
+| 12-15GB | `qwen3:14b` | 9.3GB | Stronger local reasoning and coding |
+| 16-23GB | `gpt-oss:20b` | 14GB | Open-weight local reasoning and agent workflows |
+| 24-79GB | `qwen3-coder:30b` | 19GB | Best default for local repo editing and Code Workspace on a 24GB GPU |
+| 80GB+ | `gpt-oss:120b` | 65GB | Large local reasoning model on workstation/server-class GPU memory |
 
 Sources:
 
 - https://ollama.com/library/llama3.2
-- https://ollama.com/library/qwen2.5
-- https://ollama.com/library/gemma3
+- https://ollama.com/library/qwen3
+- https://ollama.com/library/qwen3-coder
+- https://ollama.com/library/gpt-oss
 
-## Connected Prep Commands
+## Easiest Connected Setup
 
-Choose exactly one primary model when you create the prepared runtime. The
-launcher records that tag in `data/cleverly-primary-model.json` and writes it
-into the offline bundle so startup does not guess.
-
-Baseline:
+For a first run on a connected, non-sensitive prep machine, use:
 
 ```powershell
-.\Cleverly.ps1 prep -AllowConnectedPrep -Model llama3.2:3b
+.\Cleverly.ps1 setup -AllowConnectedPrep
 ```
 
-Balanced:
+That command builds/pulls the Docker images, chooses a model from the hardware
+table, pulls it into local Ollama storage, seals prepared data into Docker
+volumes, and starts Cleverly. Normal `start` after that remains offline-only.
+
+Force a hardware tier or exact model when needed:
 
 ```powershell
-.\Cleverly.ps1 prep -AllowConnectedPrep -Model qwen2.5:7b
+.\Cleverly.ps1 setup -AllowConnectedPrep -GpuGB 24
+.\Cleverly.ps1 setup -AllowConnectedPrep -Model qwen3-coder:30b
 ```
 
-Vision:
+## Advanced Prep Commands
+
+Run auto prep when you want Cleverly to choose based on detected GPU memory:
 
 ```powershell
-.\Cleverly.ps1 prep -AllowConnectedPrep -Model gemma3:4b
+.\Cleverly.ps1 prep -AllowConnectedPrep
 ```
+
+For a 24GB GPU profile without relying on auto-detection:
+
+```powershell
+.\Cleverly.ps1 prep -AllowConnectedPrep -GpuGB 24
+```
+
+To override the hardware profile with an exact tag:
+
+```powershell
+.\Cleverly.ps1 prep -AllowConnectedPrep -Model gpt-oss:20b
+```
+
+The launcher records the selected tag in `data/cleverly-primary-model.json`
+and writes it into the offline bundle so startup does not guess.
 
 To build a portable transfer bundle instead:
 
-Baseline:
-
 ```powershell
-.\Cleverly.ps1 bundle -AllowConnectedPrep -Model llama3.2:3b
+.\Cleverly.ps1 bundle -AllowConnectedPrep
 ```
 
-Balanced:
+Force a bundle tier or exact model the same way:
 
 ```powershell
-.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen2.5:7b
+.\Cleverly.ps1 bundle -AllowConnectedPrep -GpuGB 24
+.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen3-coder:30b
+```
+
+Manual explicit examples:
+
+```powershell
+.\Cleverly.ps1 prep -AllowConnectedPrep -Model llama3.2:3b
+.\Cleverly.ps1 bundle -AllowConnectedPrep -Model llama3.2:3b
+.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen3:8b
+.\Cleverly.ps1 bundle -AllowConnectedPrep -Model qwen3-coder:30b
 ```
 
 Swap the `-Model` value for the tag you want. If you want to replace the
@@ -88,7 +120,7 @@ Open **Setup** or **Offline** and register:
 ```text
 Name: Local Ollama
 Base URL: http://ollama:11434/v1
-Model: qwen2.5:7b
+Model: qwen3-coder:30b
 ```
 
 Use the tag recorded in the bundle if you chose another model.

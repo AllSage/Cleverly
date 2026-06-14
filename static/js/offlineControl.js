@@ -10,6 +10,9 @@ let _tab = 'status';
 let _status = null;
 let _models = [];
 let _roots = [];
+let _recommendations = [];
+let _modelProfile = null;
+let _detectedGpuGb = null;
 let _egress = null;
 let _about = null;
 let _audit = [];
@@ -160,6 +163,15 @@ function renderStatus() {
 }
 
 function renderModels() {
+  const selectedRec = _recommendations.find(item => item.selected) || _modelProfile || null;
+  const recRows = _recommendations.map(item => `
+    <tr>
+      <td><strong>${esc(item.label)}</strong>${item.selected ? ' <span class="offline-pill ok">selected</span>' : ''}${item.prepared ? ' <span class="offline-pill ok">prepared</span>' : ''}<div style="opacity:.65">${esc(item.hardware)}</div></td>
+      <td><strong>${esc(item.model)}</strong><div style="opacity:.65">${esc(item.size)}</div></td>
+      <td>${esc(item.best_for || '')}</td>
+      <td><div class="offline-pre" style="max-height:96px;">${esc(item.setup_command || item.prep_command)}</div></td>
+    </tr>
+  `).join('');
   const modelRows = _models.map(item => `
     <tr>
       <td><strong>${esc(item.name)}</strong><div style="opacity:.65">${esc(item.kind)}</div></td>
@@ -173,6 +185,16 @@ function renderModels() {
       <button class="offline-btn primary" id="offline-scan-models">Scan Local Models</button>
       <span style="font-size:12px;opacity:.72">${_roots.length ? esc(_roots.length + ' cache roots checked') : 'Model caches are scanned inside the container only.'}</span>
     </div>
+    <div class="offline-card" style="margin-bottom:12px;">
+      <div class="offline-card-title">Hardware-Based Pull Target</div>
+      <div class="offline-card-value">${selectedRec ? esc(selectedRec.model) : 'Unknown'}</div>
+      <div class="offline-card-note">${_detectedGpuGb == null ? 'GPU memory not detected yet.' : esc(_detectedGpuGb + ' GB GPU VRAM detected')} &middot; connected setup auto-picks this when no -Model is passed.</div>
+      <div class="offline-pre" style="margin-top:8px;max-height:96px;">${esc(selectedRec?.auto_setup_command || selectedRec?.auto_prep_command || '.\\Cleverly.ps1 setup -AllowConnectedPrep')}</div>
+    </div>
+    <table class="offline-table" style="margin-bottom:12px;">
+      <thead><tr><th>Tier</th><th>Model</th><th>Best For</th><th>Manual Setup</th></tr></thead>
+      <tbody>${recRows || '<tr><td colspan="4" style="opacity:.65">No hardware recommendations loaded.</td></tr>'}</tbody>
+    </table>
     <div class="offline-card" style="margin-bottom:12px;">
       <div class="offline-card-title">Register Local OpenAI-Compatible Endpoint</div>
       <div class="offline-row">
@@ -335,9 +357,16 @@ async function runEgressTest() {
 }
 
 async function scanModels() {
-  const data = await api('/models/local');
+  const [localData, recData] = await Promise.all([
+    api('/models/local'),
+    api('/models/recommendations'),
+  ]);
+  const data = localData;
   _models = data.models || [];
   _roots = data.roots || [];
+  _recommendations = recData.recommendations || [];
+  _modelProfile = recData.selected_profile || null;
+  _detectedGpuGb = recData.detected_gpu_gb;
   render();
 }
 
