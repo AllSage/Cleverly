@@ -62,28 +62,49 @@ function Get-PythonFreeze {
     return [pscustomobject]@{ source = ""; packages = @() }
 }
 
+function Get-PythonExe {
+    foreach ($python in @(
+        (Join-Path $Root ".venv\Scripts\python.exe"),
+        (Join-Path $Root "venv\Scripts\python.exe"),
+        "python"
+    )) {
+        try {
+            & $python --version 1>$null 2>$null
+            if ($LASTEXITCODE -eq 0) { return $python }
+        } catch {
+            continue
+        }
+    }
+    return ""
+}
+
 function Get-NpmLockPackages {
     $lockPath = Join-Path $Root "package-lock.json"
     if (-not (Test-Path -LiteralPath $lockPath)) { return @() }
-    Add-Type -AssemblyName System.Web.Extensions
-    $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
-    $serializer.MaxJsonLength = [int]::MaxValue
-    $lock = $serializer.DeserializeObject((Get-Content -LiteralPath $lockPath -Raw))
-    if (-not $lock.ContainsKey("packages")) { return @() }
-    $lockPackages = $lock["packages"]
-    $packages = @()
-    foreach ($key in $lockPackages.Keys) {
-        $value = $lockPackages[$key]
-        if (-not $value.ContainsKey("version")) { continue }
-        $name = if ($value.ContainsKey("name") -and $value["name"]) { $value["name"] } else { $key -replace '^node_modules/', '' }
-        if (-not $name) { continue }
-        $packages += [pscustomobject]@{
-            name = $name
-            version = $value["version"]
-            path = $key
-        }
+    $python = Get-PythonExe
+    if (-not $python) { return @() }
+    $script = @"
+import json
+from pathlib import Path
+lock = json.loads(Path(r'''$lockPath''').read_text(encoding='utf-8'))
+packages = []
+for key, value in (lock.get('packages') or {}).items():
+    version = value.get('version')
+    if not version:
+        continue
+    name = value.get('name') or key.removeprefix('node_modules/')
+    if not name:
+        continue
+    packages.append({'name': name, 'version': version, 'path': key})
+print(json.dumps(packages))
+"@
+    try {
+        $raw = $script | & $python -
+        if ($LASTEXITCODE -ne 0 -or -not $raw) { return @() }
+        return @($raw | ConvertFrom-Json)
+    } catch {
+        return @()
     }
-    return $packages
 }
 
 function Get-DockerSnapshot {

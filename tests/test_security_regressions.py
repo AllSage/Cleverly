@@ -584,6 +584,7 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "Get-FileHash" in sbom_script
     assert "pip freeze --all" in sbom_script
     assert "package-lock.json" in sbom_script
+    assert "ConvertFrom-Json" in sbom_script
     assert "docker image inspect" in sbom_script
     assert "cleverly-sbom.json.sha256" in sbom_script
     assert "build-offline-release.ps1" in make_release
