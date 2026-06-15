@@ -246,6 +246,11 @@ def test_windows_app_launcher_uses_offline_docker_runtime():
     assert "Start Offline" in gui
     assert "Verify Offline" in gui
     assert "GPU estimate" in gui
+    assert "Start-ProcessTask" in gui
+    assert "Running in the background" in gui
+    assert "$script:TaskTimer" in gui
+    assert "TimeoutSeconds" in gui
+    assert '"--format", "{{.Id}}"' in gui
     assert "Recommended path" in gui
     assert 'Run-Action "start" @("-NoOpen")' in gui
     assert 'Run-Action "restart" @("-NoOpen")' in gui

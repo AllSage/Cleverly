@@ -47,20 +47,44 @@ function New-GroupBox {
 function Invoke-ExternalCommand {
     param(
         [string]$FileName,
-        [string[]]$Arguments = @()
+        [string[]]$Arguments = @(),
+        [int]$TimeoutSeconds = 6
     )
+    $process = $null
     try {
-        $lines = & $FileName @Arguments 2>&1
-        $exitCode = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $FileName
+        $psi.Arguments = ($Arguments -join " ")
+        $psi.WorkingDirectory = $Root
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $psi
+        [void]$process.Start()
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            try { $process.Kill() } catch { }
+            return [pscustomobject]@{
+                ExitCode = 124
+                Text = "timed out after $TimeoutSeconds seconds"
+            }
+        }
+        $stdout = $process.StandardOutput.ReadToEnd().Trim()
+        $stderr = $process.StandardError.ReadToEnd().Trim()
+        $text = (($stdout, $stderr) | Where-Object { $_ }) -join [Environment]::NewLine
         return [pscustomobject]@{
-            ExitCode = $exitCode
-            Text = (($lines | Out-String).Trim())
+            ExitCode = $process.ExitCode
+            Text = $text
         }
     } catch {
         return [pscustomobject]@{
             ExitCode = 1
             Text = $_.Exception.Message
         }
+    } finally {
+        if ($process) { $process.Dispose() }
     }
 }
 
@@ -234,12 +258,12 @@ function Get-LauncherReadiness {
             Ready = ($composeResult.ExitCode -eq 0)
             Text = if ($composeResult.ExitCode -eq 0 -and $composeResult.Text) { $composeResult.Text } else { "not available" }
         }
-        $appInspect = Invoke-ExternalCommand "docker" @("image", "inspect", "cleverly:local")
+        $appInspect = Invoke-ExternalCommand "docker" @("image", "inspect", "cleverly:local", "--format", "{{.Id}}")
         $appImage = [pscustomobject]@{
             Ready = ($appInspect.ExitCode -eq 0)
             Text = if ($appInspect.ExitCode -eq 0) { "cleverly:local present" } else { "cleverly:local missing" }
         }
-        $ollamaInspect = Invoke-ExternalCommand "docker" @("image", "inspect", "cleverly-ollama:local")
+        $ollamaInspect = Invoke-ExternalCommand "docker" @("image", "inspect", "cleverly-ollama:local", "--format", "{{.Id}}")
         $ollamaImage = [pscustomobject]@{
             Ready = ($ollamaInspect.ExitCode -eq 0)
             Text = if ($ollamaInspect.ExitCode -eq 0) { "cleverly-ollama:local present" } else { "cleverly-ollama:local missing" }
@@ -343,6 +367,103 @@ function Write-CommandResult {
     Write-OutputBox ("exit_code: " + $Result.ExitCode)
 }
 
+$script:ActiveTask = $null
+$script:TaskTimer = New-Object System.Windows.Forms.Timer
+$script:TaskTimer.Interval = 500
+$script:TaskTimer.Add_Tick({
+    if (-not $script:ActiveTask) { return }
+    $process = $script:ActiveTask.Process
+    if (-not $process.HasExited) { return }
+
+    $script:TaskTimer.Stop()
+    try { $process.WaitForExit() } catch { }
+
+    $stdout = @($script:ActiveTask.StdOut | ForEach-Object { [string]$_ })
+    $stderr = @($script:ActiveTask.StdErr | ForEach-Object { [string]$_ })
+    if ($stdout.Count -gt 0) {
+        Write-OutputBox (($stdout -join [Environment]::NewLine).TrimEnd())
+    }
+    if ($stderr.Count -gt 0) {
+        Write-OutputBox (($stderr -join [Environment]::NewLine).TrimEnd())
+    }
+    Write-OutputBox ("exit_code: " + $process.ExitCode)
+
+    foreach ($path in $script:ActiveTask.CleanupFiles) {
+        if ($path -and (Test-Path -LiteralPath $path)) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $process.Dispose()
+    $script:ActiveTask = $null
+    $state.Text = "Status: Ready"
+    Set-ButtonsEnabled $true
+})
+
+function Start-ProcessTask {
+    param(
+        [string]$Name,
+        [string]$FileName,
+        [string[]]$Arguments = @(),
+        [string[]]$CleanupFiles = @()
+    )
+    if ($script:ActiveTask) {
+        Write-OutputBox "Another Cleverly task is already running. Wait for it to finish before starting a new one."
+        return
+    }
+
+    Set-ButtonsEnabled $false
+    $state.Text = "Status: Running $Name"
+    Write-OutputBox ""
+    Write-OutputBox ("==> " + $Name)
+    Write-OutputBox "Running in the background. The window can still be moved or minimized."
+    [System.Windows.Forms.Application]::DoEvents()
+
+    $stdout = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
+    $stderr = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo.FileName = $FileName
+    $process.StartInfo.Arguments = ($Arguments -join " ")
+    $process.StartInfo.WorkingDirectory = $Root
+    $process.StartInfo.UseShellExecute = $false
+    $process.StartInfo.RedirectStandardOutput = $true
+    $process.StartInfo.RedirectStandardError = $true
+    $process.StartInfo.CreateNoWindow = $true
+
+    $process.add_OutputDataReceived({
+        param($sender, $eventArgs)
+        if ($eventArgs.Data) { [void]$stdout.Add($eventArgs.Data) }
+    }.GetNewClosure())
+    $process.add_ErrorDataReceived({
+        param($sender, $eventArgs)
+        if ($eventArgs.Data) { [void]$stderr.Add($eventArgs.Data) }
+    }.GetNewClosure())
+
+    try {
+        [void]$process.Start()
+        $process.BeginOutputReadLine()
+        $process.BeginErrorReadLine()
+        $script:ActiveTask = [pscustomobject]@{
+            Name = $Name
+            Process = $process
+            StdOut = $stdout
+            StdErr = $stderr
+            CleanupFiles = $CleanupFiles
+        }
+        $script:TaskTimer.Start()
+    } catch {
+        $process.Dispose()
+        foreach ($path in $CleanupFiles) {
+            if ($path -and (Test-Path -LiteralPath $path)) {
+                Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Write-OutputBox ("ERROR: " + $_.Exception.Message)
+        $state.Text = "Status: Ready"
+        Set-ButtonsEnabled $true
+    }
+}
+
 function Confirm-ConnectedPrep {
     $message = "Connected prep downloads Docker images and the selected local model. Run it only on a connected, non-sensitive prep machine. Continue?"
     $choice = [System.Windows.Forms.MessageBox]::Show(
@@ -385,20 +506,14 @@ function Run-Action {
         [string]$Action,
         [string[]]$ExtraArgs = @()
     )
-    Set-ButtonsEnabled $false
-    $state.Text = "Status: Running $Action"
-    Write-OutputBox ""
-    Write-OutputBox ("==> " + $Action)
-    [System.Windows.Forms.Application]::DoEvents()
-    try {
-        $result = Invoke-CleverlyCommand -Action $Action -ExtraArgs $ExtraArgs
-        Write-CommandResult $result
-    } catch {
-        Write-OutputBox ("ERROR: " + $_.Exception.Message)
-    } finally {
-        $state.Text = "Status: Ready"
-        Set-ButtonsEnabled $true
-    }
+    $argList = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", ('"{0}"' -f $Script),
+        $Action
+    ) + $ExtraArgs
+    Start-ProcessTask -Name $Action -FileName "powershell.exe" -Arguments $argList
 }
 
 function Run-Script {
@@ -407,44 +522,46 @@ function Run-Script {
         [string]$Path,
         [string[]]$ExtraArgs = @()
     )
-    Set-ButtonsEnabled $false
-    $state.Text = "Status: Running $Name"
-    Write-OutputBox ""
-    Write-OutputBox ("==> " + $Name)
-    [System.Windows.Forms.Application]::DoEvents()
-    try {
-        $result = Invoke-PowerShellScript -Path $Path -ExtraArgs $ExtraArgs
-        Write-CommandResult $result
-    } catch {
-        Write-OutputBox ("ERROR: " + $_.Exception.Message)
-    } finally {
-        $state.Text = "Status: Ready"
-        Set-ButtonsEnabled $true
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-OutputBox "ERROR: Script was not found: $Path"
+        return
     }
+    $argList = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", ('"{0}"' -f $Path)
+    ) + $ExtraArgs
+    Start-ProcessTask -Name $Name -FileName "powershell.exe" -Arguments $argList
 }
 
 function Run-OfflineVerification {
-    Set-ButtonsEnabled $false
-    $state.Text = "Status: Verifying Offline"
-    Write-OutputBox ""
-    Write-OutputBox "==> Verify Offline"
-    [System.Windows.Forms.Application]::DoEvents()
-    try {
-        Write-OutputBox "Running doctor..."
-        $doctorResult = Invoke-CleverlyCommand -Action "doctor"
-        Write-CommandResult $doctorResult
-
-        $smokePath = Join-Path $Root "ci\fresh-machine-offline-smoke.ps1"
-        Write-OutputBox ""
-        Write-OutputBox "Running fresh-machine-offline-smoke.ps1..."
-        $smokeResult = Invoke-PowerShellScript -Path $smokePath -ExtraArgs @("-SkipRestart")
-        Write-CommandResult $smokeResult
-    } catch {
-        Write-OutputBox ("ERROR: " + $_.Exception.Message)
-    } finally {
-        $state.Text = "Status: Ready"
-        Set-ButtonsEnabled $true
+    $smokePath = Join-Path $Root "ci\fresh-machine-offline-smoke.ps1"
+    if (-not (Test-Path -LiteralPath $smokePath)) {
+        Write-OutputBox "ERROR: ci\fresh-machine-offline-smoke.ps1 was not found."
+        return
     }
+    $verifyScript = Join-Path ([System.IO.Path]::GetTempPath()) ("cleverly-verify-offline-" + [System.Guid]::NewGuid().ToString("N") + ".ps1")
+    $content = @"
+`$ErrorActionPreference = "Continue"
+Write-Host "Running doctor..."
+& "$Script" doctor
+`$doctorExit = if (`$null -ne `$LASTEXITCODE) { `$LASTEXITCODE } else { 0 }
+Write-Host ""
+Write-Host "Running fresh-machine-offline-smoke.ps1..."
+& "$smokePath" -SkipRestart
+`$smokeExit = if (`$null -ne `$LASTEXITCODE) { `$LASTEXITCODE } else { 0 }
+if (`$doctorExit -ne 0) { exit `$doctorExit }
+exit `$smokeExit
+"@
+    Set-Content -LiteralPath $verifyScript -Encoding UTF8 -Value $content
+    $argList = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", ('"{0}"' -f $verifyScript)
+    )
+    Start-ProcessTask -Name "Verify Offline" -FileName "powershell.exe" -Arguments $argList -CleanupFiles @($verifyScript)
 }
 
 $firstRunGroup = New-GroupBox "First Run" 16 74 780 104
