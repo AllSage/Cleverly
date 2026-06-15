@@ -252,6 +252,11 @@ def test_windows_app_launcher_uses_offline_docker_runtime():
     assert 'Run-Action "doctor"' in gui
     assert "http://127.0.0.1:7000" in gui
     assert "Cleverly-Launcher.ps1" in gui_cmd
+    assert "CLEVERLY_LAUNCHER" in gui_cmd
+    assert "powershell.exe" in gui_cmd
+    assert "-STA" in gui_cmd
+    assert "pushd" in gui_cmd
+    assert "Cleverly launcher exited with code" in gui_cmd
 
 
 def test_offline_control_center_is_admin_gated_and_local_only():
