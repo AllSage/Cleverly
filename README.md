@@ -47,8 +47,19 @@ Default behavior:
 
 ### Easiest Windows Setup
 
-Run this on a connected machine that is allowed to download Docker images and
-the selected local model:
+For the simplest startup, double-click:
+
+```text
+Cleverly-App.cmd
+```
+
+Then use **Check Setup**. If Docker images or the primary model are missing,
+use **Connected Prep** on a connected, non-sensitive prep machine or **Build
+Bundle** for transfer to an offline machine. After prep, use **Start Offline**
+and **Verify Offline** before sensitive work.
+
+Command-line equivalent on a connected machine that is allowed to download
+Docker images and the selected local model:
 
 ```powershell
 .\Cleverly.ps1 setup -AllowConnectedPrep
@@ -102,7 +113,7 @@ Double-clicking `Cleverly.cmd` also starts the offline app and opens the
 browser. The Windows launcher does not pull, build, or download during normal
 start.
 
-For a small desktop-style control window, double-click:
+For the guided desktop-style control window, double-click:
 
 ```text
 Cleverly-App.cmd
