@@ -239,11 +239,29 @@ def test_windows_app_launcher_uses_offline_docker_runtime():
     assert "Connected prep is disabled by default" in launcher
     assert "Cleverly.ps1" in cmd
     assert "Cleverly Offline App" in gui
+    assert "Get-LauncherReadiness" in gui
+    assert "Check Setup" in gui
+    assert "Connected Prep" in gui
+    assert "Build Bundle" in gui
+    assert "Start Offline" in gui
+    assert "Verify Offline" in gui
+    assert "GPU estimate" in gui
+    assert "Start-ProcessTask" in gui
+    assert "Running in the background" in gui
+    assert "$script:TaskTimer" in gui
+    assert "TimeoutSeconds" in gui
+    assert '"--format", "{{.Id}}"' in gui
+    assert "Recommended path" in gui
     assert 'Run-Action "start" @("-NoOpen")' in gui
     assert 'Run-Action "restart" @("-NoOpen")' in gui
     assert 'Run-Action "doctor"' in gui
     assert "http://127.0.0.1:7000" in gui
     assert "Cleverly-Launcher.ps1" in gui_cmd
+    assert "CLEVERLY_LAUNCHER" in gui_cmd
+    assert "powershell.exe" in gui_cmd
+    assert "-STA" in gui_cmd
+    assert "pushd" in gui_cmd
+    assert "Cleverly launcher exited with code" in gui_cmd
 
 
 def test_offline_control_center_is_admin_gated_and_local_only():
@@ -482,6 +500,11 @@ def test_windows_installer_signing_path_requires_release_signature():
     assert "-RequireSignature" in doc
     assert "Status: Ready" in launcher_gui
     assert "$state.Text" in launcher_gui
+    assert "Check Setup" in launcher_gui
+    assert "Connected Prep" in launcher_gui
+    assert "Build Bundle" in launcher_gui
+    assert "Start Offline" in launcher_gui
+    assert "Verify Offline" in launcher_gui
     assert "Open Bundle" in launcher_gui
     assert "Open Logs" in launcher_gui
     assert "release-checklist.md" in launcher_gui
@@ -491,6 +514,8 @@ def test_windows_installer_signing_path_requires_release_signature():
     assert "run-static-security.ps1" in launcher_gui
     assert "Make Release" in launcher_gui
     assert "Fresh Proof" in launcher_gui
+    assert "Check Setup" in doc
+    assert "Start Offline" in doc
     assert "Open Bundle" in doc
     assert "Windows Installer" in readme
 
