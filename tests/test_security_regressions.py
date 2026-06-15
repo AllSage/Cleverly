@@ -447,6 +447,7 @@ def test_model_recommendation_tiers_cover_cpu_to_large_gpu(monkeypatch):
 def test_windows_installer_signing_path_requires_release_signature():
     installer = Path("installer/Cleverly.iss").read_text(encoding="utf-8")
     script = Path("scripts/build-windows-installer.ps1").read_text(encoding="utf-8")
+    self_signed = Path("scripts/new-self-signed-code-signing-cert.ps1").read_text(encoding="utf-8")
     launcher_gui = Path("Cleverly-Launcher.ps1").read_text(encoding="utf-8")
     doc = Path("docs/windows-installer.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
@@ -466,9 +467,17 @@ def test_windows_installer_signing_path_requires_release_signature():
     assert "CleverlySetup-{0}.release-checklist.md" in script
     assert "RequireSignature" in script
     assert "CertificatePath" in script
+    assert "CertificatePasswordPath" in script
     assert "Get-AuthenticodeSignature" in script
     assert "A certificate is required because -RequireSignature was set" in script
+    assert "New-SelfSignedCertificate" in self_signed
+    assert "Export-PfxCertificate" in self_signed
+    assert "KeyExportPolicy" in self_signed
+    assert "cleverly-local-test-codesign.pfx" in self_signed
+    assert "production_trusted = $false" in self_signed
     assert "Authenticode" in doc
+    assert "self-signed code-signing" in doc
+    assert "CertificatePasswordPath" in doc
     assert "release-checklist.md" in doc
     assert "-RequireSignature" in doc
     assert "Status: Ready" in launcher_gui
@@ -540,7 +549,7 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "CLEVERLY_OFFLINE=0" in ci_smoke
     assert "expected 64" in ci_smoke
     assert "No-Network Container Smoke" in workflow
-    assert "actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4" in workflow
+    assert "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" in workflow
     assert "dist/no-network-container-smoke.json" in workflow
     assert "Cleverly CI" in full_ci
     assert "Release readiness" in full_ci
@@ -562,6 +571,8 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "attestations: write" in release_workflow
     assert "actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661" in release_workflow
     assert "actions/attest-sbom@51e74621a501c89df81fc1391c5a8f4cfc9fab2f" in release_workflow
+    assert "--prerelease" in release_workflow
+    assert "rc[0-9]*" in release_workflow
     assert "gh release create" in release_workflow
     assert "github-actions" in dependabot
     assert "package-ecosystem: \"pip\"" in dependabot
@@ -572,6 +583,7 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "scripts\\run-static-security.ps1" in release_script
     assert "scripts\\write-model-integrity.ps1" in release_script
     assert "scripts\\write-release-dashboard.ps1" in release_script
+    assert "CertificatePasswordPath" in release_script
     assert "ci\\no-network-container-smoke.ps1" in release_script
     assert "release-manifest.json" in release_script
     assert "checksums.sha256" in release_script
@@ -590,6 +602,7 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "docker image inspect" in sbom_script
     assert "cleverly-sbom.json.sha256" in sbom_script
     assert "build-offline-release.ps1" in make_release
+    assert "CertificatePasswordPath" in make_release
     assert "Get-PowerShellExe" in make_release
     assert "RELEASE-CANDIDATE.txt" in make_release
     assert "Compress-Archive" in make_release
@@ -647,6 +660,7 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "Cleverly Release Checklist" in release
     assert "Hosted Pipeline" in release
     assert "configure-branch-protection.ps1" in release
+    assert "-RequirePullRequest" in release
     assert "No-Network Gates" in release
     assert "Code Workspace" in release
     assert "AuthentiCode" not in release
@@ -676,6 +690,7 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "scripts\\write-model-integrity.ps1" in readme
     assert "scripts\\create-release-tag.ps1" in readme
     assert "scripts\\configure-branch-protection.ps1" in readme
+    assert "new-self-signed-code-signing-cert.ps1" in readme
     assert "release-dashboard.html" in readme
     assert "Cleverly CI" in readme
     assert "fresh-machine-proof.ps1" in readme

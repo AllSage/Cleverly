@@ -13,6 +13,12 @@ venv/
 # Environment
 .env
 !.env.example
+*.pfx
+*.p12
+*.key
+*.pem
+*.cer
+*.crt
 
 # Data — all user data stays local
 data/

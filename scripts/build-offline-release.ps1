@@ -16,6 +16,7 @@ param(
     [switch]$FineTune,
     [switch]$RequireSignature,
     [string]$CertificatePath = "",
+    [string]$CertificatePasswordPath = "",
     [string]$Model = "",
     [double]$GpuGB = -1
 )
@@ -156,6 +157,7 @@ try {
             $args = @()
             if ($RequireSignature) { $args += "-RequireSignature" }
             if ($CertificatePath) { $args += @("-CertificatePath", $CertificatePath) }
+            if ($CertificatePasswordPath) { $args += @("-CertificatePasswordPath", $CertificatePasswordPath) }
             & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\build-windows-installer.ps1") @args
             if ($LASTEXITCODE -ne 0) { throw "installer build failed" }
             $installerOut = Join-Path $Root "dist\installer"
