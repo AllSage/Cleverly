@@ -24,6 +24,8 @@ The hardened deployment is a single-user or trusted-small-team local machine:
   `network_mode: none`.
 - Runtime data is stored in sealed Docker named volumes by default.
 - Model pulls happen only on a connected, non-sensitive prep machine.
+- Standalone no-Docker mode is supported for easier local startup, but it is
+  app-enforced offline only and not the hardened sensitive-machine boundary.
 
 ## In-Scope Threats
 
@@ -62,6 +64,9 @@ The hardened deployment is a single-user or trusted-small-team local machine:
   no-network-smoke, release-dashboard, manifest, and checksum evidence.
 - GitHub Actions run test, syntax, Compose, static-security, no-network smoke,
   CodeQL, dependency review, release artifact, and attestation workflows.
+- Standalone startup sets `CLEVERLY_OFFLINE=1`, binds to loopback, requires
+  authentication, and refuses non-local model endpoint configuration through
+  the app-level offline policy.
 
 ## Required Operator Proof
 
@@ -83,3 +88,8 @@ Sealed Docker volumes are not encryption. They reduce accidental host-folder
 exposure but do not protect against a host/Docker administrator. For stronger
 at-rest protection, use full-disk encryption or the optional encrypted Docker
 data root when the target computer allows Administrator rights.
+
+Standalone mode is weaker than Docker sealed mode. It binds locally and
+enforces Cleverly's offline policy inside the app, but without Docker or
+administrator-managed firewall rules, the host operating system remains the
+network and filesystem security boundary.

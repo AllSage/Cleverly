@@ -262,6 +262,44 @@ def test_windows_app_launcher_uses_offline_docker_runtime():
     assert "-STA" in gui_cmd
     assert "pushd" in gui_cmd
     assert "Cleverly launcher exited with code" in gui_cmd
+    assert "Standalone App" in gui
+    assert "Cleverly-Standalone.cmd" in gui
+    assert "Standalone Doc" in gui
+    assert "docs\\standalone-mode.md" in gui
+
+
+def test_windows_standalone_mode_is_app_enforced_offline():
+    standalone = Path("Cleverly-Standalone.ps1").read_text(encoding="utf-8")
+    standalone_cmd = Path("Cleverly-Standalone.cmd").read_text(encoding="utf-8")
+    legacy_launcher = Path("launch-windows.ps1").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+    doc = Path("docs/standalone-mode.md").read_text(encoding="utf-8")
+    security = Path("docs/security-review.md").read_text(encoding="utf-8")
+    threat = Path("docs/threat-model.md").read_text(encoding="utf-8")
+
+    assert 'ValidateSet("setup", "start", "doctor", "open")' in standalone
+    assert "CLEVERLY_OFFLINE" in standalone
+    assert "APP_BIND" in standalone
+    assert "AUTH_ENABLED" in standalone
+    assert "LOCALHOST_BYPASS" in standalone
+    assert "CODE_WORKSPACE_RUNNER" in standalone
+    assert "in-process" in standalone
+    assert "I_ACCEPT_NETWORK_RISK" in standalone
+    assert "AllowConnectedPrep" in standalone
+    assert "Dependency installation may contact package indexes" in standalone
+    assert "Standalone mode only binds to 127.0.0.1 or localhost" in standalone
+    assert "Standalone mode: app-enforced offline policy" in standalone
+    assert "Cleverly-Standalone.ps1" in standalone_cmd
+    assert "Cleverly standalone exited with code" in standalone_cmd
+    assert "Cleverly-Standalone.ps1" in legacy_launcher
+    assert "setup -AllowConnectedPrep" in legacy_launcher
+    assert "Cleverly-Standalone.ps1 setup -AllowConnectedPrep" in readme
+    assert "Cleverly-Standalone.cmd" in readme
+    assert "docs/standalone-mode.md" in readme
+    assert "Standalone mode does not provide Docker network isolation" in doc
+    assert "CLEVERLY_ALLOW_NETWORK=I_ACCEPT_NETWORK_RISK" in doc
+    assert "app-enforced offline only" in security
+    assert "app-enforced offline only" in threat
 
 
 def test_offline_control_center_is_admin_gated_and_local_only():
@@ -474,6 +512,8 @@ def test_windows_installer_signing_path_requires_release_signature():
     assert "DefaultDirName={localappdata}\\Programs\\Cleverly" in installer
     assert "PrivilegesRequired=lowest" in installer
     assert "Cleverly-App.cmd" in installer
+    assert "Cleverly-Standalone.cmd" in installer
+    assert "Cleverly Standalone" in installer
     assert "Excludes: \".git\\*" in installer
     assert "VersionInfoVersion={#MyAppVersion}" in installer
     assert "UninstallDisplayName={#MyAppName}" in installer
@@ -517,6 +557,8 @@ def test_windows_installer_signing_path_requires_release_signature():
     assert "Check Setup" in doc
     assert "Start Offline" in doc
     assert "Open Bundle" in doc
+    assert "Cleverly-Standalone.cmd" in doc
+    assert "standalone-mode.md" in doc
     assert "Windows Installer" in readme
 
 

@@ -600,8 +600,10 @@ $securityScan = New-Button "Security Scan" 16 108 { Run-Script "Security Scan" (
 $releaseFolder = New-Button "Release Folder" 142 108 { Open-LocalPath (Join-Path $Root "dist\release-candidates") "No release candidate folder found yet." } 118
 $sbom = New-Button "SBOM" 268 108 { Run-Script "SBOM" (Join-Path $Root "scripts\generate-sbom.ps1") @("-SkipDocker") } 118
 $proofFolder = New-Button "Proofs" 394 108 { Open-LocalPath (Join-Path $Root "dist") "dist folder not found yet." } 118
+$standaloneApp = New-Button "Standalone App" 520 108 { Start-Process (Join-Path $Root "Cleverly-Standalone.cmd") } 118
+$standaloneDoc = New-Button "Standalone Doc" 646 108 { Open-LocalPath (Join-Path $Root "docs\standalone-mode.md") "standalone-mode.md was not found." } 118
 
-@($stop, $restart, $status, $doctor, $logs, $setup, $logFolder, $checklist, $smoke, $readme, $makeRelease, $freshProof, $securityScan, $releaseFolder, $sbom, $proofFolder) | ForEach-Object {
+@($stop, $restart, $status, $doctor, $logs, $setup, $logFolder, $checklist, $smoke, $readme, $makeRelease, $freshProof, $securityScan, $releaseFolder, $sbom, $proofFolder, $standaloneApp, $standaloneDoc) | ForEach-Object {
     [void]$buttons.Add($_)
     $opsGroup.Controls.Add($_)
 }

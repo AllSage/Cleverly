@@ -45,6 +45,15 @@ Default behavior:
   connected setup, Cleverly chooses a local Ollama model from the hardware table
   below.
 
+### Runtime Modes
+
+- **Docker sealed mode** is the recommended sensitive-machine mode. It uses
+  Docker network isolation, hardened containers, sealed Docker volumes, and
+  offline startup checks.
+- **Standalone mode** runs without Docker. It is easier to start, binds to
+  `127.0.0.1`, sets `CLEVERLY_OFFLINE=1`, and uses app-level offline policy, but
+  it does not provide Docker network isolation or sealed-volume protection.
+
 ### Easiest Windows Setup
 
 For the simplest startup, double-click:
@@ -154,6 +163,26 @@ to visible `./data` and `./logs` folders:
 ```powershell
 .\Cleverly.ps1 start -FineTune -HostData
 ```
+
+### Standalone Windows App
+
+Use this when Docker Desktop is not available and you accept the weaker
+standalone boundary:
+
+```powershell
+.\Cleverly-Standalone.ps1 setup -AllowConnectedPrep
+.\Cleverly-Standalone.ps1 start
+```
+
+After setup, double-clicking `Cleverly-Standalone.cmd` starts the no-Docker app
+with local-only, app-enforced offline defaults. Run:
+
+```powershell
+.\Cleverly-Standalone.ps1 doctor
+```
+
+For the exact safety boundary, read
+[docs/standalone-mode.md](docs/standalone-mode.md).
 
 ### First Login
 
@@ -396,7 +425,8 @@ downloads and serves.
 ```powershell
 git clone https://github.com/AllSage/Cleverly.git
 cd Cleverly
-powershell -ExecutionPolicy Bypass -File .\launch-windows.ps1
+powershell -ExecutionPolicy Bypass -File .\Cleverly-Standalone.ps1 setup -AllowConnectedPrep
+powershell -ExecutionPolicy Bypass -File .\Cleverly-Standalone.ps1 start
 ```
 
 Manual setup:
@@ -407,6 +437,9 @@ venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python setup.py
 $env:CLEVERLY_OFFLINE='1'
+$env:APP_BIND='127.0.0.1'
+$env:AUTH_ENABLED='true'
+$env:LOCALHOST_BYPASS='false'
 python -m uvicorn app:app --host 127.0.0.1 --port 7000
 ```
 
