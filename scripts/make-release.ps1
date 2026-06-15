@@ -14,6 +14,7 @@ param(
     [switch]$FineTune,
     [switch]$RequireSignature,
     [string]$CertificatePath = "",
+    [string]$CertificatePasswordPath = "",
     [switch]$SkipTests,
     [switch]$SkipBundle,
     [switch]$SkipInstaller,
@@ -35,8 +36,18 @@ function Get-GitOutput {
     return ""
 }
 
+function Get-PowerShellExe {
+    foreach ($candidate in @("powershell", "pwsh")) {
+        if (Get-Command $candidate -ErrorAction SilentlyContinue) {
+            return $candidate
+        }
+    }
+    throw "PowerShell executable not found"
+}
+
 Push-Location $Root
 try {
+    $PowerShellExe = Get-PowerShellExe
     $commit = Get-GitOutput @("rev-parse", "--short=12", "HEAD")
     if (-not $Version) {
         $Version = if ($commit) { "rc-$commit" } else { "rc-local" }
@@ -59,11 +70,12 @@ try {
     if ($FineTune) { $args += "-FineTune" }
     if ($RequireSignature) { $args += "-RequireSignature" }
     if ($CertificatePath) { $args += @("-CertificatePath", $CertificatePath) }
+    if ($CertificatePasswordPath) { $args += @("-CertificatePasswordPath", $CertificatePasswordPath) }
     if ($SkipTests) { $args += "-SkipTests" }
     if ($SkipBundle) { $args += "-SkipBundle" }
     if ($SkipInstaller) { $args += "-SkipInstaller" }
 
-    & powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\build-offline-release.ps1") @args
+    & $PowerShellExe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root "scripts\build-offline-release.ps1") @args
     if ($LASTEXITCODE -ne 0) { throw "build-offline-release.ps1 failed" }
 
     $notePath = Join-Path $releaseDir "RELEASE-CANDIDATE.txt"
