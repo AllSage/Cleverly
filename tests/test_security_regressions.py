@@ -594,7 +594,7 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "Release Artifacts" in release_workflow
     assert "id-token: write" in release_workflow
     assert "attestations: write" in release_workflow
-    assert "actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a" in release_workflow
+    assert "actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32" in release_workflow
     assert "actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e" in release_workflow
     assert "--prerelease" in release_workflow
     assert "rc[0-9]*" in release_workflow
