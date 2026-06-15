@@ -24,10 +24,10 @@ machine. Keep the generated reports with the release artifact.
   admin shell to require the release-readiness checks:
 
   ```powershell
-  powershell -ExecutionPolicy Bypass -File .\scripts\configure-branch-protection.ps1
+  powershell -ExecutionPolicy Bypass -File .\scripts\configure-branch-protection.ps1 -RequirePullRequest
   ```
 
-- For a stricter team workflow, add `-RequirePullRequest`.
+- Use pull requests for normal work once branch protection is enabled.
 - Do not put signing certificates, model files, or private release data in
   GitHub Actions logs or artifacts.
 
@@ -48,7 +48,7 @@ Use `scripts/build-offline-release.ps1` for the full release wrapper,
 - Run any relevant UI smoke checks after frontend changes.
 - Build the Docker image.
 - Build the Windows app or installer when shipping Windows artifacts.
-- Generate the local SBOM with `scripts/generate-sbom.ps1` and keep
+- Generate the local CycloneDX SBOM with `scripts/generate-sbom.ps1` and keep
   `dist\sbom\cleverly-sbom.json` plus `cleverly-sbom.json.sha256`.
 - Run `scripts/run-static-security.ps1` and keep `static-security.json`.
 - Run `scripts/write-model-integrity.ps1` or confirm the release wrapper wrote
@@ -100,6 +100,8 @@ Use `scripts/build-offline-release.ps1` for the full release wrapper,
 ## Windows Release
 
 - Build the installer with `scripts/build-windows-installer.ps1`.
+- For local signing workflow validation only, create ignored test signing
+  material with `scripts/new-self-signed-code-signing-cert.ps1`.
 - For release distribution, pass `-RequireSignature`.
 - Verify Authenticode signature status is valid.
 - Re-check the output with `scripts/verify-windows-installer-signature.ps1
