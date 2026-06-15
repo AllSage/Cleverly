@@ -16,6 +16,7 @@ param(
     [string]$OutputDir = "dist\installer",
     [string]$ReleaseChecklistPath = "",
     [string]$CertificatePath = "",
+    [string]$CertificatePasswordPath = "",
     [securestring]$CertificatePassword,
     [string]$TimestampUrl = "http://timestamp.digicert.com",
     [switch]$RequireSignature
@@ -136,13 +137,26 @@ if (-not (Test-Path -LiteralPath $certFullPath)) {
     Fail "Certificate was not found: $certFullPath"
 }
 
+$certPasswordFullPath = ""
+if (-not [string]::IsNullOrWhiteSpace($CertificatePasswordPath)) {
+    $certPasswordFullPath = if ([System.IO.Path]::IsPathRooted($CertificatePasswordPath)) { $CertificatePasswordPath } else { Join-Path $Root $CertificatePasswordPath }
+    if (-not (Test-Path -LiteralPath $certPasswordFullPath -PathType Leaf)) {
+        Fail "Certificate password file was not found: $certPasswordFullPath"
+    }
+}
+
 $signtool = Get-Command signtool.exe -ErrorAction SilentlyContinue
 if (-not $signtool) {
     Fail "signtool.exe was not found. Install the Windows SDK on the signing workstation."
 }
 
 $plainPassword = ""
-if ($CertificatePassword) {
+if ($certPasswordFullPath) {
+    $plainPassword = ((Get-Content -LiteralPath $certPasswordFullPath -Raw) -join "").Trim()
+    if ([string]::IsNullOrWhiteSpace($plainPassword)) {
+        Fail "Certificate password file is empty: $certPasswordFullPath"
+    }
+} elseif ($CertificatePassword) {
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($CertificatePassword)
     try {
         $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
