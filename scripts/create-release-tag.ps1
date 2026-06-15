@@ -23,8 +23,15 @@ try {
         }
     }
 
-    & git rev-parse --verify "refs/tags/$Version" 1>$null 2>$null
-    if ($LASTEXITCODE -eq 0) {
+    $oldErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & git rev-parse --verify "refs/tags/$Version" 1>$null 2>$null
+        $tagExists = $LASTEXITCODE -eq 0
+    } finally {
+        $ErrorActionPreference = $oldErrorActionPreference
+    }
+    if ($tagExists) {
         throw "Tag already exists: $Version"
     }
 

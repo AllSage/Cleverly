@@ -33,6 +33,28 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 `
 `-RequireSignature` refuses to produce a release artifact unless signing
 succeeds and `Get-AuthenticodeSignature` reports `Valid`.
 
+## Create A Local Test Signing Key
+
+For local signing workflow validation, create a self-signed code-signing
+certificate and PFX:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\new-self-signed-code-signing-cert.ps1
+```
+
+This writes ignored local signing material under `dist\signing`. Use it with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 `
+  -Version 1.0.0 `
+  -CertificatePath .\dist\signing\cleverly-local-test-codesign.pfx `
+  -CertificatePasswordPath .\dist\signing\cleverly-local-test-codesign.password.txt `
+  -RequireSignature
+```
+
+Self-signed certificates are not public trust certificates. They are acceptable
+for proving the signing flow on your own machine, not for public distribution.
+
 After the build, verify the installer again:
 
 ```powershell
@@ -45,8 +67,9 @@ The build script writes a release checklist next to the installer by default.
 Keep that checklist with the release artifact after completing the offline smoke
 test, Offline Control no-internet proof, and report export.
 
-Do not store the `.pfx` certificate or password in this repository. Keep the
-certificate on the signing workstation or in a secure signing service.
+Do not store the `.pfx` certificate or password in this repository. The default
+local test outputs are under ignored `dist\signing`; keep real release
+certificates on the signing workstation or in a secure signing service.
 
 ## Install Behavior
 

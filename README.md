@@ -296,7 +296,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\make-release.ps1 -Version 1.0
 ```
 
 The release wrapper writes `release-manifest.json`, `checksums.sha256`,
-`cleverly-sbom.json`, `static-security.json`, `model-integrity.json`,
+`cleverly-sbom.json` as a CycloneDX JSON SBOM, `static-security.json`, `model-integrity.json`,
 `release-dashboard.html`, `release-dashboard.json`, and no-network smoke
 evidence into the release folder.
 
@@ -340,11 +340,10 @@ After pushing the workflows, configure branch protection from an authenticated
 GitHub admin shell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\configure-branch-protection.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\configure-branch-protection.ps1 -RequirePullRequest
 ```
 
-Use `-RequirePullRequest` when you want `main` to accept only reviewed pull
-requests.
+Use pull requests for normal work once branch protection is enabled.
 
 ### Windows Installer
 
@@ -352,12 +351,16 @@ Cleverly includes a per-user Windows installer project. Local test builds can
 be unsigned, but release installers should be Authenticode-signed:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\new-self-signed-code-signing-cert.ps1
+
 powershell -ExecutionPolicy Bypass -File .\scripts\build-windows-installer.ps1 `
-  -CertificatePath .\certs\cleverly-release.pfx `
+  -CertificatePath .\dist\signing\cleverly-local-test-codesign.pfx `
+  -CertificatePasswordPath .\dist\signing\cleverly-local-test-codesign.password.txt `
   -RequireSignature
 ```
 
-The signing certificate is not included in this repo. Details:
+The self-signed certificate path is for local signing workflow validation only.
+Use a real trusted code-signing certificate for public distribution. Details:
 [docs/windows-installer.md](docs/windows-installer.md).
 
 ### Native Linux / macOS

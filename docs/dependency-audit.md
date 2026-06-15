@@ -19,8 +19,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\generate-sbom.ps1
 ```
 
 This writes `dist\sbom\cleverly-sbom.json` and
-`dist\sbom\cleverly-sbom.json.sha256`. It does not contact the internet; it
-hashes reviewed release files, reads `package-lock.json`, runs
+`dist\sbom\cleverly-sbom.json.sha256`. The JSON is CycloneDX-compatible so the
+GitHub release workflow can attach an SBOM attestation. It does not contact the
+internet; it hashes reviewed release files, reads `package-lock.json`, runs
 `pip freeze --all`, and inspects already-built Docker images when present.
 
 ## Refresh The Lock Snapshot
