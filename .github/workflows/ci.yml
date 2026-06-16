@@ -52,8 +52,11 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
-      - name: Python tests
-        run: python -m pytest -q
+      - name: Python tests with coverage
+        run: |
+          python -m coverage run -m pytest -q
+          python -m coverage report --fail-under=0
+          python -m coverage xml
 
       - name: JavaScript syntax checks
         run: |
@@ -95,5 +98,6 @@ jobs:
           path: |
             dist/security/static-security-ci.json
             dist/no-network-container-smoke.json
+            dist/coverage/coverage.xml
           if-no-files-found: warn
           retention-days: 14

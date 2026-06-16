@@ -15,6 +15,7 @@ charset-normalizer==3.4.7
 chromadb-client==1.5.9
 click==8.4.1
 colorama==0.4.6
+coverage==7.14.1
 croniter==6.2.2
 cryptography==48.0.0
 defusedxml==0.7.1

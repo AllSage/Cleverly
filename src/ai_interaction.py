@@ -1262,7 +1262,7 @@ async def do_ui_control(content: str, session_id: Optional[str] = None) -> Dict:
       get_toggles             — Return current toggle states (server-side knowledge)
     """
     lines = content.strip().split("\n")
-    if not lines:
+    if not lines or not lines[0].strip():
         return {"error": "No action specified"}
 
     parts = lines[0].strip().split(None, 2)

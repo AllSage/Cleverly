@@ -69,6 +69,15 @@ _ensure_stub("core.auth", AuthManager=MagicMock())
 
 from routes.auth_routes import setup_auth_routes, LoginRequest
 
+# The route module has imported the symbols it needs. Do not leave these stubs
+# in sys.modules for later tests that need the real SQLAlchemy models.
+for _stub_name in ("core.database", "core.auth"):
+    sys.modules.pop(_stub_name, None)
+    _parent = sys.modules.get("core")
+    _child = _stub_name.rpartition(".")[2]
+    if _parent is not None and hasattr(_parent, _child):
+        delattr(_parent, _child)
+
 
 def _login_endpoint(auth_manager):
     router = setup_auth_routes(auth_manager)

@@ -42,7 +42,7 @@ class SearchService:
 
     def __init__(self, default_depth: int = 1, fetch_content: bool = True):
         self.default_depth = default_depth
-        self.fetch_content = fetch_content
+        self.fetch_content_enabled = fetch_content
 
     async def search(
         self,
@@ -62,7 +62,7 @@ class SearchService:
             SearchResponse with results
         """
         depth = depth or self.default_depth
-        fetch_content = fetch_content if fetch_content is not None else self.fetch_content
+        fetch_content = fetch_content if fetch_content is not None else self.fetch_content_enabled
 
         # Use existing search implementation
         raw_results = await comprehensive_web_search(

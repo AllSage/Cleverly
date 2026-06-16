@@ -151,3 +151,101 @@ class TestGetContextLength:
         assert first == 200000
         assert second == 200000
         assert len(calls) == 1
+
+    def test_remote_default_context_is_not_cached(self, monkeypatch):
+        calls = []
+
+        def fake_query(endpoint_url, model):
+            calls.append((endpoint_url, model))
+            return model_context.DEFAULT_CONTEXT
+
+        monkeypatch.setattr(model_context, "_query_context_length", fake_query)
+
+        endpoint = "https://api.example.test/v1/chat/completions"
+        assert model_context.get_context_length(endpoint, "unknown") == model_context.DEFAULT_CONTEXT
+        assert model_context.get_context_length(endpoint, "unknown") == model_context.DEFAULT_CONTEXT
+        assert len(calls) == 2
+
+
+class Response:
+    def __init__(self, data=None, *, is_success=True):
+        self._data = data
+        self.is_success = is_success
+
+    def json(self):
+        return self._data
+
+
+class TestQueryContextLength:
+    def test_is_local_endpoint_handles_parser_error(self, monkeypatch):
+        monkeypatch.setattr(model_context, "urlparse", lambda _url: (_ for _ in ()).throw(ValueError("bad")))
+
+        assert model_context._is_local_endpoint("http://localhost") is False
+
+    def test_local_slots_endpoint_reports_serving_context(self, monkeypatch):
+        requests = []
+
+        def fake_get(url, timeout=None):
+            requests.append((url, timeout))
+            return Response([{"n_ctx": 4096}])
+
+        monkeypatch.setattr(model_context.httpx, "get", fake_get)
+
+        assert model_context._query_context_length("http://localhost:8080/v1/chat/completions", "custom") == 4096
+        assert requests == [("http://localhost:8080/slots", model_context.REQUEST_TIMEOUT)]
+
+    def test_local_slots_error_falls_back_to_models_endpoint(self, monkeypatch):
+        calls = []
+
+        def fake_get(url, timeout=None):
+            calls.append(url)
+            if url.endswith("/slots"):
+                raise RuntimeError("slots down")
+            return Response({"data": [{"id": "custom", "context_length": 7777}]})
+
+        monkeypatch.setattr(model_context.httpx, "get", fake_get)
+
+        assert model_context._query_context_length("http://localhost:8080/v1/chat/completions", "custom") == 7777
+        assert calls == ["http://localhost:8080/slots", "http://localhost:8080/v1/models"]
+
+    def test_models_endpoint_context_fields_and_meta(self, monkeypatch):
+        responses = [
+            Response({"data": [{"id": "provider/model-a", "context_window": 12345}]}),
+            Response({"data": [{"id": "model-b", "meta": {"n_ctx": 2222}}]}),
+            Response({"data": [{"id": "model-c", "model_extra": {"max_model_len": 3333}}]}),
+        ]
+        monkeypatch.setattr(model_context.httpx, "get", lambda *_args, **_kwargs: responses.pop(0))
+
+        assert model_context._query_context_length("https://api.test/v1/chat/completions", "model-a") == 12345
+        assert model_context._query_context_length("https://api.test/v1/chat/completions", "model-b") == 2222
+        assert model_context._query_context_length("https://api.test/v1/chat/completions", "model-c") == 3333
+
+    def test_known_model_context_wins_for_cloud_but_not_local(self, monkeypatch):
+        responses = [
+            Response({"data": [{"id": "gpt-4", "context_length": 4096}]}),
+            Response([], is_success=False),
+            Response({"data": [{"id": "llama-3", "context_length": 4096}]}),
+            Response({"data": [{"id": "gpt-4", "context_length": 200000}]}),
+        ]
+        monkeypatch.setattr(model_context.httpx, "get", lambda *_args, **_kwargs: responses.pop(0))
+
+        assert model_context._query_context_length("https://api.test/v1/chat/completions", "gpt-4") == 8192
+        assert model_context._query_context_length("http://localhost:8080/v1/chat/completions", "llama-3") == 4096
+        assert model_context._query_context_length("https://api.test/v1/chat/completions", "gpt-4") == 200000
+
+    def test_known_only_default_and_request_errors(self, monkeypatch):
+        responses = [
+            Response({"data": [{"id": "other", "context_length": 123}]}),
+            RuntimeError("down"),
+        ]
+
+        def fake_get(*_args, **_kwargs):
+            item = responses.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        monkeypatch.setattr(model_context.httpx, "get", fake_get)
+
+        assert model_context._query_context_length("https://api.test/v1/chat/completions", "gpt-4o") == 128000
+        assert model_context._query_context_length("https://api.test/v1/chat/completions", "unknown-model") == model_context.DEFAULT_CONTEXT

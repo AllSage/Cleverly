@@ -1,3 +1,29 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+relative_files = true
+source = ["."]
+omit = [
+  "tests/*",
+  "venv/*",
+  ".venv/*",
+  "dist/*",
+  "data/*",
+  "setup.py",
+  "__pycache__/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_empty = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]
+
+[tool.coverage.xml]
+output = "dist/coverage/coverage.xml"

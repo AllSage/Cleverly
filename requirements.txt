@@ -33,6 +33,7 @@ python-dateutil
 caldav
 cryptography
 bcrypt
+coverage
 mcp
 pyotp
 qrcode[pil]

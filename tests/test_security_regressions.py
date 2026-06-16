@@ -620,7 +620,10 @@ def test_fresh_machine_offline_smoke_and_security_review_are_release_gates():
     assert "dist/no-network-container-smoke.json" in workflow
     assert "Cleverly CI" in full_ci
     assert "Release readiness" in full_ci
-    assert "python -m pytest -q" in full_ci
+    assert "python -m coverage run -m pytest -q" in full_ci
+    assert "python -m coverage report --fail-under=0" in full_ci
+    assert "python -m coverage xml" in full_ci
+    assert "dist/coverage/coverage.xml" in full_ci
     assert "node --check" in full_ci
     assert "[System.Management.Automation.Language.Parser]::ParseFile" in full_ci
     assert "docker compose config" in full_ci

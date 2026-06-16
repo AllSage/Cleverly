@@ -1,6 +1,7 @@
 """Tests for shell_routes.py helpers."""
 
 import builtins
+import asyncio
 import importlib.util
 import json
 import sys
@@ -8,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi.routing import APIRoute
 
 from routes.shell_routes import (
     _find_line_break,
@@ -20,6 +22,27 @@ from routes.shell_routes import (
     _venv_activate_prefix,
     DOCKER_IN_CONTAINER_HINT,
 )
+
+
+def _endpoint(router, path, method):
+    method = method.upper()
+    for route in router.routes:
+        if isinstance(route, APIRoute) and route.path == path and method in route.methods:
+            return route.endpoint
+    raise AssertionError(f"route not found: {method} {path}")
+
+
+class RequestLike(SimpleNamespace):
+    def __init__(self, *, body=None, headers=None, user=None, auth_manager=None):
+        super().__init__(
+            headers=headers or {},
+            state=SimpleNamespace(current_user=user),
+            app=SimpleNamespace(state=SimpleNamespace(auth_manager=auth_manager)),
+        )
+        self._body = body or {}
+
+    async def json(self):
+        return self._body
 
 
 def test_shell_routes_import_without_posix_pty_modules(monkeypatch):
@@ -319,3 +342,177 @@ class TestRejectCrossSite:
 
     def test_missing_header_allowed(self):
         assert _reject_cross_site(self._req({})) is None
+
+
+def test_require_admin_branches():
+    import routes.shell_routes as shell_routes
+    from fastapi import HTTPException
+
+    shell_routes._require_admin(RequestLike(auth_manager=None))
+    shell_routes._require_admin(RequestLike(auth_manager=SimpleNamespace(is_admin=lambda user: False), user="internal-tool"))
+
+    with pytest.raises(HTTPException) as exc:
+        shell_routes._require_admin(RequestLike(auth_manager=SimpleNamespace(is_admin=lambda user: True), user="api"))
+    assert exc.value.status_code == 403
+
+    with pytest.raises(HTTPException) as exc:
+        shell_routes._require_admin(RequestLike(auth_manager=SimpleNamespace(is_admin=lambda user: False), user="bob"))
+    assert exc.value.status_code == 403
+
+    shell_routes._require_admin(RequestLike(auth_manager=SimpleNamespace(is_admin=lambda user: user == "alice"), user="alice"))
+
+
+async def test_exec_shell_success_timeout_and_spawn_error(monkeypatch):
+    import routes.shell_routes as shell_routes
+
+    class Proc:
+        returncode = 7
+        killed = False
+
+        async def communicate(self):
+            return b"out" * 100000, b"err"
+
+        def kill(self):
+            self.killed = True
+
+        async def wait(self):
+            return None
+
+    proc = Proc()
+    monkeypatch.setattr(shell_routes, "_create_shell", lambda *args, **kwargs: asyncio.sleep(0, result=proc))
+    result = await shell_routes._exec_shell("echo hi", timeout=5)
+    assert result["stdout"].startswith("out")
+    assert len(result["stdout"]) == shell_routes.MAX_OUTPUT
+    assert result["stderr"] == "err"
+    assert result["exit_code"] == 7
+
+    async def raise_timeout(awaitable, timeout=None):
+        awaitable.close()
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(shell_routes.asyncio, "wait_for", raise_timeout)
+    timed = await shell_routes._exec_shell("sleep", timeout=1)
+    assert timed == {"stdout": "", "stderr": "Command timed out after 1s", "exit_code": -1}
+    assert proc.killed is True
+
+    async def fail_create(*args, **kwargs):
+        raise RuntimeError("spawn failed")
+
+    monkeypatch.setattr(shell_routes, "_create_shell", fail_create)
+    errored = await shell_routes._exec_shell("bad", timeout=1)
+    assert errored == {"stdout": "", "stderr": "spawn failed", "exit_code": -1}
+
+
+async def test_shell_exec_route_and_package_install(monkeypatch):
+    import routes.shell_routes as shell_routes
+
+    monkeypatch.setattr(shell_routes, "_require_admin", lambda request: None)
+    router = shell_routes.setup_shell_routes()
+
+    shell_exec = _endpoint(router, "/api/shell/exec", "POST")
+    install = _endpoint(router, "/api/cookbook/packages/install", "POST")
+
+    assert await shell_exec(RequestLike(), shell_routes.ShellExecRequest(command="   ")) == {
+        "stdout": "",
+        "stderr": "No command provided",
+        "exit_code": 1,
+    }
+    monkeypatch.setattr(shell_routes, "_exec_shell", lambda command, timeout: asyncio.sleep(0, result={"stdout": command, "stderr": "", "exit_code": 0}))
+    assert (await shell_exec(RequestLike(), shell_routes.ShellExecRequest(command=" echo hi ")))["stdout"] == "echo hi"
+
+    monkeypatch.setattr(shell_routes, "offline_mode", lambda: True)
+    with pytest.raises(Exception) as exc:
+        await install(RequestLike(body={"pip": "playwright"}))
+    assert getattr(exc.value, "status_code", None) == 403
+
+    monkeypatch.setattr(shell_routes, "offline_mode", lambda: False)
+    assert await install(RequestLike(body={})) == {"ok": False, "error": "No package specified"}
+    assert await install(RequestLike(body={"pip": "evil"})) == {"ok": False, "error": "Unknown package: evil"}
+
+    class Proc:
+        def __init__(self, code):
+            self.returncode = code
+
+        async def communicate(self):
+            return b"installed ok", b"install failed"
+
+    created = []
+
+    async def create_exec(*args, **kwargs):
+        created.append(args)
+        return Proc(0)
+
+    monkeypatch.setattr(shell_routes.asyncio, "create_subprocess_exec", create_exec)
+    assert await install(RequestLike(body={"pip": "playwright"})) == {"ok": True, "output": "installed ok"}
+    assert created[-1][-1] == "playwright"
+
+    async def create_failed(*args, **kwargs):
+        return Proc(1)
+
+    monkeypatch.setattr(shell_routes.asyncio, "create_subprocess_exec", create_failed)
+    assert await install(RequestLike(body={"pip": "playwright"})) == {"ok": False, "error": "install failed"}
+
+
+async def test_list_packages_local_and_remote(monkeypatch):
+    import importlib
+    import importlib.metadata as importlib_metadata
+    import routes.shell_routes as shell_routes
+
+    monkeypatch.setattr(shell_routes, "_require_admin", lambda request: None)
+    monkeypatch.setattr(shell_routes, "_reject_cross_site", lambda request: None)
+    monkeypatch.setattr(shell_routes, "_running_in_container", lambda: True)
+    monkeypatch.setattr(shell_routes.shutil, "which", lambda name: "/bin/llama-server" if name == "llama-server" else None)
+
+    def fake_import_module(name):
+        if name in {"playwright", "realesrgan"}:
+            return SimpleNamespace()
+        raise ImportError(name)
+
+    def fake_version(name):
+        if name in {"playwright", "realesrgan"}:
+            return "1.0"
+        raise importlib_metadata.PackageNotFoundError(name)
+
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
+    monkeypatch.setattr(importlib_metadata, "version", fake_version)
+
+    router = shell_routes.setup_shell_routes()
+    list_packages = _endpoint(router, "/api/cookbook/packages", "GET")
+    local = await list_packages(RequestLike(), host=None, ssh_port=None, venv=None)
+    by_name = {p["name"]: p for p in local["packages"]}
+    assert by_name["docker"]["applicable"] is False
+    assert by_name["docker"]["install_hint"] == shell_routes.DOCKER_IN_CONTAINER_HINT
+    assert by_name["llama_cpp"]["installed"] is True
+    assert by_name["playwright"]["installed"] is True
+
+    class Proc:
+        def __init__(self, out):
+            self._out = out
+
+        async def communicate(self):
+            return self._out, b""
+
+    calls = []
+
+    async def create_exec(*args, **kwargs):
+        calls.append(args)
+        if "python3 -c" in args[-1]:
+            payload = {
+                "vllm": {"modules": {"vllm": {"found": True, "real_module": True}}, "dists": {"vllm": "1"}, "binaries": {"vllm": "/venv/bin/vllm"}},
+                "diffusers": {"modules": {"diffusers": {"found": True, "real_module": True}, "torch": {"found": True, "real_module": True}}, "dists": {"diffusers": "1", "torch": "2"}, "binaries": {}},
+            }
+            return Proc(("noise\n" + json.dumps(payload)).encode())
+        return Proc(b"tmux=1\ndocker=0\n")
+
+    monkeypatch.setattr(shell_routes.asyncio, "create_subprocess_exec", create_exec)
+    remote = await list_packages(RequestLike(), host="gpu.local", ssh_port="2222", venv="~/venv")
+    remote_by_name = {p["name"]: p for p in remote["packages"]}
+    assert remote_by_name["tmux"]["installed"] is True
+    assert remote_by_name["docker"]["installed"] is False
+    assert remote_by_name["vllm"]["installed"] is True
+    assert "vLLM CLI" in remote_by_name["vllm"]["status_note"]
+    assert calls[0][0] == "ssh"
+
+    with pytest.raises(Exception) as exc:
+        await list_packages(RequestLike(), host="gpu.local", ssh_port="bad", venv=None)
+    assert getattr(exc.value, "status_code", None) == 400

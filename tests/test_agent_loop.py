@@ -2,6 +2,8 @@
 Uses mock imports to avoid loading the full app stack."""
 
 import sys
+import types
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 # Mock heavy dependencies before importing
@@ -16,6 +18,21 @@ for mod in [
         sys.modules[mod] = MagicMock()
 
 from src.agent_loop import _detect_admin_intent, _compute_final_metrics
+from src import agent_loop
+
+for _stub_name in [
+    'sqlalchemy', 'sqlalchemy.orm', 'sqlalchemy.ext', 'sqlalchemy.ext.declarative',
+    'sqlalchemy.ext.hybrid', 'sqlalchemy.sql', 'sqlalchemy.sql.expression',
+    'src.database', 'core.models', 'core.database',
+]:
+    _mod = sys.modules.get(_stub_name)
+    if isinstance(_mod, MagicMock):
+        sys.modules.pop(_stub_name, None)
+        if "." in _stub_name:
+            _parent_name, _, _child_name = _stub_name.rpartition(".")
+            _parent = sys.modules.get(_parent_name)
+            if _parent is not None and hasattr(_parent, _child_name):
+                delattr(_parent, _child_name)
 
 
 # ---------------------------------------------------------------------------
@@ -239,3 +256,187 @@ class TestComputeFinalMetrics:
         m = _compute_final_metrics(**self._base_args(tool_events=[], round_texts=[]))
         assert "tool_events" not in m
         assert "round_texts" not in m
+
+
+def test_agent_loop_mcp_disabled_map_and_prompt_helpers(monkeypatch):
+    class Server:
+        def __init__(self, id, disabled_tools):
+            self.id = id
+            self.disabled_tools = disabled_tools
+
+    class DB:
+        closed = False
+
+        def query(self, _model):
+            return self
+
+        def all(self):
+            return [
+                Server("ok", '["read_file", "write_file"]'),
+                Server("bad", "{not-json"),
+                Server("empty", "[]"),
+            ]
+
+        def close(self):
+            self.closed = True
+
+    db = DB()
+    core_db = types.ModuleType("core.database")
+    core_db.McpServer = Server
+    core_db.SessionLocal = lambda: db
+    monkeypatch.setitem(sys.modules, "core.database", core_db)
+
+    assert agent_loop._load_mcp_disabled_map() == {"ok": {"read_file", "write_file"}}
+    assert db.closed is True
+
+    monkeypatch.setattr(
+        agent_loop,
+        "TOOL_SECTIONS",
+        {
+            "bash": "```bash\nls\n```",
+            "web_search": "- web search",
+            "generate_image": "- image",
+            "hidden": "- hidden",
+            "extra1": "- extra1",
+            "extra2": "- extra2",
+            "extra3": "- extra3",
+            "extra4": "- extra4",
+            "extra5": "- extra5",
+            "extra6": "- extra6",
+        },
+    )
+    monkeypatch.setattr(agent_loop, "get_builtin_overrides", lambda: {"bash": "```bash\ncustom\n```"})
+
+    compact = agent_loop._assemble_prompt({"bash", "web_search"}, compact=True)
+    assert "Available tools: bash, web_search" in compact
+
+    prompt = agent_loop._assemble_prompt({"bash", "web_search"}, disabled_tools={"hidden"})
+    assert "custom" in prompt
+    assert "## Additional tools" in prompt
+    assert "web search" in prompt
+    assert "more)" in prompt
+
+    assert agent_loop._section_text("bash", "default").startswith("```bash")
+
+
+def test_agent_loop_build_base_prompt_injects_skills_integrations_and_mcp(monkeypatch):
+    monkeypatch.setattr(
+        agent_loop,
+        "TOOL_SECTIONS",
+        {
+            "bash": "```bash\nls\n```",
+            "web_search": "- web search",
+            "generate_image": "- image",
+            "manage_session": "- sessions",
+        },
+    )
+    monkeypatch.setattr(agent_loop, "get_builtin_overrides", lambda: {})
+    monkeypatch.setattr(agent_loop, "get_setting", lambda key, default=None: False if key == "image_gen_enabled" else default)
+
+    tool_index = types.ModuleType("src.tool_index")
+    tool_index.ALWAYS_AVAILABLE = {"bash"}
+    monkeypatch.setitem(sys.modules, "src.tool_index", tool_index)
+
+    class SkillsManager:
+        def __init__(self, data_dir):
+            self.data_dir = data_dir
+
+        def index_for(self, owner=None, active_toolsets=None):
+            assert "generate_image" not in active_toolsets
+            return [{"category": "workflow", "name": "local-test", "description": "Use local tests", "status": "draft"}]
+
+    skills_mod = types.ModuleType("services.memory.skills")
+    skills_mod.SkillsManager = SkillsManager
+    monkeypatch.setitem(sys.modules, "services.memory.skills", skills_mod)
+
+    constants_mod = types.ModuleType("src.constants")
+    constants_mod.DATA_DIR = "data"
+    monkeypatch.setitem(sys.modules, "src.constants", constants_mod)
+
+    integrations_mod = types.ModuleType("src.integrations")
+    integrations_mod.get_integrations_prompt = lambda: "INTEGRATIONS PROMPT"
+    monkeypatch.setitem(sys.modules, "src.integrations", integrations_mod)
+
+    class MCP:
+        def get_tool_descriptions_for_prompt(self, disabled_map):
+            assert disabled_map == {"srv": {"tool"}}
+            return "\nMCP PROMPT"
+
+    prompt = agent_loop._build_base_prompt(
+        disabled_tools=set(),
+        mcp_mgr=MCP(),
+        needs_admin=True,
+        relevant_tools={"web_search"},
+        mcp_disabled_map={"srv": {"tool"}},
+    )
+
+    assert "web search" in prompt
+    assert "local-test" in prompt
+    assert "INTEGRATIONS PROMPT" in prompt
+    assert "MCP PROMPT" in prompt
+    assert "\n- image" not in prompt
+
+
+def test_agent_loop_message_context_tool_resolution_and_append(monkeypatch):
+    messages = [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "ok"},
+        {"role": "user", "content": "[Tool execution results]\n\nskip"},
+        {"role": "user", "content": [{"type": "text", "text": "rename session"}]},
+    ]
+
+    assert agent_loop._extract_last_user_message(messages) == "rename session"
+    assert agent_loop._recent_context_for_retrieval(messages, max_user=3) == "rename session\nfirst"
+
+    native_block = SimpleNamespace(tool_type="bash")
+
+    def fake_function_call_to_tool_block(name, args):
+        return native_block if name == "ok_tool" else None
+
+    monkeypatch.setattr(agent_loop, "function_call_to_tool_block", fake_function_call_to_tool_block)
+    monkeypatch.setattr(agent_loop, "parse_tool_blocks", lambda text: [SimpleNamespace(tool_type="python")])
+
+    blocks, used_native = agent_loop._resolve_tool_blocks(
+        "```python\nprint(1)\n```",
+        [
+            {"id": "call-a", "name": "ok_tool", "arguments": "{}"},
+            {"id": "call-b", "name": "bad_tool", "arguments": "{}"},
+        ],
+        2,
+    )
+    assert blocks == [native_block]
+    assert used_native is True
+
+    fenced_blocks, fenced_native = agent_loop._resolve_tool_blocks("```python\nprint(1)\n```", [], 3)
+    assert fenced_blocks[0].tool_type == "python"
+    assert fenced_native is False
+
+    history = []
+    agent_loop._append_tool_results(
+        history,
+        "",
+        [{"id": "call-a", "name": "ok_tool", "arguments": "{}"}],
+        ["formatted"],
+        ["tool text"],
+        True,
+        1,
+        round_reasoning="thinking",
+    )
+    assert history[0]["tool_calls"][0]["id"] == "call-a"
+    assert history[0]["reasoning_content"] == "thinking"
+    assert history[1] == {"role": "tool", "tool_call_id": "call-a", "content": "tool text"}
+
+    agent_loop._append_tool_results(history, "round text", [], ["A", "B"], ["ignored"], False, 2)
+    assert history[-2] == {"role": "assistant", "content": "round text"}
+    assert "[Tool execution results]" in history[-1]["content"]
+
+    snapshot = agent_loop._build_actions_snapshot(
+        [
+            {"tool": "bash", "command": "pytest", "output": "x" * 1300, "exit_code": 1},
+            {"tool": "read_file", "output": ""},
+        ],
+        limit=300,
+    )
+    assert "[bash] pytest (exit 1)" in snapshot
+    assert "..." not in snapshot
+    assert len(snapshot) <= 300

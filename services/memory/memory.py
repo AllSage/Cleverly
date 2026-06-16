@@ -58,9 +58,9 @@ class MemoryManager:
                 for line in lines:
                     line = line.strip()
                     # Look for bullet points or numbered lists that might contain memories
-                    if re.match(r'^[-*•]|\d+\.', line):
+                    if re.match(r'^(?:[-*•]|\d+\.)', line):
                         # Extract the text after the bullet/number
-                        text_match = re.match(r'^[-*•]|\d+\.\s*(.*)', line)
+                        text_match = re.match(r'^(?:[-*•]|\d+\.)\s*(.*)', line)
                         if text_match:
                             text = text_match.group(1).strip()
                             if text:
@@ -100,6 +100,7 @@ class MemoryManager:
     
     def ensure_file_exists(self):
         """Create memory file if it doesn't exist."""
+        os.makedirs(os.path.dirname(self.memory_file), exist_ok=True)
         if not os.path.exists(self.memory_file):
             with open(self.memory_file, 'w', encoding='utf-8') as f:
                 json.dump([], f, ensure_ascii=False, indent=2)
@@ -273,18 +274,20 @@ class MemoryManager:
         fact_words = ["what", "when", "where", "how", "why", "explain", "describe", "information", "know"]
         
         query_lower = query.lower()
+        def has_query_word(words):
+            return any(re.search(rf'\b{re.escape(word)}\b', query_lower) for word in words)
         
         # Determine query type based on keywords
         query_type = None
-        if any(word in query_lower for word in identity_words):
+        if has_query_word(identity_words):
             query_type = "identity"
-        elif any(word in query_lower for word in contact_words):
+        elif has_query_word(contact_words):
             query_type = "contact"
-        elif any(word in query_lower for word in preference_words):
+        elif has_query_word(preference_words):
             query_type = "preference"
-        elif any(word in query_lower for word in task_words):
+        elif has_query_word(task_words):
             query_type = "task"
-        elif any(word in query_lower for word in fact_words):
+        elif has_query_word(fact_words):
             query_type = "fact"
         
         relevant = []

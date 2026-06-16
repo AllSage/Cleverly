@@ -52,6 +52,23 @@ for _stub in [
 from fastapi import HTTPException
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _cleanup_import_stubs_after_module():
+    yield
+    for _stub_name, _sentinel in (
+        ("core.database", "SessionLocal"),
+        ("core.auth", "AuthManager"),
+        ("src.endpoint_resolver", "resolve_endpoint"),
+    ):
+        _mod = sys.modules.get(_stub_name)
+        if _mod is not None and isinstance(getattr(_mod, _sentinel, None), MagicMock):
+            sys.modules.pop(_stub_name, None)
+            _parent_name, _, _child_name = _stub_name.rpartition(".")
+            _parent = sys.modules.get(_parent_name)
+            if _parent is not None and hasattr(_parent, _child_name):
+                delattr(_parent, _child_name)
+
+
 # ---------------------------------------------------------------------------
 # calendar._get_or_404_calendar / _get_or_404_event
 # ---------------------------------------------------------------------------

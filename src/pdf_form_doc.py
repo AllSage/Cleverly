@@ -295,6 +295,8 @@ def parse_markdown_to_values(content: str) -> dict[str, Any]:
 
 
 def _checkbox_marker(value: Any) -> str:
+    if isinstance(value, str):
+        return "[x]" if value.strip().lower() not in {"", "0", "false", "no", "off"} else "[ ]"
     return "[x]" if value else "[ ]"
 
 
@@ -320,10 +322,11 @@ def _format_field_bullet(f: dict[str, Any]) -> str:
     label = _flatten(f.get("label")) or f["name"]
     name = _encode_name(f["name"])
     ftype = f["type"]
-    value = _flatten(f.get("value"))
+    raw_value = f.get("value")
+    value = _flatten(raw_value)
 
     if ftype == "checkbox":
-        body = f'{_checkbox_marker(value)} **{label}**'
+        body = f'{_checkbox_marker(raw_value)} **{label}**'
     elif ftype == "choice":
         opts = f.get("options") or []
         opts_str = " / ".join(opts) if opts else ""

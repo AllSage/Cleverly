@@ -82,6 +82,36 @@ _ensure_stub("src.endpoint_resolver",
     build_headers=MagicMock(),
 )
 
+
+@pytest.fixture(scope="module", autouse=True)
+def _cleanup_import_stubs_after_module():
+    yield
+    for _stub_name, _sentinel in (
+        ("core.database", "SessionLocal"),
+        ("core.auth", "AuthManager"),
+        ("src.endpoint_resolver", "resolve_endpoint"),
+    ):
+        _mod = sys.modules.get(_stub_name)
+        if _mod is not None and isinstance(getattr(_mod, _sentinel, None), MagicMock):
+            sys.modules.pop(_stub_name, None)
+            _parent_name, _, _child_name = _stub_name.rpartition(".")
+            _parent = sys.modules.get(_parent_name)
+            if _parent is not None and hasattr(_parent, _child_name):
+                delattr(_parent, _child_name)
+    for _stub_name, _required_attr in (
+        ("src.agent_loop", "stream_agent_loop"),
+        ("src.session_manager", "__file__"),
+        ("src.builtin_actions", "__file__"),
+        ("src.ai_interaction", "__file__"),
+    ):
+        _mod = sys.modules.get(_stub_name)
+        if _mod is not None and not hasattr(_mod, _required_attr):
+            sys.modules.pop(_stub_name, None)
+            _parent_name, _, _child_name = _stub_name.rpartition(".")
+            _parent = sys.modules.get(_parent_name)
+            if _parent is not None and hasattr(_parent, _child_name):
+                delattr(_parent, _child_name)
+
 from fastapi import HTTPException
 
 

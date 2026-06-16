@@ -14,7 +14,7 @@ import io
 import httpx
 from pathlib import Path
 from datetime import datetime
-from fastapi import APIRouter, Query, Depends, Response
+from fastapi import APIRouter, Query, Depends, Response, HTTPException
 from typing import List, Dict, Optional
 
 from src.auth_helpers import require_user
