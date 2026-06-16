@@ -625,3 +625,69 @@ def test_vector_rag_index_remove_reindex_chunks_and_errors(tmp_path, monkeypatch
     assert rag.get_stats()["error"] == "Collection not initialized"
     assert rag.add_document("text", {"source": "x"}) is False
     assert rag.add_documents_batch([("text", {"source": "x"})])["success"] is False
+
+
+def test_vector_rag_remaining_error_and_overlap_edges(tmp_path, monkeypatch):
+    import src.rag_vector as rv
+
+    rag = _fake_rag(rv, tmp_path)
+    assert rag.search("alpha") == []
+    assert rag._keyword_search_fallback("alpha") == []
+
+    rag.add_document("alpha bob", {"source": "bob.txt", "owner": "bob"})
+    assert rag._keyword_search_fallback("alpha", owner="alice") == []
+
+    class EmptyGetCollection(FakeCollection):
+        def count(self):
+            return 1
+
+        def get(self, ids=None, where=None, include=None):
+            return {"ids": [], "documents": [], "metadatas": []}
+
+    rag._collection = EmptyGetCollection()
+    assert rag._keyword_search_fallback("alpha") == []
+
+    rag._collection = FakeCollection()
+    rag._collection.fail_count = True
+    assert rag._keyword_search_fallback("alpha") == []
+
+    rag._healthy = False
+    assert rag.search("alpha") == []
+    rag._healthy = True
+
+    class DeleteFailsClient:
+        def delete_collection(self, _name):
+            raise RuntimeError("delete missing")
+
+        def get_or_create_collection(self, name, metadata=None):
+            assert name == rv.COLLECTION_NAME
+            return FakeCollection()
+
+    fake_chroma = types.ModuleType("src.chroma_client")
+    fake_chroma.get_chroma_client = lambda: DeleteFailsClient()
+    monkeypatch.setitem(sys.modules, "src.chroma_client", fake_chroma)
+    assert rag.rebuild_index() is True
+
+    fake_chroma.get_chroma_client = lambda: (_ for _ in ()).throw(RuntimeError("chroma down"))
+    assert rag.rebuild_index() is False
+    assert rag.healthy is False
+    rag._healthy = True
+    rag._collection = FakeCollection()
+
+    docs = tmp_path / "docs-edge"
+    docs.mkdir()
+    (docs / "note.txt").write_text("edge content", encoding="utf-8")
+    monkeypatch.setattr(rag, "add_document", lambda *_args, **_kwargs: False)
+    indexed = rag.index_personal_documents(str(docs), file_extensions={".txt"})
+    assert indexed["failed_count"] == 1
+
+    monkeypatch.setattr(rv.os, "walk", lambda _directory: (_ for _ in ()).throw(RuntimeError("walk failed")))
+    failed_index = rag.index_personal_documents(str(docs), file_extensions={".txt"})
+    assert failed_index["success"] is False
+
+    monkeypatch.setattr(rag, "remove_directory", lambda _directory: {"success": False, "message": "remove failed"})
+    assert rag.reindex_directory(str(docs)) == {"success": False, "message": "remove failed"}
+
+    overlap_chunks = rag._split_into_chunks("Alpha. Beta. Gamma. Delta.", chunk_size=13, overlap=6)
+    assert overlap_chunks[0] == "Alpha. Beta."
+    assert overlap_chunks[1].startswith("Beta.")

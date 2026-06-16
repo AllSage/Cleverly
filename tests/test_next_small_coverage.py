@@ -144,6 +144,18 @@ def test_search_ranking_domain_relevance_recency_and_news_adjustments(monkeypatc
 def test_cli_helpers_emit_fail_parser_and_run(monkeypatch, capsys):
     from scripts._lib import cli
 
+    module_path = Path(__file__).resolve().parents[1] / "scripts" / "_lib" / "cli.py"
+    repo_root = str(module_path.resolve().parent.parent.parent)
+    original_path = list(sys.path)
+    sys.path[:] = [item for item in sys.path if item != repo_root]
+    spec = importlib.util.spec_from_file_location("_cli_reimport_for_path_branch", module_path)
+    cli_reimport = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(cli_reimport)
+        assert sys.path[0] == repo_root
+    finally:
+        sys.path[:] = original_path
+
     logger = logging.getLogger()
     handler = logging.StreamHandler()
     logger.handlers = [handler]
@@ -309,10 +321,40 @@ def test_code_workspace_worker_claim_run_result_and_error_paths(monkeypatch, tmp
     worker._run_job(queue, escaped)
     assert "escaped workspace root" in writes[-1][1]["stderr"]
 
+    denied = queue / "running" / "denied.json"
+    denied.write_text(json.dumps({"id": "denied", "workspace": str(workspace), "command": "curl http://example.test", "root": str(root)}), encoding="utf-8")
+    worker._run_job(queue, denied)
+    assert "blocked in offline code workspace mode" in writes[-1][1]["stderr"]
+
     invalid = queue / "running" / "invalid.json"
     invalid.write_text("{", encoding="utf-8")
     worker._run_job(queue, invalid)
     assert writes[-1][0] == queue / "results" / "invalid.json"
     assert writes[-1][1]["exit_code"] == 1
 
+    bad_command = queue / "running" / "bad-command.json"
+    bad_command.write_text(json.dumps({"id": "fallback-id", "workspace": str(workspace), "command": "pytest -q", "root": str(root)}), encoding="utf-8")
+    monkeypatch.setattr(worker.code_workspace, "_run_workspace_shell", lambda *_args: (_ for _ in ()).throw(RuntimeError("runner failed")))
+    monkeypatch.setattr(worker.Path, "unlink", lambda self: (_ for _ in ()).throw(OSError("busy")))
+    worker._run_job(queue, bad_command)
+    assert writes[-1][0] == queue / "results" / "fallback-id.json"
+    assert "runner failed" in writes[-1][1]["stderr"]
+
     assert worker._queue_root() == queue
+
+    calls = {"claim": 0, "run": 0}
+
+    def claim_once(_queue):
+        calls["claim"] += 1
+        return queue / "running" / "loop.json" if calls["claim"] == 1 else None
+
+    def run_once(_queue, _job):
+        calls["run"] += 1
+
+    monkeypatch.setattr(worker, "_queue_root", lambda: queue)
+    monkeypatch.setattr(worker, "_claim_job", claim_once)
+    monkeypatch.setattr(worker, "_run_job", run_once)
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: (_ for _ in ()).throw(RuntimeError("stop loop")))
+    with pytest.raises(RuntimeError, match="stop loop"):
+        worker.main()
+    assert calls == {"claim": 2, "run": 1}

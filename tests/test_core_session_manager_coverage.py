@@ -2,6 +2,7 @@ import datetime as dt
 import importlib
 import json
 import sys
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -132,6 +133,10 @@ def test_session_manager_metadata_conversion_and_empty_load(session_manager_db):
         assert meta.message_count == 0
         assert manager._db_to_session(db_session, db) is None
 
+    manager.sessions.clear()
+    manager._load_session_from_db("empty")
+    assert manager.sessions["empty"].history == []
+
     with pytest.raises(KeyError):
         manager.get_session("missing")
 
@@ -221,3 +226,177 @@ def test_session_manager_rollbacks_on_database_errors(monkeypatch):
     with pytest.raises(RuntimeError):
         manager.create_session("bad", "Bad", "u", "m")
     assert broken.rolled_back is True
+
+
+def test_session_manager_direct_query_hydration_and_metadata_none(session_manager_db):
+    sm, _database, _SessionLocal = session_manager_db
+
+    db_message = SimpleNamespace(
+        id="msg-query",
+        role="assistant",
+        content="from direct query",
+        meta_data=json.dumps(None),
+        timestamp=dt.datetime(2026, 1, 2, 3, 4, 5),
+    )
+
+    class Query:
+        def filter(self, *_args):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def all(self):
+            return [db_message]
+
+    db = SimpleNamespace(query=lambda _model: Query())
+    db_session = SimpleNamespace(
+        id="direct",
+        name="Direct",
+        endpoint_url="u",
+        model="m",
+        rag=False,
+        archived=False,
+        headers="{bad-json",
+        messages=[],
+        message_count=1,
+    )
+
+    manager = sm.SessionManager()
+    session = manager._db_to_session(db_session, db)
+    assert session.id == "direct"
+    assert session.headers == {}
+    assert session.history[0].metadata["_db_id"] == "msg-query"
+    assert session.history[0].metadata["timestamp"] == "2026-01-02T03:04:05Z"
+
+
+def test_session_manager_remaining_error_paths(monkeypatch):
+    import core.session_manager as sm
+
+    class Query:
+        def __init__(self, db, mode="ok"):
+            self.db = db
+            self.mode = mode
+
+        def filter(self, *_args):
+            if self.db.fail_on == "filter":
+                raise RuntimeError("filter failed")
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def limit(self, _limit):
+            return self
+
+        def all(self):
+            if self.db.fail_on == "all":
+                raise RuntimeError("all failed")
+            return self.db.all_rows
+
+        def first(self):
+            if self.db.fail_on == "first":
+                raise RuntimeError("first failed")
+            return self.db.first_row
+
+        def delete(self):
+            if self.db.fail_on == "delete":
+                raise RuntimeError("delete failed")
+            self.db.deleted += 1
+
+    class Db:
+        def __init__(self, *, fail_on=None, first_row=None, all_rows=None):
+            self.fail_on = fail_on
+            self.first_row = first_row
+            self.all_rows = all_rows or []
+            self.rollbacks = 0
+            self.closed = False
+            self.deleted = 0
+
+        def query(self, _model):
+            if self.fail_on == "query":
+                raise RuntimeError("query failed")
+            return Query(self)
+
+        def add(self, _item):
+            if self.fail_on == "add":
+                raise RuntimeError("add failed")
+
+        def delete(self, _item):
+            if self.fail_on == "delete-row":
+                raise RuntimeError("delete row failed")
+            self.deleted += 1
+
+        def commit(self):
+            if self.fail_on == "commit":
+                raise RuntimeError("commit failed")
+
+        def rollback(self):
+            self.rollbacks += 1
+
+        def close(self):
+            self.closed = True
+
+    broken_meta = SimpleNamespace(id="broken")
+    load_db = Db(all_rows=[broken_meta])
+    monkeypatch.setattr(sm, "SessionLocal", lambda: load_db)
+    manager = sm.SessionManager()
+    assert manager.sessions == {}
+    assert load_db.closed is True
+
+    manager.sessions["s"] = sm.Session("s", "S", "u", "m", history=[sm.ChatMessage("user", "hello")])
+
+    persist_db = Db(fail_on="add")
+    monkeypatch.setattr(sm, "SessionLocal", lambda: persist_db)
+    manager._persist_message("s", sm.ChatMessage("assistant", "fail"))
+    assert persist_db.rollbacks == 1
+
+    truncate_db = Db(fail_on="query")
+    monkeypatch.setattr(sm, "SessionLocal", lambda: truncate_db)
+    assert manager.truncate_messages("s", 1) is False
+    assert truncate_db.rollbacks >= 1
+
+    replace_db = Db(fail_on="delete")
+    monkeypatch.setattr(sm, "SessionLocal", lambda: replace_db)
+    assert manager.replace_messages("s", [sm.ChatMessage("user", "new")]) is False
+    assert replace_db.rollbacks == 1
+
+    missing_meta_db = Db(first_row=None)
+    monkeypatch.setattr(sm, "SessionLocal", lambda: missing_meta_db)
+    assert manager.sync_session_metadata("s") is False
+
+    load_missing_meta_db = Db(first_row=SimpleNamespace(id="s", messages=[]))
+    monkeypatch.setattr(sm, "SessionLocal", lambda: load_missing_meta_db)
+    monkeypatch.setattr(manager, "_db_to_session", lambda _db_session, _db: None)
+    monkeypatch.setattr(manager, "_db_to_session_meta", lambda _db_session: None)
+    with pytest.raises(KeyError):
+        manager._load_session_from_db("s")
+
+    load_error_db = Db(fail_on="query")
+    monkeypatch.setattr(sm, "SessionLocal", lambda: load_error_db)
+    with pytest.raises(RuntimeError):
+        manager._load_session_from_db("s")
+    assert load_error_db.closed is True
+
+    touch_db = Db(fail_on="query")
+    monkeypatch.setattr(sm, "SessionLocal", lambda: touch_db)
+    manager._touch_session("s")
+    assert touch_db.rollbacks == 1
+
+    update_db = Db(fail_on="query")
+    monkeypatch.setattr(sm, "SessionLocal", lambda: update_db)
+    with pytest.raises(RuntimeError):
+        manager.update_session_name("s", "Boom")
+    assert update_db.rollbacks == 1
+
+    archive_db = Db(fail_on="query")
+    monkeypatch.setattr(sm, "SessionLocal", lambda: archive_db)
+    with pytest.raises(RuntimeError):
+        manager.archive_session("s")
+    assert archive_db.rollbacks == 1
+
+    cleanup_db = Db(fail_on="query")
+    monkeypatch.setattr(sm, "SessionLocal", lambda: cleanup_db)
+    with pytest.raises(RuntimeError):
+        manager.cleanup_empty_sessions()
+    assert cleanup_db.rollbacks == 1

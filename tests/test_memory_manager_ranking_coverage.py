@@ -12,6 +12,8 @@ def test_memory_manager_file_lifecycle_and_basic_helpers(module_name, tmp_path):
 
     assert memory_mod.tokenize('Hello, "world"!') == ["Hello", "world"]
     assert memory_mod.get_text_similarity("", "anything") == 0.0
+    assert memory_mod.get_text_similarity("   ", " \t ") == 1.0
+    assert memory_mod.get_text_similarity("   ", "word") == 0.0
     assert memory_mod.get_text_similarity("alpha beta", "beta gamma") == pytest.approx(1 / 3)
 
     manager = memory_mod.MemoryManager(str(tmp_path))
@@ -50,7 +52,7 @@ def test_memory_manager_file_lifecycle_and_basic_helpers(module_name, tmp_path):
     extracted = manager.extract_memory_from_chat(
         [
             {"role": "user", "content": "ignore me"},
-            {"role": "assistant", "content": "Memory notes\n1. Loves local AI\n---"},
+            {"role": "assistant", "content": "Memory notes\n1. Loves local AI\n___\n*   \n"},
         ],
         session_id="s1",
     )
@@ -62,6 +64,12 @@ def test_memory_manager_file_lifecycle_and_basic_helpers(module_name, tmp_path):
         "likes dark mode",
     )
     assert manager.process_inline_memory_command("just chatting") == (False, "")
+
+    (tmp_path / "memory.json").write_text(json.dumps({"not": "a list"}), encoding="utf-8")
+    assert manager.load_all() == []
+    (tmp_path / "memory.json").unlink()
+    assert manager.load_all() == []
+    assert manager.find_duplicates("Saved fact") == []
 
 
 def test_memory_manager_legacy_migration_owner_claims_and_uses(tmp_path):
@@ -84,8 +92,23 @@ def test_memory_manager_legacy_migration_owner_claims_and_uses(tmp_path):
     empty_service = service_memory.MemoryManager(str(tmp_path / "empty-service"))
     (tmp_path / "empty-service" / "memory.json").write_text("{bad json", encoding="utf-8")
     assert empty_service.load_all() == []
+    broken_service = service_memory.MemoryManager(str(tmp_path / "broken-service"))
+    broken_dir = tmp_path / "broken-service"
+    (broken_dir / "memory.json").write_text("{bad json", encoding="utf-8")
+    (broken_dir / "memory.txt").mkdir()
+    assert broken_service.load_all() == []
 
     src_manager = src_memory.MemoryManager(str(tmp_path / "src"))
+    (tmp_path / "src" / "memory.json").write_text("{bad json", encoding="utf-8")
+    assert src_manager.load_all() == []
+    (tmp_path / "src" / "memory.txt").write_text("Src legacy\n", encoding="utf-8")
+    migrated_src = src_manager.load_all()
+    assert migrated_src[0]["text"] == "Src legacy"
+    (tmp_path / "src" / "memory.json").write_text("{bad json", encoding="utf-8")
+    (tmp_path / "src" / "memory.txt").unlink()
+    (tmp_path / "src" / "memory.txt").mkdir()
+    assert src_manager.load_all() == []
+    (tmp_path / "src" / "memory.txt").rmdir()
     src_manager.save([{"id": "a", "text": "A", "uses": 1}, {"id": "b", "text": "B"}])
     src_manager.increment_uses([])
     src_manager.increment_uses(["a", "b", "missing"])
@@ -105,6 +128,7 @@ def test_memory_manager_relevance_scoring(module_name, tmp_path):
         {"id": "pref", "text": "User likes local offline AI"},
         {"id": "task", "text": "Todo remind me about the meeting"},
         {"id": "fact", "text": "Python project uses FastAPI"},
+        {"id": "empty", "text": ""},
         {"id": "irrelevant", "text": "The garden has tomatoes"},
     ]
 
@@ -126,6 +150,10 @@ def test_memory_manager_relevance_scoring(module_name, tmp_path):
     assert pref[0]["id"] == "pref"
     task = manager.get_relevant_memories("remind meeting schedule", memories, threshold=0.01)
     assert task[0]["id"] == "task"
+    fact_query = manager.get_relevant_memories("what FastAPI", memories, threshold=0.01)
+    assert fact_query[0]["id"] == "fact"
+    exact_phrase = manager.get_relevant_memories("garden has tomatoes", memories, threshold=0.7)
+    assert exact_phrase[0]["id"] == "irrelevant"
     exact = manager.get_relevant_memories("Python project uses FastAPI", memories, threshold=0.5)
     assert exact[0]["id"] == "fact"
     limited = manager.get_relevant_memories("AI project email meeting name", memories, threshold=0.01, max_items=2)

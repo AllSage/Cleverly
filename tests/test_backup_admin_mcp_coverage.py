@@ -149,6 +149,8 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
     summary = backup_routes._summarize_backup_payload({"version": 1, "memories": [1, 2], "settings": {"a": 1}, "features": {}})
     assert summary["recognized_sections"] == ["features", "memories", "settings"]
     assert summary["recognized"]["features"] == 0
+    scalar_summary = backup_routes._summarize_backup_payload({"settings": "present"})
+    assert scalar_summary["recognized"]["settings"] == 1
 
     exported = asyncio.run(_endpoint(router, "/api/export")(request))
     exported_payload = json.loads(exported.body)
@@ -193,6 +195,21 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
     assert saved_features[-1]["email"] is True
     assert saved_prefs[-1] == ("alice", {"theme": "dark", "font": "mono"})
 
+    skipped_skills = asyncio.run(
+        _endpoint(router, "/api/import", "POST")(
+            RequestLike(
+                body={
+                    "skills": [
+                        {"id": "missing-title"},
+                        {"id": "title-dup", "title": "Known"},
+                    ]
+                },
+                user="alice",
+            )
+        )
+    )
+    assert skipped_skills["imported"] == ["0 skills"]
+
     fast_key = base64.urlsafe_b64encode(b"0" * 32)
     monkeypatch.setattr(backup_routes, "_derive_backup_key", lambda password, salt, iterations=backup_routes.BACKUP_KDF_ITERATIONS: fast_key)
     encrypted_export = asyncio.run(
@@ -213,6 +230,41 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
     assert dry_run["ok"] is True
     assert dry_run["dry_run"] is True
     assert "memories" in dry_run["summary"]["recognized"]
+
+    def encrypted_payload(payload):
+        salt = b"1" * 16
+        token = backup_routes.Fernet(fast_key).encrypt(json.dumps(payload).encode("utf-8"))
+        return {
+            "format": "cleverly.encrypted-backup.v1",
+            "iterations": backup_routes.BACKUP_KDF_ITERATIONS,
+            "salt": base64.b64encode(salt).decode("ascii"),
+            "token": token.decode("ascii"),
+        }
+
+    with pytest.raises(HTTPException) as encrypted_not_object:
+        asyncio.run(
+            _endpoint(router, "/api/backup/encrypted/import", "POST")(
+                backup_routes.EncryptedBackupImportRequest(password="password1", backup=encrypted_payload(["not", "dict"])),
+                request,
+            )
+        )
+    assert encrypted_not_object.value.status_code == 400
+
+    dry_run_empty = asyncio.run(
+        _endpoint(router, "/api/backup/encrypted/import", "POST")(
+            backup_routes.EncryptedBackupImportRequest(password="password1", backup=encrypted_payload({"version": 1}), dry_run=True),
+            request,
+        )
+    )
+    assert dry_run_empty["ok"] is False
+
+    import_empty = asyncio.run(
+        _endpoint(router, "/api/backup/encrypted/import", "POST")(
+            backup_routes.EncryptedBackupImportRequest(password="password1", backup=encrypted_payload({"version": 1})),
+            request,
+        )
+    )
+    assert import_empty == {"ok": False, "message": "No recognized data found in the encrypted backup"}
 
     imported_encrypted = asyncio.run(
         _endpoint(router, "/api/backup/encrypted/import", "POST")(
@@ -277,6 +329,34 @@ def test_admin_wipe_routes_all_kinds_helpers_and_errors(monkeypatch, tmp_path):
     (remove_me / "x").write_text("x", encoding="utf-8")
     admin_wipe._rmtree_quiet(str(remove_me))
     assert not remove_me.exists()
+
+    memory_file.write_text("[1]", encoding="utf-8")
+    memory_state.write_text("state", encoding="utf-8")
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("open failed")))
+    monkeypatch.setattr(admin_wipe.os, "remove", lambda *_args: (_ for _ in ()).throw(OSError("remove failed")))
+    admin_wipe._wipe_memory_files()
+
+    failing_tree = data_dir / "failing-tree"
+    failing_tree.mkdir()
+    monkeypatch.setattr(admin_wipe.shutil, "rmtree", lambda *_args: (_ for _ in ()).throw(OSError("rmtree failed")))
+    admin_wipe._rmtree_quiet(str(failing_tree))
+    monkeypatch.undo()
+    monkeypatch.setattr(admin_wipe, "DATA_DIR", str(data_dir))
+    monkeypatch.setattr(admin_wipe, "require_admin", lambda request: None)
+    for model_name in (
+        "DbSession",
+        "DbChatMessage",
+        "Memory",
+        "Note",
+        "ScheduledTask",
+        "TaskRun",
+        "Document",
+        "DocumentVersion",
+        "GalleryImage",
+        "CalendarEvent",
+        "CalendarCal",
+    ):
+        monkeypatch.setattr(admin_wipe, model_name, type(model_name, (), {}))
 
     class Query:
         def __init__(self, db, model):
@@ -349,6 +429,21 @@ def test_admin_wipe_routes_all_kinds_helpers_and_errors(monkeypatch, tmp_path):
     assert not (data_dir / "gallery").exists()
     assert wipe("calendar", request)["kind"] == "calendar"
     assert "CalendarEvent" in db.deleted
+
+    class BadSessions:
+        def clear(self):
+            raise RuntimeError("clear failed")
+
+    bad_session_router = admin_wipe.setup_admin_wipe_routes(SimpleNamespace(sessions=BadSessions()))
+    assert _endpoint(bad_session_router, "/api/admin/wipe/{kind}", "DELETE")("chats", request)["kind"] == "chats"
+
+    memory_vector.get_memory_vector_store = lambda: (_ for _ in ()).throw(RuntimeError("vector down"))
+    assert wipe("memory", request)["kind"] == "memory"
+
+    (data_dir / "skills.json").write_text("[]", encoding="utf-8")
+    real_remove = admin_wipe.os.remove
+    monkeypatch.setattr(admin_wipe.os, "remove", lambda path: (_ for _ in ()).throw(OSError("legacy busy")) if str(path).endswith("skills.json") else real_remove(path))
+    assert wipe("skills", request)["kind"] == "skills"
 
     with pytest.raises(HTTPException) as unknown:
         wipe("unknown", request)
@@ -430,15 +525,44 @@ def test_memory_mcp_server_actions_and_init(monkeypatch):
     listed = asyncio.run(memory_server.call_tool("manage_memory", {"action": "list"}))[0].text
     assert "Found 2 memory entries" in listed
     assert "..." in listed
+    memory_server._memory_manager.entries = [
+        {"id": f"id{i:03d}", "text": f"memory {i}", "category": "fact"}
+        for i in range(101)
+    ]
+    assert "... and 1 more" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "list"}))[0].text
+    memory_server._memory_manager.entries = [
+        {"id": "abcdef123456", "text": "A long memory" * 20, "category": "fact"},
+        {"id": "pref1111", "text": "Likes blue", "category": "preference"},
+    ]
     assert "preference" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "list", "category": "preference"}))[0].text
     assert "No memories found" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "list", "category": "missing"}))[0].text
 
+    class BrokenVector(VectorStore):
+        healthy = True
+
+        def add(self, *args):
+            raise RuntimeError("vector add failed")
+
+        def remove(self, memory_id):
+            raise RuntimeError("vector remove failed")
+
+    memory_server._memory_vector = BrokenVector("data")
     assert "cannot be empty" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "add"}))[0].text
     assert "Memory added" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "add", "text": "New fact", "category": "event"}))[0].text
 
     assert "edit needs" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "edit"}))[0].text
     assert "not found" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "edit", "memory_id": "zzz", "text": "x"}))[0].text
     assert "Memory updated" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "edit", "memory_id": "new", "text": "Updated"}))[0].text
+
+    class AddOnlyBrokenVector(VectorStore):
+        healthy = True
+
+        def add(self, *args):
+            raise RuntimeError("vector add failed")
+
+    memory_server._memory_vector = AddOnlyBrokenVector("data")
+    assert "Memory updated" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "edit", "memory_id": "pref1111", "text": "Still blue"}))[0].text
+    memory_server._memory_vector = BrokenVector("data")
 
     assert "delete needs" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "delete"}))[0].text
     assert "not found" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "delete", "memory_id": "zzz"}))[0].text
@@ -447,7 +571,31 @@ def test_memory_mcp_server_actions_and_init(monkeypatch):
     assert "search needs" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "search"}))[0].text
     assert "No memories found" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "search", "text": "nothing"}))[0].text
     assert "matching memories" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "search", "text": "blue"}))[0].text
+    monkeypatch.delattr(MemoryManager, "get_relevant_memories")
+    assert "matching memories" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "search", "text": "blue"}))[0].text
     assert "Unknown action" in asyncio.run(memory_server.call_tool("manage_memory", {"action": "bad"}))[0].text
+
+    class UnhealthyVector(VectorStore):
+        healthy = False
+
+    vector_module.MemoryVectorStore = UnhealthyVector
+    memory_server._initialized = False
+    memory_server._memory_vector = None
+    memory_server._ensure_init()
+    assert memory_server._memory_vector is None
+
+    class RaisingVector(VectorStore):
+        def __init__(self, data_dir):
+            raise RuntimeError("vector unavailable")
+
+    vector_module.MemoryVectorStore = RaisingVector
+    memory_server._initialized = False
+    memory_server._memory_vector = None
+    memory_server._ensure_init()
+    assert memory_server._memory_vector is None
+
+    asyncio.run(memory_server.run())
+    assert memory_server.server.ran is True
 
     memory_server._memory_manager = None
     memory_server._initialized = True
@@ -503,6 +651,9 @@ def test_rag_mcp_server_actions_and_errors(monkeypatch, tmp_path):
     listed = asyncio.run(rag_server.call_tool("manage_rag", {"action": "list"}))[0].text
     assert "Indexed directories" in listed
     assert "a.txt" in listed
+    rag_server._personal_docs_manager.index = [{"name": f"file{i}.txt"} for i in range(51)]
+    many_files = asyncio.run(rag_server.call_tool("manage_rag", {"action": "list"}))[0].text
+    assert "... and 1 more" in many_files
 
     rag_server._personal_docs_manager.index = []
     rag_server._personal_docs_manager.get_indexed_directories = lambda: []
@@ -527,8 +678,21 @@ def test_rag_mcp_server_actions_and_errors(monkeypatch, tmp_path):
     rag_server._personal_docs_manager.remove_directory = lambda directory: (_ for _ in ()).throw(RuntimeError("remove fail"))
     assert "Failed to remove" in asyncio.run(rag_server.call_tool("manage_rag", {"action": "remove_directory", "directory": "docs"}))[0].text
     rag_server._personal_docs_manager = None
+    assert "Personal docs manager not available" in asyncio.run(rag_server.call_tool("manage_rag", {"action": "list"}))[0].text
     assert "Personal docs manager not available" in asyncio.run(rag_server.call_tool("manage_rag", {"action": "remove_directory", "directory": "docs"}))[0].text
     assert "Unknown action" in asyncio.run(rag_server.call_tool("manage_rag", {"action": "bad"}))[0].text
+
+    rag_singleton.get_rag_manager = lambda: (_ for _ in ()).throw(RuntimeError("rag down"))
+    personal_docs.PersonalDocsManager = lambda *args: (_ for _ in ()).throw(RuntimeError("docs down"))
+    rag_server._initialized = False
+    rag_server._rag_manager = None
+    rag_server._personal_docs_manager = None
+    rag_server._ensure_init()
+    assert rag_server._rag_manager is None
+    assert rag_server._personal_docs_manager is None
+
+    asyncio.run(rag_server.run())
+    assert rag_server.server.ran is True
 
 
 def test_image_generation_mcp_server_success_errors_and_gallery(monkeypatch, tmp_path):
@@ -644,6 +808,8 @@ def test_image_generation_mcp_server_success_errors_and_gallery(monkeypatch, tmp
 
     ai_module._resolve_model = lambda model_spec: (_ for _ in ()).throw(ValueError("no model"))
     assert "no model" in asyncio.run(image_server.call_tool("generate_image", {"prompt": "x", "model": "bad"}))[0].text
+    settings["image_model"] = ""
+    assert "No image model found" in asyncio.run(image_server.call_tool("generate_image", {"prompt": "x"}))[0].text
 
     class TimeoutClient(Client):
         async def post(self, *args, **kwargs):
@@ -652,3 +818,25 @@ def test_image_generation_mcp_server_success_errors_and_gallery(monkeypatch, tmp
     httpx_module.AsyncClient = TimeoutClient
     ai_module._resolve_model = lambda model_spec: ("http://local/v1/chat/completions", "gpt-image-1", {})
     assert "timed out" in asyncio.run(image_server.call_tool("generate_image", {"prompt": "x"}))[0].text
+
+    class BrokenJsonResponse(Response):
+        def json(self):
+            raise RuntimeError("bad json")
+
+    httpx_module.AsyncClient = Client
+    Client.next_response = BrokenJsonResponse(status_code=500, text="raw error")
+    assert "raw error" in asyncio.run(image_server.call_tool("generate_image", {"prompt": "x", "model": "gpt-image-1"}))[0].text
+
+    database_module.SessionLocal = lambda: (_ for _ in ()).throw(RuntimeError("gallery unavailable"))
+    Client.next_response = Response(body={"data": [{"b64_json": base64.b64encode(b"png2").decode("ascii")}]})
+    assert "Generated image" in asyncio.run(image_server.call_tool("generate_image", {"prompt": "x", "model": "gpt-image-1"}))[0].text
+
+    class RaisingClient(Client):
+        async def post(self, *args, **kwargs):
+            raise RuntimeError("post failed")
+
+    httpx_module.AsyncClient = RaisingClient
+    assert "post failed" in asyncio.run(image_server.call_tool("generate_image", {"prompt": "x", "model": "gpt-image-1"}))[0].text
+
+    asyncio.run(image_server.run())
+    assert image_server.server.ran is True

@@ -45,9 +45,13 @@ def test_contacts_local_helpers_and_routes(monkeypatch, tmp_path):
     assert normalized["name"] == "a"
     assert normalized["emails"] == ["a@example.com", "b@example.com"]
     assert normalized["phones"] == ["123"]
+    assert contacts._vunesc("") == ""
     assert contacts._vunesc(r"Alice\, Inc\; Team\nLine") == "Alice, Inc; Team\nLine"
+    assert contacts._vunesc(r"Unknown\x") == "Unknownx"
     assert contacts._vesc("A,B;C\\D\nE") == r"A\,B\;C\\D\nE"
 
+    generated_vcard = contacts._build_vcard("Generated User", "generated@example.com")
+    assert "UID:uid-generated" in generated_vcard
     vcard = contacts._build_vcard(
         "Alice Example",
         "alice@example.com",
@@ -263,3 +267,81 @@ END:VCARD</C:address-data></D:prop></D:propstat>
     assert contacts._delete_contact("r1") is False
     monkeypatch.setattr(contacts.httpx, "delete", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("down")))
     assert contacts._delete_contact("r1") is False
+
+
+def test_contacts_remaining_carddav_csv_and_import_edges(monkeypatch, tmp_path):
+    contacts = _fresh_contacts()
+    monkeypatch.setattr(contacts, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(contacts, "LOCAL_CONTACTS_FILE", tmp_path / "contacts.json")
+    monkeypatch.setattr(contacts.uuid, "uuid4", lambda: "edge-uid")
+    contacts._contact_cache.update({"contacts": [], "fetched_at": None})
+
+    monkeypatch.setattr(contacts, "_get_carddav_config", lambda: {"url": "", "username": "", "password": ""})
+    contacts._save_local_contacts([{"uid": "dup", "name": "Dup", "emails": ["dup@example.com"], "phones": []}])
+    assert contacts._import_csv_contacts("name,email\nDup,dup@example.com\n") == {"imported": 0, "failed": 0, "total": 1}
+
+    monkeypatch.setattr(contacts.csv.Sniffer, "sniff", lambda self, sample: (_ for _ in ()).throw(RuntimeError("no dialect")))
+    monkeypatch.setattr(contacts.csv.Sniffer, "has_header", lambda self, sample: False)
+    headerless = contacts._import_csv_contacts(",,\nHeaderless,headless@example.com,123\n")
+    assert headerless["imported"] == 1
+
+    monkeypatch.setattr(contacts.csv.Sniffer, "has_header", lambda self, sample: (_ for _ in ()).throw(RuntimeError("no header guess")))
+    guessed_header = contacts._import_csv_contacts("name,email\nGuessed,guessed@example.com\n")
+    assert guessed_header["imported"] == 1
+
+    monkeypatch.setattr(contacts.csv.Sniffer, "sniff", lambda self, sample: contacts.csv.excel)
+    monkeypatch.setattr(contacts.csv.Sniffer, "has_header", lambda self, sample: True)
+    monkeypatch.setattr(
+        contacts,
+        "_fetch_contacts",
+        lambda force=False: [{"uid": "p", "name": "Phone", "emails": ["phone@example.com"], "phones": []}] if force else [],
+    )
+    monkeypatch.setattr(contacts, "_create_contact", lambda name, email: True)
+    monkeypatch.setattr(contacts, "_update_contact", lambda *args: (_ for _ in ()).throw(RuntimeError("update down")))
+    phone_result = contacts._import_csv_contacts("name,email,phone\nPhone,phone@example.com,123\n")
+    assert phone_result["imported"] == 1
+
+    monkeypatch.setattr(contacts, "_fetch_contacts", lambda force=False: [])
+    monkeypatch.setattr(contacts, "_create_contact", lambda name, email: False)
+    failed_create = contacts._import_csv_contacts("name,email\nFail,fail@example.com\n")
+    assert failed_create == {"imported": 0, "failed": 1, "total": 1}
+
+    cfg = {"url": "https://dav.example/addressbook", "username": "user", "password": "pass"}
+    monkeypatch.setattr(contacts, "_get_carddav_config", lambda: dict(cfg))
+
+    class Resp:
+        def __init__(self, status_code=200, text=""):
+            self.status_code = status_code
+            self.text = text
+
+    empty_report = """<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:carddav">
+<D:response><D:href>/missing.vcf</D:href></D:response>
+<D:response><D:href>/empty.vcf</D:href><D:propstat><D:prop><C:address-data>not a vcard</C:address-data></D:prop></D:propstat></D:response>
+</D:multistatus>"""
+    monkeypatch.setattr(contacts.httpx, "request", lambda *args, **kwargs: Resp(207, empty_report))
+    assert contacts._fetch_via_report(cfg, None) is None
+
+    monkeypatch.setattr(contacts, "_fetch_contacts", lambda force=False: (_ for _ in ()).throw(RuntimeError("refresh down")))
+    assert contacts._resolve_resource_url("missing") == "https://dav.example/addressbook/missing.vcf"
+
+    statuses = [Resp(204, "ok")]
+    monkeypatch.setattr(contacts.httpx, "put", lambda *args, **kwargs: statuses.pop(0))
+    generated_uid = contacts._import_vcards("BEGIN:VCARD\nVERSION:4.0\nFN:Generated\nEMAIL:generated@example.com\nEND:VCARD")
+    assert generated_uid == {"imported": 1, "failed": 0, "total": 1}
+
+    statuses = [Resp(204, "ok")]
+    monkeypatch.setattr(contacts.httpx, "put", lambda *args, **kwargs: statuses.pop(0))
+    version_added = contacts._import_vcards("BEGIN:VCARD\nUID:uid-no-version\nFN:No Version\nEMAIL:nover@example.com\nEND:VCARD")
+    assert version_added == {"imported": 1, "failed": 0, "total": 1}
+
+    monkeypatch.setattr(contacts.httpx, "put", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("put failed")))
+    failed_remote = contacts._import_vcards("BEGIN:VCARD\nVERSION:4.0\nUID:bad\nFN:Bad\nEMAIL:bad@example.com\nEND:VCARD")
+    assert failed_remote == {"imported": 0, "failed": 1, "total": 1}
+
+    router = contacts.setup_contacts_routes()
+    monkeypatch.setattr(
+        contacts,
+        "_fetch_contacts",
+        lambda force=False: [{"uid": "email", "name": "No Match", "emails": ["target@example.com"], "phones": []}],
+    )
+    assert asyncio.run(_endpoint(router, "/api/contacts/search")(q="target@", _admin=None))["results"][0]["uid"] == "email"

@@ -148,3 +148,36 @@ def test_build_context_preface_error_and_skip_branches(monkeypatch):
 
     no_context = processor.build_context_preface("hello", SimpleNamespace(), use_web=False, use_rag=False, use_memory=False)
     assert len(no_context[0]) == 1
+
+
+def test_build_context_preface_truncates_rag_and_handles_skill_index_failure(monkeypatch):
+    import src.chat_processor as cp
+
+    rag_results = [
+        {
+            "similarity": 0.99,
+            "metadata": {"source": "huge.txt"},
+            "document": "x" * 12000,
+        }
+    ]
+    processor = cp.ChatProcessor(
+        MemoryManager([]),
+        SimpleNamespace(rag_manager=RagManager(rag_results)),
+        skills_manager=SimpleNamespace(index_for=lambda owner=None: (_ for _ in ()).throw(RuntimeError("skills down"))),
+    )
+    monkeypatch.setattr(cp, "extract_urls", lambda message: [])
+
+    preface, rag_sources, web_sources = processor.build_context_preface(
+        "summarize huge doc",
+        session=SimpleNamespace(),
+        use_rag=True,
+        use_memory=False,
+        use_web=False,
+        agent_mode=True,
+        incognito=False,
+    )
+
+    joined = "\n".join(item["content"] for item in preface)
+    assert "[Truncated]" in joined
+    assert rag_sources[0]["filename"] == "huge.txt"
+    assert web_sources == []

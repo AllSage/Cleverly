@@ -600,3 +600,304 @@ def test_vault_routes_config_login_unlock_lock_logout_and_helpers(monkeypatch, t
     monkeypatch.setattr(vault_routes, "_check_bw_installed", original_check_bw_installed)
     monkeypatch.setattr(vault_routes.asyncio, "create_subprocess_exec", version_bad)
     assert asyncio.run(vault_routes._check_bw_installed()) is False
+
+
+def test_assistant_routes_remaining_error_and_status_paths(monkeypatch):
+    import core.database as core_database
+    import routes.assistant_routes as assistant_routes
+
+    class CrewMember:
+        id = Column("crew_id")
+        owner = Column("crew_owner")
+        is_default_assistant = Column("is_default")
+
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+            self.updated_at = None
+
+    class ScheduledTask:
+        id = Column("task_id")
+        owner = Column("task_owner")
+        crew_member_id = Column("task_crew")
+        scheduled_time = Column("scheduled_time")
+
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    class TaskRun:
+        task_id = Column("run_task_id")
+        started_at = Column("started_at")
+
+        def __init__(self, status):
+            self.status = status
+
+    class Query:
+        def __init__(self, db, model):
+            self.db = db
+            self.model = model
+            self.ids = []
+
+        def filter(self, *conditions):
+            for condition in conditions:
+                if isinstance(condition, Expr) and condition.name in {"crew_id", "task_id"}:
+                    self.ids.append(condition.value)
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def all(self):
+            if self.model is ScheduledTask or getattr(self.model, "__name__", "") == "ScheduledTask":
+                return self.db.tasks
+            return []
+
+        def first(self):
+            if self.model is CrewMember:
+                if self.ids and self.ids[-1] == "missing-crew":
+                    return None
+                return self.db.crew
+            if self.model is ScheduledTask or getattr(self.model, "__name__", "") == "ScheduledTask":
+                if self.ids:
+                    return self.db.tasks_by_id.get(self.ids[-1])
+                return self.db.tasks[0] if self.db.tasks else None
+            if self.model is TaskRun or getattr(self.model, "__name__", "") == "TaskRun":
+                return self.db.run
+            return None
+
+    class DB:
+        def __init__(self):
+            self.crew = None
+            self.tasks = []
+            self.tasks_by_id = {}
+            self.run = None
+            self.commits = 0
+
+        def query(self, model):
+            return Query(self, model)
+
+        def commit(self):
+            self.commits += 1
+
+        def close(self):
+            pass
+
+    class Scheduler:
+        def __init__(self, db):
+            self.db = db
+            self.seeded = []
+
+        async def ensure_assistant_defaults(self, owner):
+            self.seeded.append(owner)
+            self.db.crew = CrewMember(
+                id="crew1",
+                owner=owner,
+                name="Seeded",
+                avatar="A",
+                personality="p",
+                model=None,
+                endpoint_url=None,
+                greeting="hi",
+                enabled_tools="{",
+                session_id="session1",
+                is_default_assistant=True,
+                timezone=None,
+            )
+            self.db.tasks = [
+                ScheduledTask(
+                    id="task1",
+                    name="Task",
+                    scheduled_time="09:00",
+                    prompt="Prompt",
+                    status="paused",
+                    next_run=None,
+                    last_run=None,
+                    run_count=0,
+                    schedule="daily",
+                    scheduled_day=None,
+                    scheduled_date=None,
+                    cron_expression=None,
+                    owner=owner,
+                    crew_member_id="crew1",
+                )
+            ]
+            self.db.tasks_by_id = {"task1": self.db.tasks[0]}
+
+        async def run_task_now(self, _task_id):
+            return False
+
+    db = DB()
+    scheduler = Scheduler(db)
+    monkeypatch.setattr(assistant_routes, "CrewMember", CrewMember)
+    monkeypatch.setattr(assistant_routes, "ScheduledTask", ScheduledTask)
+    monkeypatch.setattr(core_database, "ScheduledTask", ScheduledTask)
+    monkeypatch.setattr(core_database, "TaskRun", TaskRun)
+    monkeypatch.setattr(assistant_routes, "SessionLocal", lambda: db)
+    monkeypatch.setattr(assistant_routes, "get_current_user", lambda request: request.state.current_user)
+    monkeypatch.setattr(assistant_routes, "compute_next_run", lambda *args, **kwargs: dt.datetime(2026, 1, 3, 9))
+
+    router = assistant_routes.setup_assistant_routes(scheduler)
+    request = RequestLike("alice")
+
+    session = asyncio.run(_endpoint(router, "/api/assistant/session")(request))
+    assert session["session_id"] == "session1"
+    assert scheduler.seeded == ["alice"]
+
+    payload = assistant_routes.AssistantSettingsUpdate(
+        name="   ",
+        allow_autonomous_email=False,
+        check_ins=[
+            assistant_routes.CheckInUpdate(id="missing", scheduled_time="10:00"),
+            assistant_routes.CheckInUpdate(id="task1", name="   ", enabled=False),
+        ],
+    )
+    updated = asyncio.run(_endpoint(router, "/api/assistant/settings", "PATCH")(payload, request))
+    assert updated["crew"]["name"] == "Seeded"
+    assert updated["crew"]["enabled_tools"] == []
+    assert db.tasks[0].status == "paused"
+    assert db.commits == 1
+
+    db.crew.id = "missing-crew"
+    with pytest.raises(HTTPException) as no_crew_db:
+        asyncio.run(_endpoint(router, "/api/assistant/settings", "PATCH")(assistant_routes.AssistantSettingsUpdate(), request))
+    assert no_crew_db.value.status_code == 404
+    db.crew.id = "crew1"
+
+    with pytest.raises(HTTPException) as missing_task:
+        asyncio.run(_endpoint(router, "/api/assistant/run/{task_id}", "POST")("missing", request))
+    assert missing_task.value.status_code == 404
+    db.tasks[0].crew_member_id = "missing-crew"
+    with pytest.raises(HTTPException) as not_assistant:
+        asyncio.run(_endpoint(router, "/api/assistant/run/{task_id}", "POST")("task1", request))
+    assert not_assistant.value.status_code == 400
+    db.tasks[0].crew_member_id = "crew1"
+    assert asyncio.run(_endpoint(router, "/api/assistant/run/{task_id}", "POST")("task1", request)) == {"started": False}
+
+    fake_core_database = types.ModuleType("core.database")
+    fake_core_database.ScheduledTask = ScheduledTask
+    fake_core_database.TaskRun = TaskRun
+    monkeypatch.setitem(sys.modules, "core.database", fake_core_database)
+
+    with pytest.raises(HTTPException) as status_missing:
+        asyncio.run(_endpoint(router, "/api/assistant/run-status/{task_id}")("missing", request))
+    assert status_missing.value.status_code == 404
+    db.tasks[0].owner = "bob"
+    with pytest.raises(HTTPException) as status_other_owner:
+        asyncio.run(_endpoint(router, "/api/assistant/run-status/{task_id}")("task1", request))
+    assert status_other_owner.value.status_code == 404
+    db.tasks[0].owner = "alice"
+    assert asyncio.run(_endpoint(router, "/api/assistant/run-status/{task_id}")("task1", request)) == {"status": "unknown"}
+    db.run = TaskRun("running")
+    assert asyncio.run(_endpoint(router, "/api/assistant/run-status/{task_id}")("task1", request)) == {"status": "running"}
+    db.run = TaskRun("failed")
+    assert asyncio.run(_endpoint(router, "/api/assistant/run-status/{task_id}")("task1", request)) == {
+        "status": "done",
+        "result_status": "failed",
+    }
+
+    zoneinfo = types.ModuleType("zoneinfo")
+    zoneinfo.available_timezones = lambda: (_ for _ in ()).throw(RuntimeError("no zones"))
+    monkeypatch.setitem(sys.modules, "zoneinfo", zoneinfo)
+    assert asyncio.run(_endpoint(router, "/api/assistant/available-timezones")()) == {"timezones": ["UTC"]}
+
+
+def test_assistant_routes_seeded_none_is_reported(monkeypatch):
+    import routes.assistant_routes as assistant_routes
+
+    class CrewMember:
+        owner = Column("crew_owner")
+        is_default_assistant = Column("is_default")
+
+    class DB:
+        def query(self, _model):
+            return self
+
+        def filter(self, *_args):
+            return self
+
+        def first(self):
+            return None
+
+        def close(self):
+            pass
+
+    class Scheduler:
+        async def ensure_assistant_defaults(self, _owner):
+            return None
+
+    monkeypatch.setattr(assistant_routes, "CrewMember", CrewMember)
+    monkeypatch.setattr(assistant_routes, "SessionLocal", lambda: DB())
+    monkeypatch.setattr(assistant_routes, "get_current_user", lambda request: request.state.current_user)
+
+    router = assistant_routes.setup_assistant_routes(Scheduler())
+    request = RequestLike("alice")
+    with pytest.raises(HTTPException) as settings_missing:
+        asyncio.run(_endpoint(router, "/api/assistant/settings")(request))
+    assert settings_missing.value.status_code == 500
+    with pytest.raises(HTTPException) as update_missing:
+        asyncio.run(_endpoint(router, "/api/assistant/settings", "PATCH")(assistant_routes.AssistantSettingsUpdate(), request))
+    assert update_missing.value.status_code == 500
+
+
+def test_vault_routes_remaining_cli_and_offline_paths(monkeypatch, tmp_path):
+    import routes.vault_routes as vault_routes
+
+    monkeypatch.setattr(vault_routes, "which_tool", lambda _name: "")
+    monkeypatch.setattr(vault_routes, "IS_WINDOWS", False)
+    monkeypatch.setattr(vault_routes.os.path, "expanduser", lambda _path: str(tmp_path))
+    monkeypatch.setattr(
+        vault_routes.os.path,
+        "isfile",
+        lambda path: str(path).replace("\\", "/").endswith("/.nvm/versions/node/v1/bin/bw"),
+    )
+    monkeypatch.setattr(vault_routes.os, "access", lambda *_args: True)
+    glob_module = types.ModuleType("glob")
+    glob_module.glob = lambda _pattern: [str(tmp_path / ".nvm/versions/node/v1/bin/bw")]
+    monkeypatch.setitem(sys.modules, "glob", glob_module)
+    assert vault_routes._find_bw().replace("\\", "/").endswith("/.nvm/versions/node/v1/bin/bw")
+
+    monkeypatch.setattr(vault_routes, "IS_WINDOWS", True)
+    monkeypatch.setattr(vault_routes.os.path, "isfile", lambda _path: False)
+    assert vault_routes._find_bw() == "bw"
+
+    monkeypatch.setattr(vault_routes, "IS_WINDOWS", False)
+    monkeypatch.setattr(vault_routes.os.path, "isfile", lambda path: str(path).replace("\\", "/").endswith("/usr/local/bin/bw"))
+    assert vault_routes._find_bw() == "/usr/local/bin/bw"
+
+    monkeypatch.setattr(vault_routes.os.path, "isfile", lambda _path: False)
+    assert vault_routes._find_bw() == "bw"
+
+    class BadProc:
+        returncode = 0
+
+        async def communicate(self, input=None):
+            raise RuntimeError("pipe closed")
+
+    async def bad_communicate_exec(*args, **kwargs):
+        return BadProc()
+
+    monkeypatch.setattr(vault_routes, "_find_bw", lambda: "bw")
+    monkeypatch.setattr(vault_routes.asyncio, "create_subprocess_exec", bad_communicate_exec)
+    assert asyncio.run(vault_routes._run_bw(["unlock"], input_text="pw")) == ("", "bw subprocess error: pipe closed", 1)
+
+    class VersionProc:
+        returncode = 0
+
+        async def communicate(self):
+            return b"2026", b""
+
+    async def version_exec(*args, **kwargs):
+        return VersionProc()
+
+    monkeypatch.setattr(vault_routes.asyncio, "create_subprocess_exec", version_exec)
+    assert asyncio.run(vault_routes._check_bw_installed()) is True
+
+    monkeypatch.setattr(vault_routes, "require_admin", lambda request: None)
+    monkeypatch.setattr(vault_routes, "offline_mode", lambda: True)
+    router = vault_routes.setup_vault_routes()
+    request = RequestLike("alice")
+    with pytest.raises(HTTPException) as login_offline:
+        asyncio.run(_endpoint(router, "/api/vault/login", "POST")(vault_routes.VaultLoginRequest(email="a", master_password="pw"), request))
+    assert login_offline.value.status_code == 403
+    with pytest.raises(HTTPException) as unlock_offline:
+        asyncio.run(_endpoint(router, "/api/vault/unlock", "POST")(vault_routes.VaultUnlockRequest(master_password="pw"), request))
+    assert unlock_offline.value.status_code == 403

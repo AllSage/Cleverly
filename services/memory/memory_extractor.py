@@ -153,8 +153,6 @@ def _fallback_memory_candidates(messages) -> list[dict]:
 
     def add(text: str, category: str):
         text = _clean_memory_value(text, 120)
-        if not text:
-            return
         key = text.lower()
         if key in seen:
             return

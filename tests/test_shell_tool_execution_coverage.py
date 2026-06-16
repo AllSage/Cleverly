@@ -528,10 +528,11 @@ async def test_cleanup_service_deletes_only_unprotected_candidates(monkeypatch):
     from src import cleanup_service
 
     recent_rows = [SimpleNamespace(id=f"recent-{i}", created_at=dt.datetime.utcnow()) for i in range(10)]
+    recent_candidate = SimpleNamespace(id="recent-0", name="recent old chat", message_count=2)
     delete_me = SimpleNamespace(id="delete-me", name="old chat", message_count=2)
     protected = SimpleNamespace(id="protected", name="important notes", message_count=2)
     enough_messages = SimpleNamespace(id="long", name="long chat", message_count=20)
-    db = CleanupDb([recent_rows, [delete_me, protected, enough_messages], []], message_count=5)
+    db = CleanupDb([recent_rows, [recent_candidate, delete_me, protected, enough_messages], []], message_count=5)
     install_cleanup_db(monkeypatch, db)
     manager = SimpleNamespace(sessions={"delete-me": object(), "protected": object()})
 
@@ -557,6 +558,12 @@ async def test_cleanup_service_preview_groups_archive_delete_and_preserved(monke
         message_count=1,
     )
     recent_rows = [SimpleNamespace(id=f"recent-{i}", created_at=dt.datetime.utcnow()) for i in range(10)]
+    recent_candidate = SimpleNamespace(
+        id="recent-0",
+        name="Recent Old",
+        last_accessed=None,
+        message_count=4,
+    )
     delete_candidate = SimpleNamespace(
         id="delete",
         name="Old",
@@ -569,7 +576,13 @@ async def test_cleanup_service_preview_groups_archive_delete_and_preserved(monke
         last_accessed=dt.datetime(2025, 1, 2),
         message_count=4,
     )
-    db = CleanupDb([[archived_candidate], recent_rows, [delete_candidate, keyword_candidate]])
+    long_candidate = SimpleNamespace(
+        id="long",
+        name="Long",
+        last_accessed=None,
+        message_count=20,
+    )
+    db = CleanupDb([[archived_candidate], recent_rows, [recent_candidate, delete_candidate, keyword_candidate, long_candidate]])
     install_cleanup_db(monkeypatch, db)
 
     preview = await cleanup_service.get_cleanup_preview(owner="alice")
@@ -577,8 +590,11 @@ async def test_cleanup_service_preview_groups_archive_delete_and_preserved(monke
     assert preview["sessions_to_archive"][0]["id"] == "archive"
     assert preview["sessions_to_delete"][0]["id"] == "delete"
     assert preview["sessions_to_delete"][0]["estimated_size_kb"] == 2.0
-    assert preview["preserved_sessions"][0]["id"] == "keep"
-    assert "contains keyword" in preview["preserved_sessions"][0]["reason"]
+    preserved = {item["id"]: item for item in preview["preserved_sessions"]}
+    assert preserved["recent-0"]["reason"] == "part of last 10 sessions"
+    assert preserved["long"]["reason"] == "has 20+ messages"
+    assert preserved["keep"]["last_accessed"] == "2025-01-02T00:00:00"
+    assert "contains keyword" in preserved["keep"]["reason"]
     assert preview["estimated_space_freed_mb"] == 0.0
     assert db.closed is True
 
@@ -599,3 +615,51 @@ async def test_cleanup_sessions_continues_when_one_phase_fails(monkeypatch):
     result = await cleanup_service.cleanup_sessions(SimpleNamespace(), owner="alice")
 
     assert result == (0, 3, 1.25)
+
+    async def archive_ok(*args, **kwargs):
+        return 2
+
+    async def delete_fail(*args, **kwargs):
+        raise RuntimeError("delete failed")
+
+    monkeypatch.setattr(cleanup_service, "archive_inactive_sessions", archive_ok)
+    monkeypatch.setattr(cleanup_service, "cleanup_old_sessions", delete_fail)
+    assert await cleanup_service.cleanup_sessions(SimpleNamespace(), owner="alice") == (2, 0, 0.0)
+
+
+@pytest.mark.asyncio
+async def test_cleanup_service_defensive_error_paths(monkeypatch):
+    from src import cleanup_service
+
+    query = CleanupQuery(CleanupDb([]), DbSessionModel, [])
+    assert cleanup_service._apply_owner_filter(query, DbSessionModel, None) is query
+
+    class RaisingDb(CleanupDb):
+        def query(self, _model):
+            raise RuntimeError("db failed")
+
+    archive_db = RaisingDb([])
+    install_cleanup_db(monkeypatch, archive_db)
+    assert await cleanup_service.archive_inactive_sessions(SimpleNamespace()) == 0
+    assert archive_db.rollbacks == 1
+    assert archive_db.closed is True
+
+    cleanup_db = RaisingDb([])
+    install_cleanup_db(monkeypatch, cleanup_db)
+    assert await cleanup_service.cleanup_old_sessions(SimpleNamespace(sessions={})) == (0, 0.0)
+    assert cleanup_db.rollbacks == 1
+    assert cleanup_db.closed is True
+
+    empty_db = CleanupDb([[SimpleNamespace(id="recent", created_at=dt.datetime.utcnow())], [SimpleNamespace(id="recent", name="recent", message_count=1)]])
+    install_cleanup_db(monkeypatch, empty_db)
+    assert await cleanup_service.cleanup_old_sessions(SimpleNamespace(sessions={})) == (0, 0.0)
+
+    preview_db = RaisingDb([])
+    install_cleanup_db(monkeypatch, preview_db)
+    assert await cleanup_service.get_cleanup_preview() == {
+        "sessions_to_archive": [],
+        "sessions_to_delete": [],
+        "preserved_sessions": [],
+        "estimated_space_freed_mb": 0.0,
+    }
+    assert preview_db.closed is True

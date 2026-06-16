@@ -90,10 +90,7 @@ def searxng_search_api(query: str, count: int = 10, categories: str = "general",
                        time_filter: Optional[str] = None) -> List[dict]:
     """Search using SearXNG JSON API. Returns list of {title, url, snippet}."""
     instance = _get_search_instance()
-    api_key = ""
     headers = {"User-Agent": "Mozilla/5.0"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
     # News/fresh queries do badly in the 'general' category — it favours
     # encyclopedic/tourism pages, ignores recency, and (with no language pin)
     # bleeds in foreign-language results. When the agent layer detected
@@ -196,10 +193,7 @@ def searxng_search_api(query: str, count: int = 10, categories: str = "general",
 def searxng_search(query, max_results=10):
     """Search using SearXNG instance - parsing HTML."""
     instance = _get_search_instance()
-    api_key = ""
     req_headers = {"User-Agent": "Mozilla/5.0"}
-    if api_key:
-        req_headers["Authorization"] = f"Bearer {api_key}"
     try:
         response = httpx.get(
             f"{instance}/search",

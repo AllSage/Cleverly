@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import builtins
 import datetime as dt
 import json
 import sys
@@ -255,6 +256,21 @@ def test_preset_routes_crud_expand_and_group_paths(monkeypatch):
 def test_stt_service_dispatch_local_api_stats_and_singleton(monkeypatch, tmp_path):
     import services.stt.stt_service as stt_module
 
+    fake_settings = types.ModuleType("src.settings")
+    fake_settings.load_settings = lambda: {
+        "stt_enabled": True,
+        "stt_provider": "browser",
+        "stt_model": "tiny",
+        "stt_language": "en",
+    }
+    monkeypatch.setitem(sys.modules, "src.settings", fake_settings)
+    assert stt_module.STTService()._load_settings() == {
+        "stt_enabled": True,
+        "stt_provider": "browser",
+        "stt_model": "tiny",
+        "stt_language": "en",
+    }
+
     service = stt_module.STTService()
     settings = {
         "stt_enabled": True,
@@ -274,6 +290,48 @@ def test_stt_service_dispatch_local_api_stats_and_singleton(monkeypatch, tmp_pat
     monkeypatch.setattr(service, "_get_whisper", lambda: None)
     assert service.available is False
     assert service._transcribe_local(b"audio") is None
+
+    dispatch_service = stt_module.STTService()
+    monkeypatch.setattr(dispatch_service, "_load_settings", lambda: dict(settings))
+    monkeypatch.setattr(dispatch_service, "_transcribe_local", lambda audio, language="": f"local:{language}:{len(audio)}")
+    assert dispatch_service.transcribe(b"abcd") == "local::4"
+
+    real_import = builtins.__import__
+
+    def no_faster_whisper(name, *args, **kwargs):
+        if name == "faster_whisper":
+            raise ImportError("missing")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_faster_whisper)
+    import_error_service = stt_module.STTService()
+    assert import_error_service._get_whisper() is None
+    monkeypatch.setattr(builtins, "__import__", real_import)
+
+    fake_fw = types.ModuleType("faster_whisper")
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = SimpleNamespace(is_available=lambda: True)
+    whisper_calls = []
+
+    class WhisperModel:
+        def __init__(self, model_size, device=None, compute_type=None):
+            whisper_calls.append((model_size, device, compute_type))
+
+    fake_fw.WhisperModel = WhisperModel
+    monkeypatch.setitem(sys.modules, "faster_whisper", fake_fw)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    whisper_service = stt_module.STTService()
+    monkeypatch.setattr(whisper_service, "_load_settings", lambda: {"stt_model": "small"})
+    assert whisper_service._get_whisper() is whisper_service._get_whisper()
+    assert whisper_calls == [("small", "cuda", "float16")]
+
+    class BrokenWhisperModel:
+        def __init__(self, *_args, **_kwargs):
+            raise RuntimeError("load failed")
+
+    fake_fw.WhisperModel = BrokenWhisperModel
+    broken_whisper_service = stt_module.STTService()
+    assert broken_whisper_service._get_whisper() is None
 
     class Segment:
         def __init__(self, text):
@@ -365,6 +423,14 @@ def test_stt_service_dispatch_local_api_stats_and_singleton(monkeypatch, tmp_pat
     stats = service.get_stats()
     assert stats["endpoint_id"] == "ep1"
     assert stats["available"] is True
+
+    settings["stt_provider"] = "local"
+    monkeypatch.setattr(service, "_get_whisper", lambda: object())
+    local_stats = service.get_stats()
+    assert local_stats["model_loaded"] is True
+
+    settings["stt_provider"] = "browser"
+    assert service.get_stats()["model"] == "Browser (Web Speech API)"
 
     settings["stt_enabled"] = False
     assert service.get_stats()["provider"] == "disabled"

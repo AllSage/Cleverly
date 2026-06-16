@@ -23,6 +23,7 @@ class FakeResponse:
         content=b"",
         headers=None,
         is_success=True,
+        url="https://example.com/current",
     ):
         self.status_code = status_code
         self._payload = payload if payload is not None else {}
@@ -30,6 +31,7 @@ class FakeResponse:
         self.content = content or text.encode("utf-8")
         self.headers = headers or {}
         self.is_success = is_success
+        self.url = url
 
     def json(self):
         return self._payload
@@ -190,6 +192,7 @@ def test_provider_helpers_and_all_provider_parsers_are_offline(prefix, monkeypat
             <div class="result"><a class="result__a" href="https://example.com/d">Duck</a>
             <a class="result__snippet">duck body</a></div>
             <div class="result"><a class="result__a">No href</a></div>
+            <div class="result"><span>No link</span></div>
             """
             return FakeResponse(text=html)
         return FakeResponse(payload={})
@@ -252,7 +255,7 @@ def test_provider_helpers_and_all_provider_parsers_are_offline(prefix, monkeypat
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", blocked_import)
-    assert providers.duckduckgo_search("duck", 2)[0]["title"] == "Duck"
+    assert providers.duckduckgo_search("duck", 3)[0]["title"] == "Duck"
 
     assert providers.google_pse_search("google", 2, "month")[0]["title"] == "Google"
     assert providers.tavily_search("tavily", 2, "year")[0]["title"] == "Tavily"
@@ -308,6 +311,115 @@ def test_provider_error_paths_cover_rate_limits_json_errors_and_fallbacks(prefix
     )
     assert providers.tavily_search("limited") == []
     assert providers.serper_search("limited") == []
+
+
+@pytest.mark.parametrize("prefix", SEARCH_MODULE_PREFIXES)
+def test_provider_remaining_settings_retry_and_request_error_edges(prefix, monkeypatch):
+    providers = _import(prefix, "providers")
+
+    import src.settings as settings_module
+
+    monkeypatch.setattr(settings_module, "load_settings", lambda: {"search_url": "https://settings.local"})
+    assert providers._get_search_settings() == {"search_url": "https://settings.local"}
+
+    real_import = builtins.__import__
+
+    def settings_import_error(name, *args, **kwargs):
+        if name == "src.settings":
+            raise RuntimeError("settings unavailable")
+        return real_import(name, *args, **kwargs)
+
+    with monkeypatch.context() as import_patch:
+        import_patch.setattr(builtins, "__import__", settings_import_error)
+        assert providers._get_search_settings() == {}
+
+    monkeypatch.setattr(providers, "_get_search_settings", lambda: {})
+    assert providers._get_search_instance() == providers.SEARXNG_INSTANCE
+    monkeypatch.setattr(providers, "_get_search_settings", lambda: {"search_api_key": "legacy-key"})
+    assert providers._get_provider_key("unknown") == "legacy-key"
+
+    monkeypatch.setattr(providers, "_get_search_settings", lambda: {"search_url": "https://search.local"})
+    searx_calls = []
+
+    def searx_retry_get(url, **kwargs):
+        searx_calls.append(kwargs["params"])
+        if len(searx_calls) < 4:
+            return FakeResponse(payload={"results": []})
+        return FakeResponse(payload={"results": [{"title": "Final", "url": "https://example.com/f", "content": "final"}]})
+
+    monkeypatch.setattr(providers.httpx, "get", searx_retry_get)
+    assert providers.searxng_search_api("latest news", count=2, time_filter="day")[0]["title"] == "Final"
+    assert searx_calls[0]["categories"] == "news"
+    assert searx_calls[1]["categories"] == "general"
+    assert "language" not in searx_calls[2]
+    assert "engines" not in searx_calls[3]
+
+    def searx_unresponsive_get(url, **kwargs):
+        return FakeResponse(payload={"results": [], "unresponsive_engines": ["engine"]})
+
+    monkeypatch.setattr(providers.httpx, "get", searx_unresponsive_get)
+    assert providers.searxng_search_api("plain empty", categories="images") == []
+
+    html_with_skip = """
+    <article class="result"><p class="content">missing title</p></article>
+    <article class="result"><h3><a href="https://example.com/ok">OK</a></h3></article>
+    """
+    monkeypatch.setattr(providers.httpx, "get", lambda *a, **k: FakeResponse(text=html_with_skip, is_success=True))
+    assert providers.searxng_search("html skip", 2)[0]["title"] == "OK"
+    monkeypatch.setattr(providers.httpx, "get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("html down")))
+    assert providers.searxng_search("html down") == []
+
+    monkeypatch.setenv("DATA_BRAVE_API_KEY", "env-brave")
+    monkeypatch.setattr(providers.httpx, "get", lambda *a, **k: (_ for _ in ()).throw(httpx.RequestError("brave offline")))
+    assert providers.brave_search("brave") == []
+
+    duck_module = type(sys)("duckduckgo_search")
+
+    class DDGS:
+        def text(self, query, max_results, timelimit=None):
+            assert timelimit == "m"
+            return [
+                {"title": "Skip"},
+                {"title": "Duck Lib", "href": "https://example.com/lib", "body": "body"},
+            ]
+
+    duck_module.DDGS = DDGS
+    monkeypatch.setitem(sys.modules, "duckduckgo_search", duck_module)
+    assert providers.duckduckgo_search("duck", 2, "month")[0]["title"] == "Duck Lib"
+
+    class EmptyDDGS:
+        def text(self, *_args, **_kwargs):
+            return []
+
+    duck_module.DDGS = EmptyDDGS
+    monkeypatch.setattr(providers.httpx, "get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("duck html down")))
+    assert providers.duckduckgo_search("duck", 2) == []
+
+    class RaisingDDGS:
+        def text(self, *_args, **_kwargs):
+            raise RuntimeError("ddg library down")
+
+    duck_module.DDGS = RaisingDDGS
+    assert providers.duckduckgo_search("duck", 2) == []
+
+    monkeypatch.setattr(
+        providers,
+        "_get_search_settings",
+        lambda: {
+            "google_pse_key": "google",
+            "google_pse_cx": "cx",
+            "tavily_api_key": "tavily",
+            "serper_api_key": "serper",
+        },
+    )
+    monkeypatch.setattr(providers.httpx, "get", lambda *a, **k: FakeResponse(status_code=429))
+    assert providers.google_pse_search("google") == []
+    monkeypatch.setattr(providers.httpx, "get", lambda *a, **k: (_ for _ in ()).throw(httpx.RequestError("google offline")))
+    assert providers.google_pse_search("google") == []
+
+    monkeypatch.setattr(providers.httpx, "post", lambda *a, **k: (_ for _ in ()).throw(httpx.RequestError("api offline")))
+    assert providers.tavily_search("tavily") == []
+    assert providers.serper_search("serper") == []
 
 
 @pytest.mark.parametrize("prefix", SEARCH_MODULE_PREFIXES)
@@ -391,6 +503,316 @@ def test_content_helpers_fetch_cache_pdf_html_and_errors(prefix, tmp_path, monke
         "this is a long useful quote"
     ]
     assert content.extract_statistics("Sales rose 12.5 percent on 2026 reports")[0] == "12.5 percent"
+
+
+@pytest.mark.parametrize("prefix", SEARCH_MODULE_PREFIXES)
+def test_content_remaining_url_cache_pdf_parse_and_cache_edges(prefix, tmp_path, monkeypatch):
+    content = _import(prefix, "content")
+
+    monkeypatch.setattr(content, "CONTENT_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(content, "content_cache_index", {})
+    monkeypatch.setattr(content, "cleanup_cache", lambda *args, **kwargs: None)
+
+    if prefix == "services.search":
+        monkeypatch.setattr(
+            content.socket,
+            "getaddrinfo",
+            lambda *_args, **_kwargs: [
+                (None, None, None, None, ("93.184.216.34", 0)),
+                (None, None, None, None, ("not-an-ip", 0)),
+            ],
+        )
+        assert [str(ip) for ip in content._resolve_hostname_ips("example.com")] == ["93.184.216.34"]
+        monkeypatch.setattr(content.socket, "getaddrinfo", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("dns")))
+        assert content._resolve_hostname_ips("missing.example") == []
+        assert content._public_http_url("https://box.internal/path") is False
+        assert content._public_http_url([]) is False
+    else:
+        monkeypatch.setattr(
+            content.socket,
+            "getaddrinfo",
+            lambda *_args, **_kwargs: [
+                (content.socket.AF_INET, None, None, None, ("93.184.216.34", 0)),
+                (999, None, None, None, ("127.0.0.1", 0)),
+            ],
+        )
+        assert [str(ip) for ip in content._resolve_hostname_ips("example.com")] == ["93.184.216.34"]
+        monkeypatch.setattr(content, "_resolve_hostname_ips", lambda _host: [])
+        assert content._public_http_url("https://empty.example") is False
+
+    assert content._public_http_url("https://") is False
+
+    if hasattr(content, "_extract_og_image"):
+        og_soup = BeautifulSoup(
+            """
+            <html><head>
+              <meta property="og:image" content="http://example.com/plain.png">
+              <meta property="og:image:url" content="https://example.com/icon.ico">
+              <meta property="og:image:secure_url" content="https://example.com/hero.svg">
+              <meta name="twitter:image" content="https://example.com/twitter.png">
+              <meta name="thumbnail" content="https://example.com/thumb.png">
+            </head></html>
+            """,
+            "html.parser",
+        )
+        assert content._extract_og_image(og_soup) == "https://example.com/twitter.png"
+        assert content._extract_og_image(BeautifulSoup("<html></html>", "html.parser")) == ""
+
+    assert content._detect_js_frameworks(BeautifulSoup("<script>window.Vue = {}</script>", "html.parser"))
+    assert content._detect_js_frameworks(BeautifulSoup("<body ng-app='app'></body>", "html.parser"))
+
+    if prefix == "services.search":
+        calls = []
+
+        def fake_get(url, **_kwargs):
+            calls.append(url)
+            if len(calls) == 1:
+                return FakeResponse(status_code=302, headers={"location": "/next"}, url=url)
+            return FakeResponse(status_code=200, text="ok", url=url)
+
+        monkeypatch.setattr(content, "_public_http_url", lambda url: True)
+        monkeypatch.setattr(content.httpx, "get", fake_get)
+        assert content._get_public_url("https://example.com/start", headers={}, timeout=1).text == "ok"
+        assert calls == ["https://example.com/start", "https://example.com/next"]
+
+        monkeypatch.setattr(content.httpx, "get", lambda url, **_kwargs: FakeResponse(status_code=302, headers={}, url=url))
+        assert content._get_public_url("https://example.com/no-location", headers={}, timeout=1).status_code == 302
+        monkeypatch.setattr(content.httpx, "get", lambda url, **_kwargs: FakeResponse(status_code=302, headers={"location": "/loop"}, url=url))
+        with pytest.raises(httpx.RequestError, match="Too many redirects"):
+            content._get_public_url("https://example.com/loop", headers={}, timeout=1, max_redirects=1)
+        monkeypatch.setattr(content, "_public_http_url", lambda url: False)
+        with pytest.raises(httpx.RequestError, match="Blocked private"):
+            content._get_public_url("https://private.example", headers={}, timeout=1)
+    else:
+        class FakeClient:
+            def __init__(self, *args, **kwargs):
+                self.calls = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def get(self, url):
+                self.calls.append(url)
+                if len(self.calls) == 1:
+                    return FakeResponse(status_code=302, headers={"location": "/next"}, url=url)
+                return FakeResponse(status_code=200, text="ok", url=url)
+
+        monkeypatch.setattr(content, "_public_http_url", lambda url: True)
+        monkeypatch.setattr(content.httpx, "Client", FakeClient)
+        assert content._get_public_url("https://example.com/start", headers={}, timeout=1).text == "ok"
+
+        class NoLocationClient(FakeClient):
+            def get(self, url):
+                return FakeResponse(status_code=302, headers={}, url=url)
+
+        monkeypatch.setattr(content.httpx, "Client", NoLocationClient)
+        assert content._get_public_url("https://example.com/no-location", headers={}, timeout=1).status_code == 302
+        monkeypatch.setattr(content, "_public_http_url", lambda url: "private" not in url)
+
+        class PrivateRedirectClient(FakeClient):
+            def get(self, url):
+                return FakeResponse(status_code=302, headers={"location": "https://private.example"}, url=url)
+
+        monkeypatch.setattr(content.httpx, "Client", PrivateRedirectClient)
+        with pytest.raises(httpx.RequestError, match="Blocked redirect"):
+            content._get_public_url("https://example.com/start", headers={}, timeout=1)
+
+        class LoopClient(FakeClient):
+            def get(self, url):
+                return FakeResponse(status_code=302, headers={"location": "/loop"}, url=url)
+
+        monkeypatch.setattr(content, "_public_http_url", lambda url: True)
+        monkeypatch.setattr(content.httpx, "Client", LoopClient)
+        with pytest.raises(httpx.RequestError, match="Too many redirects"):
+            content._get_public_url("https://example.com/loop", headers={}, timeout=1)
+
+        with pytest.raises(httpx.RequestError, match="Blocked non-public"):
+            monkeypatch.setattr(content, "_public_http_url", lambda url: False)
+            content._get_public_url("https://private.example", headers={}, timeout=1)
+
+    stale_key = content.generate_cache_key("https://example.com/stale")
+    stale_file = tmp_path / f"{stale_key}.cache"
+    stale_file.write_text(
+        json.dumps({"timestamp": (datetime.now() - timedelta(hours=3)).isoformat(), "data": {"title": "old"}}),
+        encoding="utf-8",
+    )
+    content.content_cache_index[stale_key] = datetime.now()
+    monkeypatch.setattr(content, "_get_public_url", lambda *a, **k: FakeResponse(text="<html><body>fresh body</body></html>"))
+    assert content.fetch_webpage_content("https://example.com/stale")["content"] == "fresh body"
+    assert stale_key in content.content_cache_index
+
+    bad_key = content.generate_cache_key("https://example.com/bad-cache")
+    bad_file = tmp_path / f"{bad_key}.cache"
+    bad_file.write_text("{bad", encoding="utf-8")
+    content.content_cache_index[bad_key] = datetime.now()
+    assert content.fetch_webpage_content("https://example.com/bad-cache")["success"] is True
+
+    monkeypatch.setattr(content, "_get_public_url", lambda *a, **k: FakeResponse(status_code=429, text="limited"))
+    limited = content.fetch_webpage_content("https://example.com/limited", retry_attempt=2)
+    assert limited["success"] is False and "Rate limit hit" in limited["error"]
+
+    monkeypatch.setattr(content, "pdf_extract_text", None)
+    monkeypatch.setattr(content, "_get_public_url", lambda *a, **k: FakeResponse(content=b"%PDF", headers={"Content-Type": "application/pdf"}))
+    pdf_missing = content.fetch_webpage_content("https://example.com/no-pdfminer.pdf")
+    assert pdf_missing["success"] is False
+
+    monkeypatch.setattr(content, "pdf_extract_text", lambda _stream: (_ for _ in ()).throw(RuntimeError("pdf broken")))
+    pdf_broken = content.fetch_webpage_content("https://example.com/broken.pdf")
+    assert pdf_broken["success"] is False
+
+    real_bs = content.BeautifulSoup
+    monkeypatch.setattr(content, "_get_public_url", lambda *a, **k: FakeResponse(text="<html></html>", headers={"Content-Type": "text/html"}))
+    monkeypatch.setattr(content, "BeautifulSoup", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("parse broken")))
+    parse_error = content.fetch_webpage_content("https://example.com/parse-error")
+    assert parse_error["success"] is False and "ParseError" in parse_error["error"]
+    monkeypatch.setattr(content, "BeautifulSoup", real_bs)
+
+    body_html = "<html><body><p>Body fallback text without matching content class.</p></body></html>"
+    monkeypatch.setattr(content, "_get_public_url", lambda *a, **k: FakeResponse(text=body_html, headers={"Content-Type": "text/html"}))
+    body_result = content.fetch_webpage_content("https://example.com/body-only")
+    assert "Body fallback text" in body_result["content"]
+
+    with monkeypatch.context() as write_patch:
+        write_patch.setattr(builtins, "open", lambda *a, **k: (_ for _ in ()).throw(OSError("readonly")))
+        content._cache_result(tmp_path / "manual.cache", "manual", {"success": True}, "https://example.com/manual")
+
+
+@pytest.mark.parametrize("prefix", SEARCH_MODULE_PREFIXES)
+def test_core_remaining_cache_provider_invalidation_and_filter_edges(prefix, tmp_path, monkeypatch):
+    core = _import(prefix, "core")
+
+    monkeypatch.setattr(core, "SEARCH_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(core, "search_cache_index", {})
+    monkeypatch.setattr(core, "rank_search_results", lambda query, results: list(results))
+    monkeypatch.setattr(core, "cleanup_cache", lambda *args, **kwargs: None)
+    recorded = []
+    monkeypatch.setattr(core, "_record_query", lambda *args, **kwargs: recorded.append((args, kwargs)))
+    monkeypatch.setattr(core, "_cache_duration_for_query", lambda _query: timedelta(minutes=5))
+    monkeypatch.setattr(core, "_get_result_count", lambda: 2)
+    monkeypatch.setattr(core, "_get_search_settings", lambda: {"search_provider": "searxng", "search_fallback_chain": []})
+
+    stale_key = core.generate_cache_key("stale query|2|None")
+    stale_file = tmp_path / f"{stale_key}.cache"
+    stale_file.write_text(
+        json.dumps({"expiry": (datetime.now() - timedelta(minutes=1)).isoformat(), "data": [{"title": "old"}]}),
+        encoding="utf-8",
+    )
+    core.search_cache_index[stale_key] = datetime.now()
+    monkeypatch.setattr(
+        core,
+        "_call_provider",
+        lambda *_args, **_kwargs: [{"title": "New", "url": "https://example.com/news", "snippet": "fresh"}],
+    )
+    assert core.searxng_search_results("stale query") == [{"title": "New", "url": "https://example.com/news", "snippet": "fresh"}]
+    assert stale_key in core.search_cache_index
+
+    bad_key = core.generate_cache_key("bad cache|2|None")
+    bad_file = tmp_path / f"{bad_key}.cache"
+    bad_file.write_text("{bad", encoding="utf-8")
+    core.search_cache_index[bad_key] = datetime.now()
+    assert core.searxng_search_results("bad cache")
+
+    def provider_errors(provider_name, *_args, **_kwargs):
+        if provider_name == "searxng":
+            raise core.NetworkError("network down")
+        raise RuntimeError("unexpected down")
+
+    monkeypatch.setattr(core, "_get_search_settings", lambda: {"search_provider": "searxng", "search_fallback_chain": ["duckduckgo"]})
+    monkeypatch.setattr(core, "_call_provider", provider_errors)
+    assert core.searxng_search_results("all fail") == []
+
+    monkeypatch.setattr(core, "_call_provider", lambda *_args, **_kwargs: [{"title": "Ok", "url": "https://example.com/ok", "snippet": "ok"}])
+    with monkeypatch.context() as write_patch:
+        write_patch.setattr(builtins, "open", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("readonly")))
+        assert core.searxng_search_results("write fail") == [{"title": "Ok", "url": "https://example.com/ok", "snippet": "ok"}]
+
+    class BadCacheFile:
+        def __str__(self):
+            return "bad.cache"
+
+        def unlink(self, missing_ok=True):
+            raise OSError("cannot delete")
+
+    class FakeCacheDir:
+        def glob(self, pattern):
+            assert pattern == "*.cache"
+            return [BadCacheFile()]
+
+    with monkeypatch.context() as invalidate_patch:
+        invalidate_patch.setattr(core, "SEARCH_CACHE_DIR", FakeCacheDir())
+        core.search_cache_index["x"] = datetime.now()
+        core.invalidate_search_cache()
+    assert core.search_cache_index == {}
+
+    missing_key = core.generate_cache_key("missing|10|None")
+    missing_file = tmp_path / f"{missing_key}.cache"
+    assert not missing_file.exists()
+    core.invalidate_search_cache("missing")
+
+    remove_key = core.generate_cache_key("remove-me|10|None")
+    remove_file = tmp_path / f"{remove_key}.cache"
+    remove_file.write_text("x", encoding="utf-8")
+    core.search_cache_index[remove_key] = datetime.now()
+    core.invalidate_search_cache("remove-me")
+    assert not remove_file.exists()
+    assert remove_key not in core.search_cache_index
+
+    query_key = core.generate_cache_key("locked|10|None")
+    query_file = tmp_path / f"{query_key}.cache"
+    query_file.write_text("x", encoding="utf-8")
+    core.search_cache_index[query_key] = datetime.now()
+    with monkeypatch.context() as unlink_patch:
+        unlink_patch.setattr(query_file.__class__, "unlink", lambda self, missing_ok=True: (_ for _ in ()).throw(OSError("locked")))
+        core.invalidate_search_cache("locked")
+
+    monkeypatch.setattr(core, "_get_search_settings", lambda: {"search_provider": "disabled"})
+    disabled_msg, disabled_sources = core.comprehensive_web_search("disabled", time_filter="day", return_sources=True)
+    assert "disabled" in disabled_msg.lower()
+    assert disabled_sources == []
+
+    search_rows = [
+        {"title": "Article", "url": "https://example.com/article/en/page", "snippet": "snippet", "age": "today"},
+        {"title": "Forum", "url": "https://forum.example.com/thread/1?lang=en", "snippet": "snippet"},
+        {"title": "Paper", "url": "https://example.edu/research.pdf", "snippet": "snippet"},
+        {"title": "Bad", "url": object(), "snippet": "bad"},
+    ]
+    monkeypatch.setattr(core, "_get_search_settings", lambda: {"search_provider": "searxng", "search_fallback_chain": []})
+    monkeypatch.setattr(core, "_call_provider", lambda *_args, **_kwargs: list(search_rows))
+    no_filters = core.comprehensive_web_search(
+        "filtered",
+        max_pages=4,
+        domain_whitelist={"other.example.com"},
+        return_sources=True,
+    )
+    assert no_filters == ("No suitable results after applying filters.", [])
+    assert "No suitable results" in core.comprehensive_web_search("filtered", content_type="article", language="fr")
+    assert "No suitable results" in core.comprehensive_web_search("filtered", content_type="forum", domain_blacklist={"forum.example.com"})
+    assert "No suitable results" in core.comprehensive_web_search("filtered", content_type="academic", domain_blacklist={"example.edu"})
+
+    long_content = "First key sentence. " + ("x" * 3100) + ' "this quoted passage is definitely long enough" 42 percent'
+    monkeypatch.setattr(
+        core,
+        "fetch_webpage_content",
+        lambda url, *_args, **_kwargs: {
+            "success": True,
+            "url": url,
+            "title": "Fetched",
+            "content": "- point\n" + long_content,
+        },
+    )
+    output, sources = core.comprehensive_web_search("filtered", max_pages=1, return_sources=True)
+    assert "[truncated]" in output
+    assert "Key Points:" in output
+    assert "Important Quotes:" in output
+    assert "Data / Statistics:" in output
+    assert sources[0]["title"] == "Article"
+
+    monkeypatch.setattr(core, "fetch_webpage_content", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("fetch exploded")))
+    output = core.comprehensive_web_search("filtered", max_pages=1)
+    assert "fetched 0 pages" in output
 
 
 @pytest.mark.parametrize("prefix", SEARCH_MODULE_PREFIXES)

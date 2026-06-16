@@ -165,9 +165,9 @@ def parse_frontmatter(text: str) -> tuple[Dict[str, Any], str]:
         m2 = _FM_BLOCK_LIST_RE.match(line)
         if m2 and pending_key:
             existing = fm.get(pending_key)
-            if not isinstance(existing, list):
-                fm[pending_key] = []
-            fm[pending_key].append(_parse_scalar(m2.group(1)))
+            existing = existing if isinstance(existing, list) else []
+            fm[pending_key] = existing
+            existing.append(_parse_scalar(m2.group(1)))
     return fm, body
 
 

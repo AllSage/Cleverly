@@ -48,6 +48,12 @@ def test_model_discovery_tailscale_cache_success_and_failures(monkeypatch):
     monkeypatch.setattr(md.subprocess, "run", missing)
     assert md.discover_tailscale_hosts() == []
 
+    def broken_status(*args, **kwargs):
+        raise RuntimeError("tailscale broke")
+
+    monkeypatch.setattr(md.subprocess, "run", broken_status)
+    assert md.discover_tailscale_hosts() == []
+
 
 def test_model_discovery_hosts_ports_providers_and_http(monkeypatch):
     import src.model_discovery as md
@@ -57,16 +63,26 @@ def test_model_discovery_hosts_ports_providers_and_http(monkeypatch):
     monkeypatch.setenv("LLM_HOSTS", "10.0.0.2, 10.0.0.2, 10.0.0.3")
     assert discovery._get_hosts() == ["127.0.0.1", "10.0.0.2", "10.0.0.2", "10.0.0.3", "host.docker.internal"]
 
+    monkeypatch.setenv("LLM_HOSTS", "host.docker.internal")
+    assert discovery._get_hosts() == ["127.0.0.1", "host.docker.internal"]
+
     monkeypatch.delenv("LLM_HOSTS", raising=False)
     monkeypatch.setattr(md, "discover_tailscale_hosts", lambda: ["100.64.0.2"])
     assert discovery._get_hosts() == ["127.0.0.1", "100.64.0.2", "host.docker.internal"]
 
     monkeypatch.setattr(md, "discover_tailscale_hosts", lambda: [])
+    monkeypatch.setenv("OLLAMA_BASE_URL", "")
+    monkeypatch.setenv("OLLAMA_URL", "")
+    assert discovery._get_hosts() == ["127.0.0.1", "host.docker.internal"]
+
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama.local:11434")
     monkeypatch.setenv("OLLAMA_URL", "bad host")
     hosts = discovery._get_hosts()
     assert hosts[:2] == ["127.0.0.1", "host.docker.internal"]
     assert "ollama.local" in hosts
+
+    monkeypatch.setattr(md, "urlparse", lambda _raw: (_ for _ in ()).throw(ValueError("bad url")))
+    assert discovery._get_hosts() == ["127.0.0.1", "host.docker.internal"]
 
     class Response:
         is_success = True
@@ -79,6 +95,15 @@ def test_model_discovery_hosts_ports_providers_and_http(monkeypatch):
     assert checked["url"] == "http://host:8000/v1/chat/completions"
     assert checked["models"] == ["/model-a", "model-b"]
     assert checked["models_display"] == ["model-a", "model-b"]
+
+    class BadResponse:
+        is_success = False
+
+        def json(self):
+            raise AssertionError("json should not be read")
+
+    monkeypatch.setattr(md.httpx, "get", lambda url, timeout=3: BadResponse())
+    assert discovery._check_port("host", 8000) is None
 
     monkeypatch.setattr(md.httpx, "get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))
     assert discovery._check_port("host", 8000) is None
@@ -102,6 +127,10 @@ def test_model_discovery_hosts_ports_providers_and_http(monkeypatch):
     assert providers[0]["provider"] == "vllm"
     assert providers[1]["provider"] == "openai"
     assert "gpt-5.2" in providers[1]["items"][0]["models"]
+
+    no_openai = md.ModelDiscovery("127.0.0.1")
+    monkeypatch.setattr(no_openai, "discover_models", lambda: {"hosts": ["h"], "items": []})
+    assert no_openai.get_providers()["providers"] == [{"provider": "vllm", "hosts": ["h"], "items": []}]
 
 
 def test_platform_compat_posix_and_windows_branches(monkeypatch, tmp_path):
@@ -185,6 +214,64 @@ def test_platform_compat_shell_resolution(monkeypatch):
     assert pc.run_script_argv("script.sh") == ["sh", "script.sh"]
 
 
+def test_platform_compat_remaining_process_and_tool_edges(monkeypatch):
+    import ctypes
+    import core.platform_compat as pc
+
+    assert pc.pid_alive(None) is False
+    pc.kill_process_tree(None)
+
+    monkeypatch.setattr(pc, "IS_WINDOWS", True)
+
+    class Kernel32:
+        def __init__(self, *, handle=10, exit_ok=True, code=259):
+            self.handle = handle
+            self.exit_ok = exit_ok
+            self.code = code
+            self.closed = []
+
+        def OpenProcess(self, *_args):
+            return self.handle
+
+        def GetExitCodeProcess(self, _handle, code_ref):
+            if self.exit_ok:
+                code_ref._obj.value = self.code
+                return True
+            return False
+
+        def CloseHandle(self, handle):
+            self.closed.append(handle)
+
+    kernel = Kernel32()
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(kernel32=kernel), raising=False)
+    assert pc.pid_alive(123) is True
+    assert kernel.closed == [10]
+
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(kernel32=Kernel32(handle=0)), raising=False)
+    assert pc.pid_alive(123) is False
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(kernel32=Kernel32(exit_ok=False)), raising=False)
+    assert pc.pid_alive(123) is False
+    monkeypatch.setattr(ctypes, "windll", SimpleNamespace(kernel32=Kernel32(code=0)), raising=False)
+    assert pc.pid_alive(123) is False
+
+    monkeypatch.setattr(pc.subprocess, "run", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("taskkill failed")))
+    pc.kill_process_tree(99)
+
+    monkeypatch.setattr(pc, "IS_WINDOWS", False)
+    fallback_kills = []
+    monkeypatch.setattr(pc.os, "getpgid", lambda _pid: (_ for _ in ()).throw(OSError("no group")), raising=False)
+    monkeypatch.setattr(pc.os, "kill", lambda pid, sig: fallback_kills.append((pid, sig)))
+    pc.kill_process_tree(88)
+    assert fallback_kills and fallback_kills[0][0] == 88
+
+    monkeypatch.setattr(pc.os, "kill", lambda *_args: (_ for _ in ()).throw(OSError("cannot kill")))
+    pc.kill_process_tree(88)
+
+    monkeypatch.setattr(pc.shutil, "which", lambda name: "/bin/tool" if name == "tool" else None)
+    assert pc.which_tool("tool") == "/bin/tool"
+    assert pc.which_tool("missing") is None
+
+
 @pytest.mark.parametrize("module_name", ["src.youtube_handler", "services.youtube.youtube_handler"])
 def test_youtube_helpers_and_formatters(monkeypatch, module_name):
     yt = importlib.import_module(module_name)
@@ -231,6 +318,18 @@ def test_youtube_helpers_and_formatters(monkeypatch, module_name):
     assert "Source: Auto-generated" in transcript
     assert "[00:01] hello" in transcript
 
+    long_segment_context = yt.format_transcript_for_context(
+        {
+            "success": True,
+            "transcript": "plain fallback",
+            "video_id": "vid",
+            "segments": [{"timestamp": "00:01", "text": "x" * 13000}],
+        },
+        "url",
+    )
+    assert "Timestamped Transcript" not in long_segment_context
+    assert "Transcript:\nplain fallback" in long_segment_context
+
     plain = yt.format_transcript_for_context(
         {"success": True, "transcript": "plain", "video_id": "vid", "segments": []},
         "url",
@@ -243,6 +342,11 @@ def test_youtube_helpers_and_formatters(monkeypatch, module_name):
         "url",
     )
     assert "@A [2 likes]: nice" in comments
+    long_comments = yt.format_comments_for_context(
+        {"success": True, "comments": [{"author": "A", "likes": 0, "text": "x" * 5000}]},
+        "url",
+    )
+    assert "[Comments truncated]" in long_comments
 
 
 @pytest.mark.parametrize("module_name", ["src.youtube_handler", "services.youtube.youtube_handler"])
@@ -272,6 +376,14 @@ async def test_youtube_transcript_and_comments(monkeypatch, module_name):
     assert transcript["success"] is True
     assert transcript["transcript"] == "hello world"
     assert transcript["segments"][0]["timestamp"] == "01:01"
+
+    class LongApi:
+        def fetch(self, video_id):
+            return [Snippet("x" * 9000, 0, 1)]
+
+    yt.YouTubeTranscriptApi = LongApi
+    long_transcript = await yt.extract_transcript_async("url", "vid")
+    assert long_transcript["transcript"].endswith("... [transcript truncated]")
 
     class FailingApi:
         def fetch(self, video_id):
@@ -323,6 +435,8 @@ async def test_youtube_transcript_and_comments(monkeypatch, module_name):
     assert failed_comments["success"] is False
     assert "yt-dlp failed" in failed_comments["error"]
 
+    original_wait_for = asyncio.wait_for
+
     async def timeout_wait_for(awaitable, timeout=None):
         if hasattr(awaitable, "close"):
             awaitable.close()
@@ -332,9 +446,25 @@ async def test_youtube_transcript_and_comments(monkeypatch, module_name):
     timed_out = await yt.fetch_youtube_comments("vid")
     assert timed_out == {"success": False, "error": "Comment fetch timed out", "comments": []}
 
+    monkeypatch.setattr(yt.asyncio, "wait_for", original_wait_for)
 
-def test_youtube_init_import_success_and_failure(monkeypatch):
-    import src.youtube_handler as yt
+    async def missing_exec(*args, **kwargs):
+        raise FileNotFoundError("missing yt-dlp")
+
+    monkeypatch.setattr(yt.asyncio, "create_subprocess_exec", missing_exec)
+    assert await yt.fetch_youtube_comments("vid") == {"success": False, "error": "yt-dlp not installed", "comments": []}
+
+    async def broken_exec(*args, **kwargs):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(yt.asyncio, "create_subprocess_exec", broken_exec)
+    generic_error = await yt.fetch_youtube_comments("vid")
+    assert generic_error == {"success": False, "error": "unexpected", "comments": []}
+
+
+@pytest.mark.parametrize("module_name", ["src.youtube_handler", "services.youtube.youtube_handler"])
+def test_youtube_init_import_success_and_failure(monkeypatch, module_name):
+    yt = importlib.import_module(module_name)
 
     fake_module = types.ModuleType("youtube_transcript_api")
 

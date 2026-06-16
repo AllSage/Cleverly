@@ -1,3 +1,4 @@
+import builtins
 import json
 from types import SimpleNamespace
 
@@ -195,6 +196,131 @@ async def test_extract_and_store_fallback_and_noop_paths(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_memory_extractor_remaining_parse_dedupe_and_audit_edges(monkeypatch, tmp_path):
+    from services.memory import memory_extractor as me
+    import src.event_bus as event_bus
+    import src.llm_core as llm_core
+
+    manager = FakeMemoryManager(tmp_path / "memory.json")
+    real_open = builtins.open
+
+    def failing_state_open(path, mode="r", *args, **kwargs):
+        if str(path).endswith("memory_tidy_state.json") and "w" in mode:
+            raise OSError("readonly")
+        return real_open(path, mode, *args, **kwargs)
+
+    with monkeypatch.context() as state_patch:
+        state_patch.setattr(builtins, "open", failing_state_open)
+        me._save_tidy_state(manager, "alice", "abc")
+
+    assert me._fallback_memory_candidates(
+        [
+            {"role": "assistant", "content": "ignored"},
+            {"role": "user", "content": f"My name is {'A' * 51}"},
+            {"role": "user", "content": "My name is Ada"},
+            {"role": "user", "content": "My name is Ada"},
+            {"role": "user", "content": ""},
+        ]
+    ) == [{"text": "User's name is Ada", "category": "identity"}]
+    assert not me._is_text_duplicate("new fact", [{"text": ""}])
+
+    async def dict_llm(*_args, **_kwargs):
+        return '{"text":"not a list"}'
+
+    monkeypatch.setattr(llm_core, "llm_call_async", dict_llm)
+    dict_manager = FakeMemoryManager(tmp_path / "dict-memory.json")
+    await me.extract_and_store(
+        FakeSession([{"role": "user", "content": "temporary"}, {"role": "assistant", "content": "reply"}]),
+        dict_manager,
+        None,
+        "url",
+        "model",
+    )
+    assert dict_manager.entries == []
+
+    async def mixed_llm(*_args, **_kwargs):
+        return json.dumps(
+            [
+                123,
+                {"text": "abc", "category": "fact"},
+                {"text": "", "category": "fact"},
+                {"text": "User works on Cleverly.", "category": "project"},
+            ]
+        )
+
+    monkeypatch.setattr(llm_core, "llm_call_async", mixed_llm)
+    mixed_manager = FakeMemoryManager(tmp_path / "mixed-memory.json")
+    await me.extract_and_store(
+        FakeSession([{"role": "user", "content": "remember this"}, {"role": "assistant", "content": "ok"}]),
+        mixed_manager,
+        None,
+        "url",
+        "model",
+    )
+    assert [entry["text"] for entry in mixed_manager.entries] == ["User works on Cleverly."]
+
+    duplicate_manager = FakeMemoryManager(tmp_path / "duplicate-memory.json")
+    duplicate_manager.duplicate_texts.add("User works on Cleverly.")
+    await me.extract_and_store(
+        FakeSession([{"role": "user", "content": "remember this"}, {"role": "assistant", "content": "ok"}]),
+        duplicate_manager,
+        None,
+        "url",
+        "model",
+    )
+    assert duplicate_manager.entries == []
+
+    fuzzy_manager = FakeMemoryManager(
+        tmp_path / "fuzzy-memory.json",
+        entries=[{"id": "old", "text": "User works on Cleverly", "owner": "alice"}],
+    )
+    await me.extract_and_store(
+        FakeSession([{"role": "user", "content": "remember this"}, {"role": "assistant", "content": "ok"}]),
+        fuzzy_manager,
+        None,
+        "url",
+        "model",
+    )
+    assert len(fuzzy_manager.entries) == 1
+
+    class NameOnlySession:
+        owner = "alice"
+        name = "Named Session"
+
+        def get_context_messages(self):
+            return [{"role": "user", "content": "remember this"}, {"role": "assistant", "content": "ok"}]
+
+    event_manager = FakeMemoryManager(tmp_path / "event-memory.json")
+    monkeypatch.setattr(event_bus, "fire_event", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("event down")))
+    await me.extract_and_store(NameOnlySession(), event_manager, None, "url", "model")
+    assert event_manager.entries[0]["session_id"] == "Named Session"
+
+    async def audit_stub(*_args, **_kwargs):
+        audit_stub.calls.append((_args, _kwargs))
+        return {"before": 1, "after": 1}
+
+    audit_stub.calls = []
+    threshold_manager = FakeMemoryManager(tmp_path / "threshold-memory.json")
+    monkeypatch.setattr(me, "_extractions_since_audit", me.AUDIT_INTERVAL - 1)
+    monkeypatch.setattr(me, "audit_memories", audit_stub)
+    monkeypatch.setattr(event_bus, "fire_event", lambda *_args, **_kwargs: None)
+    await me.extract_and_store(
+        FakeSession([{"role": "user", "content": "remember this"}, {"role": "assistant", "content": "ok"}]),
+        threshold_manager,
+        None,
+        "url",
+        "model",
+    )
+    assert audit_stub.calls
+
+    class BrokenSession:
+        def get_context_messages(self):
+            raise RuntimeError("session broke")
+
+    await me.extract_and_store(BrokenSession(), threshold_manager, None, "url", "model")
+
+
+@pytest.mark.asyncio
 async def test_audit_memories_success_skip_bad_json_and_safety(monkeypatch, tmp_path):
     from services.memory import memory_extractor as me
     import src.llm_core as llm_core
@@ -259,3 +385,44 @@ async def test_audit_memories_success_skip_bad_json_and_safety(monkeypatch, tmp_
 
     monkeypatch.setattr(llm_core, "llm_call_async", exploding_llm)
     assert "boom" in (await me.audit_memories(bad_manager, None, "url", "model"))["error"]
+
+
+@pytest.mark.asyncio
+async def test_audit_memories_parse_cleanup_ownerless_and_error_edges(monkeypatch, tmp_path):
+    from services.memory import memory_extractor as me
+    import src.llm_core as llm_core
+
+    async def empty_llm(*_args, **_kwargs):
+        return ""
+
+    monkeypatch.setattr(llm_core, "llm_call_async", empty_llm)
+    empty_raw_manager = FakeMemoryManager(tmp_path / "empty-raw-memory.json", entries=[{"id": "a", "text": "A", "category": "fact"}])
+    assert (await me.audit_memories(empty_raw_manager, None, "url", "model"))["error"] == "bad_json"
+
+    async def bracket_llm(*_args, **_kwargs):
+        return 'notes before [{"id":"a","text":"User prefers compact tests.","category":"preference"}] after'
+
+    monkeypatch.setattr(llm_core, "llm_call_async", bracket_llm)
+    bracket_manager = FakeMemoryManager(
+        tmp_path / "bracket-memory.json",
+        entries=[{"id": "a", "text": "User likes tests.", "category": "fact"}],
+    )
+    assert await me.audit_memories(bracket_manager, None, "url", "model") == {"before": 1, "after": 1}
+    assert bracket_manager.entries == [{"id": "a", "text": "User prefers compact tests.", "category": "preference"}]
+
+    async def noisy_list_llm(*_args, **_kwargs):
+        return json.dumps(
+            [
+                "skip me",
+                {"id": "a", "text": "", "category": "fact"},
+                {"id": "a", "text": "User keeps local notes.", "category": "fact"},
+            ]
+        )
+
+    monkeypatch.setattr(llm_core, "llm_call_async", noisy_list_llm)
+    noisy_manager = FakeMemoryManager(
+        tmp_path / "noisy-memory.json",
+        entries=[{"id": "a", "text": "User writes notes.", "category": "fact"}],
+    )
+    assert await me.audit_memories(noisy_manager, None, "url", "model") == {"before": 1, "after": 1}
+    assert noisy_manager.entries[0]["text"] == "User keeps local notes."

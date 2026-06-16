@@ -118,7 +118,7 @@ def test_compare_routes_start_vote_record_history_and_delete(monkeypatch):
     db = DB()
     monkeypatch.setattr(compare_routes, "Comparison", Comparison)
     monkeypatch.setattr(compare_routes, "SessionLocal", lambda: db)
-    ids = iter(["comp-id", "sid-a", "sid-b", "record-id"])
+    ids = iter(["comp-id", "sid-a", "sid-b", "plain-comp", "plain-a", "plain-b", "record-id", "record-two"])
     monkeypatch.setattr(compare_routes.uuid, "uuid4", lambda: next(ids))
     monkeypatch.setattr(compare_routes.random, "random", lambda: 0.7)
     monkeypatch.setattr(compare_routes, "get_current_user", lambda request: request.state.current_user)
@@ -149,6 +149,17 @@ def test_compare_routes_start_vote_record_history_and_delete(monkeypatch):
     assert all(session.headers["Authorization"] == "Bearer secret" for session in manager.sessions.values())
     assert db.added[-1].owner == "alice"
 
+    started_plain = _endpoint(router, "/api/compare/start", "POST")(
+        request,
+        prompt="Question?",
+        model_a="openai/a",
+        model_b="openai/b",
+        endpoint_a="",
+        endpoint_b="",
+        is_blind="false",
+    )
+    assert started_plain["mapping"] == {"left": "a", "right": "b"}
+
     db.first = Comparison(
         id="comp",
         prompt="Prompt",
@@ -163,6 +174,10 @@ def test_compare_routes_start_vote_record_history_and_delete(monkeypatch):
     voted = _endpoint(router, "/api/compare/{comp_id}/vote", "POST")(request, comp_id="comp", winner="left")
     assert voted["winner"] == "b"
     assert voted["revealed"]["left"] == "B"
+
+    db.first.winner = None
+    right_voted = _endpoint(router, "/api/compare/{comp_id}/vote", "POST")(request, comp_id="comp", winner="right")
+    assert right_voted["winner"] == "a"
 
     db.first.winner = None
     assert _endpoint(router, "/api/compare/{comp_id}/vote", "POST")(request, comp_id="comp", winner="tie")["winner"] == "tie"
@@ -191,6 +206,13 @@ def test_compare_routes_start_vote_record_history_and_delete(monkeypatch):
     assert len(db.added[-1].prompt) == 500
     assert json.loads(db.added[-1].blind_mapping) == {"models": ["A", "B", "C"]}
 
+    two_model_record = _endpoint(router, "/api/compare/record", "POST")(
+        request,
+        compare_routes.RecordVoteRequest(prompt="short", models=["A", "B"], winner="B", is_blind=True),
+    )
+    assert two_model_record["status"] == "ok"
+    assert db.added[-1].blind_mapping is None
+
     db.rows = [
         Comparison(id="h1", prompt="p" * 120, model_a="A", model_b="B", endpoint_a="", endpoint_b="", winner="A", is_blind=False, voted_at=dt.datetime(2026, 1, 2), created_at=dt.datetime(2026, 1, 1), owner="alice")
     ]
@@ -201,6 +223,14 @@ def test_compare_routes_start_vote_record_history_and_delete(monkeypatch):
     db.first = db.rows[0]
     assert _endpoint(router, "/api/compare/{comp_id}", "DELETE")(request, comp_id="h1") == {"status": "deleted"}
     assert db.deleted[-1].id == "h1"
+    db.first = None
+    with pytest.raises(HTTPException) as delete_missing:
+        _endpoint(router, "/api/compare/{comp_id}", "DELETE")(request, comp_id="missing")
+    assert delete_missing.value.status_code == 404
+    db.first = Comparison(id="not-owned", prompt="", model_a="", model_b="", endpoint_a="", endpoint_b="", owner="bob")
+    with pytest.raises(HTTPException) as delete_other:
+        _endpoint(router, "/api/compare/{comp_id}", "DELETE")(request, comp_id="not-owned")
+    assert delete_other.value.status_code == 404
 
 
 def test_editor_draft_routes_crud_and_error_paths(monkeypatch):
@@ -328,16 +358,35 @@ def test_editor_draft_routes_crud_and_error_paths(monkeypatch):
     with pytest.raises(HTTPException):
         asyncio.run(_endpoint(router, "/api/editor-drafts/{draft_id}", "PUT")(request, "other", draft_routes.DraftUpdate(name="x")))
 
+    class BrokenDB(DB):
+        def commit(self):
+            raise RuntimeError("commit failed")
+
+    broken_update = BrokenDB()
+    broken_update.first = EditorDraft(id="broken-update", owner="alice", name="x", payload="{}", width=None, height=None, thumbnail=None)
+    monkeypatch.setattr(draft_routes, "SessionLocal", lambda: broken_update)
+    with pytest.raises(HTTPException) as update_failed:
+        asyncio.run(
+            _endpoint(router, "/api/editor-drafts/{draft_id}", "PUT")(
+                request,
+                "broken-update",
+                draft_routes.DraftUpdate(name="new"),
+            )
+        )
+    assert update_failed.value.status_code == 500
+    assert broken_update.rollbacks == 1
+
+    monkeypatch.setattr(draft_routes, "SessionLocal", lambda: db)
     db.first = EditorDraft(id="delete-me", owner="alice", name="x", payload="{}", width=None, height=None, thumbnail=None)
     assert asyncio.run(_endpoint(router, "/api/editor-drafts/{draft_id}", "DELETE")(request, "delete-me")) == {
         "status": "deleted",
         "id": "delete-me",
     }
     assert db.first.is_active is False
-
-    class BrokenDB(DB):
-        def commit(self):
-            raise RuntimeError("commit failed")
+    db.first = None
+    with pytest.raises(HTTPException) as delete_missing:
+        asyncio.run(_endpoint(router, "/api/editor-drafts/{draft_id}", "DELETE")(request, "missing"))
+    assert delete_missing.value.status_code == 404
 
     broken = BrokenDB()
     monkeypatch.setattr(draft_routes, "SessionLocal", lambda: broken)
@@ -345,6 +394,14 @@ def test_editor_draft_routes_crud_and_error_paths(monkeypatch):
         asyncio.run(_endpoint(router, "/api/editor-drafts", "POST")(request, draft_routes.DraftCreate(payload={})))
     assert create_failed.value.status_code == 500
     assert broken.rollbacks == 1
+
+    broken_delete = BrokenDB()
+    broken_delete.first = EditorDraft(id="broken-delete", owner="alice", name="x", payload="{}", width=None, height=None, thumbnail=None)
+    monkeypatch.setattr(draft_routes, "SessionLocal", lambda: broken_delete)
+    with pytest.raises(HTTPException) as delete_failed:
+        asyncio.run(_endpoint(router, "/api/editor-drafts/{draft_id}", "DELETE")(request, "broken-delete"))
+    assert delete_failed.value.status_code == 500
+    assert broken_delete.rollbacks == 1
 
 
 def test_embedding_routes_models_download_delete_and_endpoint(monkeypatch, tmp_path):
