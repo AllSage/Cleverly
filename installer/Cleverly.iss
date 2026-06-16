@@ -34,6 +34,7 @@ Source: "..\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion; Excludes:
 
 [Icons]
 Name: "{autoprograms}\Cleverly"; Filename: "{app}\Cleverly-App.cmd"; WorkingDir: "{app}"
+Name: "{autoprograms}\Cleverly Standalone"; Filename: "{app}\Cleverly-Standalone.cmd"; WorkingDir: "{app}"
 Name: "{autodesktop}\Cleverly"; Filename: "{app}\Cleverly-App.cmd"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Tasks]

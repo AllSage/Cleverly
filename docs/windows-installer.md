@@ -77,9 +77,13 @@ certificates on the signing workstation or in a secure signing service.
 - Does not require Administrator rights.
 - Adds Start Menu and optional Desktop shortcuts.
 - Launches `Cleverly-App.cmd`, which opens the local Windows app shell.
+- Adds a Start Menu shortcut for `Cleverly-Standalone.cmd`, the no-Docker
+  standalone app launcher.
 - The app shell includes a guided First Run path: Check Setup, Connected Prep,
   Build Bundle, Start Offline, Verify Offline, and Open Bundle.
 - The app shell also keeps expert controls for Stop, Restart, Status, Doctor,
   Logs, Setup, Open Logs, Checklist, Offline Smoke, README, Make Release, Fresh
   Proof, Security Scan, Release Folder, SBOM, and Proofs actions.
-- The installed app still requires Docker Desktop access to run containers.
+- Docker sealed mode still requires Docker Desktop access to run containers.
+- Standalone mode does not require Docker, but it has a weaker safety boundary;
+  see `docs\standalone-mode.md`.

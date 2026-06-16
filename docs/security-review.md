@@ -2,8 +2,9 @@
 
 Review date: 2026-06-13
 
-Scope: Cleverly local/offline Docker runtime, sealed data mode, local model
-onboarding, Code Workspace, backup/export, launcher, and offline operator flows.
+Scope: Cleverly local/offline Docker runtime, sealed data mode, standalone
+no-Docker mode, local model onboarding, Code Workspace, backup/export,
+launcher, and offline operator flows.
 
 Reviewer: internal project review. This is a formal internal review artifact,
 not an independent third-party penetration test.
@@ -22,6 +23,9 @@ profile is:
 - Code Workspace commands isolated in a networkless sidecar.
 - Cloud/API/network features hidden or disabled while offline.
 - No internet egress from the app container during sensitive operation.
+- Standalone mode is available for no-Docker local use, but it is
+  app-enforced offline only and does not provide Docker network or storage
+  isolation.
 
 ## Threat Model
 
@@ -67,6 +71,8 @@ Offline enforcement:
   feature flags, local-only model endpoints, data mode, and Code Workspace
   worker isolation.
 - Offline Control exposes an operator-visible status and egress proof check.
+- Standalone mode sets `CLEVERLY_OFFLINE=1`, `APP_BIND=127.0.0.1`,
+  `AUTH_ENABLED=true`, and `LOCALHOST_BYPASS=false` before native startup.
 
 Network isolation:
 
@@ -153,6 +159,7 @@ Before using Cleverly for regulated, classified, attorney-client, medical, or
 financial records, commission an independent review covering:
 
 - Docker/host hardening.
+- Standalone no-Docker boundary and host firewall assumptions.
 - Auth/session security.
 - File upload/archive parsing.
 - Code Workspace worker isolation.
