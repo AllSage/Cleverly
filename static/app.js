@@ -887,21 +887,6 @@ function initializeEventListeners() {
     });
   }
 
-  // Document library tool button
-  const toolDoclibBtn = el('tool-doclib-btn');
-  if (toolDoclibBtn) {
-    toolDoclibBtn.addEventListener('click', () => {
-      if (_closeCompareIfActive()) return;
-      if (documentModule) {
-        if (documentModule.isLibraryOpen()) {
-          documentModule.closeLibrary();
-        } else {
-          documentModule.openLibrary();
-        }
-      }
-    });
-  }
-
   // Gallery tool button
   const toolGalleryBtn = el('tool-gallery-btn');
   if (toolGalleryBtn) {
@@ -918,12 +903,6 @@ function initializeEventListeners() {
   // Tasks tool button
   const toolTasksBtn = el('tool-tasks-btn');
   if (toolTasksBtn) {
-  // Agents buttons (sidebar + rail)
-  const agentsBtns = [el("rail-agents"), el("tool-agents-btn")].filter(Boolean);
-  agentsBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-    });
-  });
     toolTasksBtn.addEventListener('click', () => {
       if (tasksModule) {
         tasksModule.isTasksOpen() ? tasksModule.closeTasks() : tasksModule.openTasks();
@@ -1129,13 +1108,6 @@ function initializeEventListeners() {
     chatsLibraryBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (sessionModule) sessionModule.openLibrary('chats');
-    });
-  }
-
-  const toolArchiveBtn = el('tool-archive-btn');
-  if (toolArchiveBtn) {
-    toolArchiveBtn.addEventListener('click', () => {
-      if (sessionModule) sessionModule.openLibrary('archive');
     });
   }
 
@@ -3612,16 +3584,6 @@ function startCleverlyApp() {
       // Scroll to bottom where settings typically are
       const sidebarInner = document.querySelector('.sidebar-inner');
       if (sidebarInner) sidebarInner.scrollTo({ top: sidebarInner.scrollHeight, behavior: 'smooth' });
-    });
-  }
-
-  // Rail: admin button
-  const _railAdmin = el('rail-admin');
-  if (_railAdmin) {
-    _railAdmin.addEventListener('click', () => {
-      // Try to open admin modal
-      const adminBtn = document.querySelector('[data-modal="admin-modal"]') || el('tool-admin-btn');
-      if (adminBtn) adminBtn.click();
     });
   }
 

@@ -109,3 +109,29 @@ def test_frontend_avoids_removed_or_unregistered_feature_api_calls():
     assert "/api/session/${s.id}/restore" not in sessions_js
     assert "/api/session/${sid}/unarchive" in sessions_js
     assert "/api/session/${s.id}/unarchive" in sessions_js
+
+
+def test_frontend_avoids_removed_sidebar_launcher_ids():
+    checked = {
+        "static/app.js": (ROOT / "static" / "app.js").read_text(encoding="utf-8"),
+        "static/js/documentLibrary.js": (ROOT / "static" / "js" / "documentLibrary.js").read_text(encoding="utf-8"),
+        "static/js/sidebar-layout.js": (ROOT / "static" / "js" / "sidebar-layout.js").read_text(encoding="utf-8"),
+    }
+    stale_ids = {
+        "rail-admin",
+        "rail-agents",
+        "tool-admin-btn",
+        "tool-agents-btn",
+        "tool-archive-btn",
+        "tool-doclib-btn",
+    }
+
+    leftovers = [
+        f"{path}:{stale_id}"
+        for path, text in checked.items()
+        for stale_id in stale_ids
+        if stale_id in text
+    ]
+
+    assert leftovers == []
+    assert "tool-library-btn" in checked["static/js/documentLibrary.js"]

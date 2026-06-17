@@ -3283,7 +3283,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     document.addEventListener('keydown', _libraryEscHandler);
 
     // Toggle active on tool button
-    const btn = document.getElementById('tool-doclib-btn');
+    const btn = document.getElementById('tool-library-btn');
     if (btn) btn.classList.add('active');
 
     libraryFetch(false);
@@ -3315,7 +3315,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       _libraryEscHandler = null;
     }
 
-    const btn = document.getElementById('tool-doclib-btn');
+    const btn = document.getElementById('tool-library-btn');
     if (btn) btn.classList.remove('active');
   }
 
