@@ -1,4 +1,5 @@
 import re
+from collections import Counter
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -35,6 +36,41 @@ def test_static_html_references_only_existing_local_assets():
 
     assert external_assets == []
     assert missing_assets == []
+
+
+def test_static_html_dom_references_are_wired():
+    duplicate_ids = []
+    missing_label_targets = []
+    missing_aria_targets = []
+
+    for html_path in sorted((ROOT / "static").glob("*.html")):
+        soup = BeautifulSoup(html_path.read_text(encoding="utf-8", errors="ignore"), "html.parser")
+        ids = [tag["id"] for tag in soup.find_all(id=True)]
+        id_set = set(ids)
+
+        duplicate_ids.extend(
+            f"{html_path.relative_to(ROOT)}:{element_id}"
+            for element_id, count in Counter(ids).items()
+            if count > 1
+        )
+
+        for tag in soup.find_all(attrs={"for": True}):
+            target = tag.get("for")
+            if target and target not in id_set:
+                missing_label_targets.append(f"{html_path.relative_to(ROOT)}:{tag.name}[for={target}]")
+
+        for attr_name in ("aria-controls", "aria-labelledby", "aria-describedby"):
+            for tag in soup.find_all(attrs={attr_name: True}):
+                for target in str(tag.get(attr_name) or "").split():
+                    if target and target not in id_set:
+                        source = tag.get("id") or tag.name
+                        missing_aria_targets.append(
+                            f"{html_path.relative_to(ROOT)}:{source}[{attr_name}={target}]"
+                        )
+
+    assert sorted(duplicate_ids) == []
+    assert sorted(missing_label_targets) == []
+    assert sorted(missing_aria_targets) == []
 
 
 def test_visible_feature_launchers_are_wired():
