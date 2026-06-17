@@ -1089,6 +1089,8 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     assert '[data-settings-tab="email"]' in app_js
     assert '[data-settings-panel="email"]' in app_js
     assert "features.email === false" in app_js
+    assert "async function _shouldRedirectAfter401" in app_js
+    assert "return !status.authenticated" in app_js
     assert "features.email !== false" in chat_js
     assert "window._cleverlyFeatures.email === false" in inbox_js
     assert "emailEnabled" in settings_js

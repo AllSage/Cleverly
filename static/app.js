@@ -64,10 +64,26 @@ window.agentLoopsModule = agentLoopsModule;
 
 // Redirect to login on 401 from any fetch
 const _origFetch = window.fetch;
+let _authRedirectCheck = null;
+async function _shouldRedirectAfter401() {
+  if (!_authRedirectCheck) {
+    _authRedirectCheck = _origFetch(`${API_BASE}/api/auth/status`, { credentials: 'same-origin' })
+      .then(async (statusRes) => {
+        if (!statusRes.ok) return true;
+        const status = await statusRes.json().catch(() => ({}));
+        return !status.authenticated;
+      })
+      .catch(() => true)
+      .finally(() => { _authRedirectCheck = null; });
+  }
+  return _authRedirectCheck;
+}
 window.fetch = async function(...args) {
   const res = await _origFetch.apply(this, args);
   if (res.status === 401 && !String(args[0]).includes('/api/auth/')) {
-    window.location.href = '/login';
+    if (await _shouldRedirectAfter401()) {
+      window.location.href = '/login';
+    }
   }
   return res;
 };

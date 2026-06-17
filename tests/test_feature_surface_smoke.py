@@ -322,3 +322,12 @@ def test_chat_bar_uses_current_controls_for_docs_group_and_privileges():
     assert leftovers == []
     assert "bash-toggle-btn" in checked["static/app.js"]
     assert "mode-chat-btn" in checked["static/app.js"]
+
+
+def test_document_library_close_removes_stale_visible_modal():
+    doclib_js = (ROOT / "static" / "js" / "documentLibrary.js").read_text(encoding="utf-8")
+    close_fn = doclib_js.split("export function closeLibrary()", 1)[1]
+    close_fn = close_fn.split("export function isLibraryOpen()", 1)[0]
+
+    assert "const modal = document.getElementById('doclib-modal');" in close_fn
+    assert "if (!_libraryOpen && !modal) return;" in close_fn

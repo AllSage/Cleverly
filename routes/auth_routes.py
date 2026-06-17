@@ -7,7 +7,8 @@ import asyncio
 import logging
 import os
 
-from core.auth import AuthManager
+from core.auth import ADMIN_PRIVILEGES, AuthManager
+from src.auth_helpers import _is_direct_loopback
 from src.rate_limiter import RateLimiter
 from src.settings_scrub import scrub_settings
 from src.settings import (
@@ -161,6 +162,16 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
 
     @router.get("/status")
     async def auth_status(request: Request):
+        if os.getenv("AUTH_ENABLED", "true").lower() == "false" and _is_direct_loopback(request):
+            return {
+                "configured": auth_manager.is_configured,
+                "authenticated": True,
+                "username": "local",
+                "is_admin": True,
+                "signup_enabled": auth_manager.signup_enabled,
+                "privileges": dict(ADMIN_PRIVILEGES),
+                "auth_disabled": True,
+            }
         token = get_session_cookie(request)
         result = auth_manager.status(token)
         result["signup_enabled"] = auth_manager.signup_enabled

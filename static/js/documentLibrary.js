@@ -3291,14 +3291,14 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
   }
 
   export function closeLibrary() {
-    if (!_libraryOpen) return;
+    const modal = document.getElementById('doclib-modal');
+    if (!_libraryOpen && !modal) return;
     _libraryOpen = false;
     _librarySelectMode = false;
     _librarySelectedIds.clear();
     _libraryImportMode = false;
     clearTimeout(_librarySearchDebounce);
 
-    const modal = document.getElementById('doclib-modal');
     if (modal) {
       const content = modal.querySelector('.modal-content, .doclib-modal-content');
       if (content) {

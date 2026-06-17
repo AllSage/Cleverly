@@ -18,12 +18,13 @@ def _endpoint(router, path, method="GET"):
 
 
 class RequestLike:
-    def __init__(self, *, token=None, host="127.0.0.1", body=None):
+    def __init__(self, *, token=None, host="127.0.0.1", body=None, headers=None):
         self.cookies = {}
         if token:
             self.cookies[auth_routes.SESSION_COOKIE] = token
         self.client = SimpleNamespace(host=host)
         self._body = body or {}
+        self.headers = headers or {}
 
     async def json(self):
         return dict(self._body)
@@ -246,6 +247,17 @@ def test_setup_signup_login_logout_status_password_and_2fa(monkeypatch):
     auth.fail_privileges = True
     assert asyncio.run(status(RequestLike(token="tok-alice")))["authenticated"] is True
     auth.fail_privileges = False
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    local_status = asyncio.run(status(RequestLike()))
+    assert local_status["authenticated"] is True
+    assert local_status["username"] == "local"
+    assert local_status["is_admin"] is True
+    assert local_status["auth_disabled"] is True
+    assert local_status["privileges"]["can_use_agent"] is True
+    proxied_status = asyncio.run(status(RequestLike(headers={"x-forwarded-for": "198.51.100.20"})))
+    assert proxied_status["authenticated"] is False
+    assert "auth_disabled" not in proxied_status
+    monkeypatch.delenv("AUTH_ENABLED", raising=False)
 
     change = _endpoint(router, "/api/auth/change-password", "POST")
     with pytest.raises(HTTPException) as unauth_change:
