@@ -64,6 +64,14 @@ def test_app_import_helpers_exception_handlers_and_html(monkeypatch, tmp_path):
     assert operator.status_code == 302
     assert operator.headers["location"] == "/api/operator/page"
 
+    assert asyncio.run(app_module.serve_tutorials(RequestLike())).status_code == 200
+    assert asyncio.run(app_module.serve_offline(RequestLike())).status_code == 200
+    assert asyncio.run(app_module.serve_setup(RequestLike())).status_code == 200
+
+    backgrounds = asyncio.run(app_module.serve_backgrounds(RequestLike()))
+    assert backgrounds.status_code == 200
+    assert b"Cleverly" in backgrounds.body
+
     missing = tmp_path / "missing.html"
     with pytest.raises(FileNotFoundError):
         app_module._serve_html_with_nonce(RequestLike(), str(missing))

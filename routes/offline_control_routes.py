@@ -67,7 +67,6 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
         "max_gpu_gb": 4,
         "hardware": "0-3GB GPU VRAM or CPU-only",
         "best_for": "Reliable offline startup on CPU-only or very small GPU machines.",
-        "source_url": "https://ollama.com/library/llama3.2",
     },
     {
         "id": "gpu-4",
@@ -79,7 +78,6 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
         "max_gpu_gb": 8,
         "hardware": "4-7GB GPU VRAM",
         "best_for": "Better local reasoning than the CPU starter while keeping VRAM headroom.",
-        "source_url": "https://ollama.com/library/qwen3",
     },
     {
         "id": "gpu-8",
@@ -91,7 +89,6 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
         "max_gpu_gb": 12,
         "hardware": "8-11GB GPU VRAM",
         "best_for": "General chat, summaries, and modest code tasks on consumer GPUs.",
-        "source_url": "https://ollama.com/library/qwen3",
     },
     {
         "id": "gpu-12",
@@ -103,7 +100,6 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
         "max_gpu_gb": 16,
         "hardware": "12-15GB GPU VRAM",
         "best_for": "Better reasoning and coding when 8B-class models are not enough.",
-        "source_url": "https://ollama.com/library/qwen3",
     },
     {
         "id": "gpu-16",
@@ -115,7 +111,6 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
         "max_gpu_gb": 24,
         "hardware": "16-23GB GPU VRAM",
         "best_for": "Open-weight local reasoning and agent workflows.",
-        "source_url": "https://ollama.com/library/gpt-oss",
     },
     {
         "id": "gpu-24",
@@ -127,7 +122,6 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
         "max_gpu_gb": 80,
         "hardware": "24-79GB GPU VRAM",
         "best_for": "Best default for local repo editing and Code Workspace on a 24GB GPU.",
-        "source_url": "https://ollama.com/library/qwen3-coder",
     },
     {
         "id": "gpu-80",
@@ -139,7 +133,6 @@ MODEL_RECOMMENDATIONS: list[dict[str, Any]] = [
         "max_gpu_gb": None,
         "hardware": "80GB+ GPU VRAM",
         "best_for": "Large local reasoning model on workstation/server-class GPU memory.",
-        "source_url": "https://ollama.com/library/gpt-oss",
     },
 ]
 

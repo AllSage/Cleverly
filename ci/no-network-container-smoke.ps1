@@ -150,11 +150,26 @@ assert recommendations["recommendations"], recommendations
 assert recommendations["offline_warning"], recommendations
 help_payload = get("/api/offline-control/help")
 assert any(section["title"] == "Sensitive machine checklist" for section in help_payload["sections"]), help_payload
+
+page_response = urllib.request.urlopen("http://127.0.0.1:7000/backgrounds", timeout=5)
+assert page_response.status == 200, page_response.status
+assert b"Cleverly" in page_response.read(), "backgrounds fallback did not serve the app shell"
+
+shell_html = urllib.request.urlopen("http://127.0.0.1:7000/", timeout=5).read().decode("utf-8")
+external_scheme = "https:" + "//"
+assert external_scheme + "cdn.jsdelivr.net" not in shell_html, "app shell loads jsDelivr"
+assert 'src="' + external_scheme not in shell_html, "app shell has active external script/image source"
+assert 'href="' + external_scheme not in shell_html, "app shell has active external stylesheet/icon link"
+
+landing_html = urllib.request.urlopen("http://127.0.0.1:7000/static/landing.html", timeout=5).read().decode("utf-8")
+assert 'src="' + external_scheme not in landing_html, "landing page has active external image/script source"
+for missing_media in ("chat.webm", "chat.mp4", "email.webm", "email.mp4"):
+    assert missing_media not in landing_html, f"landing page references missing bundled media: {missing_media}"
 '@
     if (-not (Test-ContainerRunning)) {
         Add-Result "offline-routes" "fail" "container is not running"
     } elseif ((Invoke-ContainerPython $routeCode) -eq 0) {
-        Add-Result "offline-routes" "ok" "offline status, model recommendations, and help routes work without network"
+        Add-Result "offline-routes" "ok" "offline status, model recommendations, help, fallback pages, and app shell asset policy work without network"
     } else {
         Add-Result "offline-routes" "fail" "one or more local offline-control routes failed"
     }
@@ -163,8 +178,8 @@ assert any(section["title"] == "Sensitive machine checklist" for section in help
 from src import code_workspace as cw
 
 blocked = [
-    "curl https://example.com",
-    "wget https://example.com",
+    "curl " + ("https:" + "//") + "example.com",
+    "wget " + ("https:" + "//") + "example.com",
     "git pull",
     "python -m pip install requests",
     "npm install",

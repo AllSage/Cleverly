@@ -40,6 +40,170 @@ def test_untrusted_context_policy_marks_sources_as_data():
     assert "overrides" in UNTRUSTED_CONTEXT_POLICY
 
 
+def test_app_shell_does_not_load_active_external_assets():
+    index_html = Path("static/index.html").read_text(encoding="utf-8")
+    landing_html = Path("static/landing.html").read_text(encoding="utf-8")
+    code_runner = Path("static/js/codeRunner.js").read_text(encoding="utf-8")
+
+    assert "https://cdn.jsdelivr.net" not in index_html
+    assert "https://cdn.jsdelivr.net" not in code_runner
+    assert 'src="https://' not in index_html
+    assert 'href="https://' not in index_html
+    assert 'src="https://' not in landing_html
+
+
+def test_bundled_static_references_resolve():
+    import re
+
+    root = Path(".")
+    missing = []
+
+    def check_ref(ref: str, source: Path):
+        clean = ref.split("?", 1)[0].split("#", 1)[0]
+        if not clean or clean == "/":
+            return
+        if re.match(r"^(https?:|data:|blob:|mailto:|tel:|javascript:)", clean, re.I):
+            return
+        if clean.startswith("/static/"):
+            target = root / clean.lstrip("/")
+        elif clean.startswith("/"):
+            return
+        else:
+            target = source.parent / clean
+        if not target.exists():
+            missing.append((str(source), ref, str(target)))
+
+    for html in [Path("static/index.html"), Path("static/login.html"), Path("static/landing.html")]:
+        text = html.read_text(encoding="utf-8")
+        for match in re.finditer(r"""(?:src|href)=["']([^"']+)["']""", text):
+            check_ref(match.group(1), html)
+
+    sw = Path("static/sw.js")
+    for match in re.finditer(r"""["'](/static/[^"']+|/)["']""", sw.read_text(encoding="utf-8")):
+        check_ref(match.group(1), sw)
+
+    import_pattern = re.compile(r"""(?:import\s+(?:[^'"()]+?\s+from\s+)|import\s+|import\s*\()\s*["'](\.{1,2}/[^"']+)["']""")
+    for js in Path("static").rglob("*.js"):
+        text = js.read_text(encoding="utf-8")
+        for match in import_pattern.finditer(text):
+            check_ref(match.group(1), js)
+
+    assert missing == []
+
+
+def test_service_worker_precaches_startup_modules():
+    import re
+    import posixpath
+
+    index_html = Path("static/index.html").read_text(encoding="utf-8")
+    sw_js = Path("static/sw.js").read_text(encoding="utf-8")
+
+    precache = set(re.findall(r"""['"](/static/[^'"]+|/)['"]""", sw_js))
+    required = set()
+    queue = []
+
+    def add_module(url: str):
+        clean = url.split("?", 1)[0].split("#", 1)[0]
+        if not clean.startswith("/static/") or not clean.endswith(".js"):
+            return
+        if clean not in required:
+            required.add(clean)
+            queue.append(clean)
+
+    for match in re.finditer(r"""<script[^>]+type=["']module["'][^>]+src=["']([^"']+)["']""", index_html):
+        add_module(match.group(1))
+    for match in re.finditer(r"""<link[^>]+rel=["']modulepreload["'][^>]+href=["']([^"']+)["']""", index_html):
+        add_module(match.group(1))
+
+    import_pattern = re.compile(r"""(?:import\s+(?:[^'"()]+?\s+from\s+)?|import\s+|import\s*\()\s*["'](\.{1,2}/[^"']+)["']""")
+    while queue:
+        module_url = queue.pop(0)
+        module_path = Path(module_url.lstrip("/"))
+        if not module_path.exists():
+            continue
+        module_text = module_path.read_text(encoding="utf-8")
+        module_dir = posixpath.dirname(module_url)
+        for match in import_pattern.finditer(module_text):
+            resolved = posixpath.normpath(posixpath.join(module_dir, match.group(1)))
+            add_module(resolved if resolved.startswith("/") else "/" + resolved)
+
+    assert sorted(required - precache) == []
+
+
+def test_service_worker_precaches_critical_shell_assets():
+    import re
+
+    sw_js = Path("static/sw.js").read_text(encoding="utf-8")
+    precache = set(re.findall(r"""['"](/static/[^'"]+|/)['"]""", sw_js))
+    refs = set()
+
+    def add_ref(ref: str):
+        clean = ref.split("?", 1)[0].split("#", 1)[0]
+        if clean.startswith("/static/") and Path(clean.lstrip("/")).exists():
+            refs.add(clean)
+
+    for source in [Path("static/index.html"), Path("static/login.html")]:
+        text = source.read_text(encoding="utf-8")
+        for match in re.finditer(r"""(?:href|src)=["']([^"']+)["']""", text):
+            add_ref(match.group(1))
+        for match in re.finditer(r"""url\(["']?([^)'" ]+)["']?\)""", text):
+            add_ref(match.group(1))
+
+    for source in [Path("static/style.css")]:
+        text = source.read_text(encoding="utf-8")
+        for match in re.finditer(r"""url\(["']?([^)'" ]+)["']?\)""", text):
+            add_ref(match.group(1))
+
+    critical = {
+        "/static/manifest.json",
+        "/static/cleverly-icon.svg",
+        "/static/fonts/FiraCode-Light.woff2",
+        "/static/fonts/FiraCode-Regular.woff2",
+        "/static/fonts/FiraCode-SemiBold.woff2",
+        "/static/fonts/Inter-Medium.woff2",
+        "/static/fonts/Inter-Regular.woff2",
+        "/static/fonts/Inter-SemiBold.woff2",
+    }
+    assert critical.issubset(refs)
+    assert sorted(refs - precache) == []
+
+
+def test_app_shell_deep_links_are_served_and_cached():
+    import re
+
+    app_py = Path("app.py").read_text(encoding="utf-8")
+    app_js = Path("static/app.js").read_text(encoding="utf-8")
+    sw_js = Path("static/sw.js").read_text(encoding="utf-8")
+
+    route_open_block = app_js.split("const _routeOpen = {", 1)[1].split("};", 1)[0]
+    frontend_routes = set(re.findall(r"""['"](/[^'"]+)['"]\s*:""", route_open_block))
+    sw_routes = set(re.findall(r"""['"](/[^'"]*)['"],""", sw_js.split("APP_SHELL_ROUTES", 1)[1].split("]);", 1)[0]))
+
+    expected_routes = {
+        "/",
+        "/notes",
+        "/calendar",
+        "/cookbook",
+        "/training",
+        "/tutorials",
+        "/loops",
+        "/code",
+        "/offline",
+        "/setup",
+        "/email",
+        "/memory",
+        "/gallery",
+        "/tasks",
+        "/library",
+        "/backgrounds",
+    }
+
+    assert expected_routes.issubset(sw_routes)
+    assert frontend_routes.issubset(sw_routes)
+    for route in expected_routes - {"/"}:
+        assert f'@app.get("{route}")' in app_py
+
+
 # ── secret_storage ─────────────────────────────────────────────
 
 def _import_secret_storage(tmp_path, monkeypatch):
@@ -433,11 +597,12 @@ def test_model_onboarding_uses_explicit_offline_model_recommendations():
         ("gpt-oss:120b", "https://ollama.com/library/gpt-oss", "65GB"),
     ):
         assert tag in route
-        assert source in route
         assert size in route
         assert tag in doc
         assert source in doc
         assert size in doc
+
+    assert "source_url" not in route
 
     for profile in ("CPU Safe", "Low VRAM", "Balanced", "Stronger", "Reasoning", "Code", "Max"):
         assert profile in route
@@ -498,6 +663,11 @@ def test_model_recommendation_tiers_cover_cpu_to_large_gpu(monkeypatch):
 
     monkeypatch.setenv("CLEVERLY_GPU_GB", "24")
     assert routes._detected_gpu_gb() == 24
+    assert routes.MODEL_RECOMMENDATIONS
+    for item in routes.MODEL_RECOMMENDATIONS:
+        assert "source_url" not in item
+        assert item["model"]
+        assert item["size"]
 
 
 def test_windows_installer_signing_path_requires_release_signature():

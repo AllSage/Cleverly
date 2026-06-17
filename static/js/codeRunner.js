@@ -140,7 +140,7 @@ function addCopyBtn_unused(panel, text) {
 function addCloseBtn(_panel) { /* no-op */ }
 
 /**
- * Lazy-load Pyodide from CDN
+ * Lazy-load Pyodide from a local bundle only.
  */
 function loadPyodide() {
   if (pyodideInstance) return Promise.resolve(pyodideInstance);
@@ -153,9 +153,9 @@ function loadPyodide() {
 
   return new Promise((resolve, reject) => {
     const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/pyodide/v0.27.5/full/pyodide.js';
+    script.src = '/static/lib/pyodide/pyodide.js';
     script.onload = () => {
-      window.loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.5/full/' })
+      window.loadPyodide({ indexURL: '/static/lib/pyodide/' })
         .then(py => {
           pyodideInstance = py;
           pyodideLoading = false;
@@ -172,7 +172,7 @@ function loadPyodide() {
     };
     script.onerror = () => {
       pyodideLoading = false;
-      const err = new Error('Failed to load Pyodide');
+      const err = new Error('Failed to load local Pyodide bundle');
       pyodideQueue.forEach(q => q.reject(err));
       pyodideQueue.length = 0;
       reject(err);
@@ -185,7 +185,7 @@ function loadPyodide() {
  * Run Python code via Pyodide
  */
 export async function runPython(code, panel) {
-  showLoading(panel, 'Loading Python runtime (first time ~10 MB)...');
+  showLoading(panel, 'Loading local Python runtime...');
 
   let py;
   try {

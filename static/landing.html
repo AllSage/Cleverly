@@ -263,6 +263,30 @@
     z-index: 1; opacity: 0; transition: opacity .3s ease; background: transparent;
   }
   .preview-panel.has-video video { opacity: 1; }
+  .preview-art {
+    position: absolute; inset: 18px 18px 48px; z-index: 1;
+    border: 1px solid rgba(103,232,249,0.24); border-radius: 12px;
+    background: linear-gradient(180deg, rgba(15,23,42,0.86), rgba(15,23,42,0.45));
+    overflow: hidden; opacity: 0.72; transition: opacity .25s ease, transform .25s ease;
+  }
+  .preview-panel:hover .preview-art, .preview-panel:focus-visible .preview-art {
+    opacity: 1; transform: translateY(-2px);
+  }
+  .preview-art.chat::before, .preview-art.mail::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      linear-gradient(90deg, rgba(103,232,249,0.08) 1px, transparent 1px),
+      linear-gradient(rgba(103,232,249,0.06) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  .preview-line, .preview-bubble {
+    position: relative; display: block; height: 11px; border-radius: 999px;
+    background: rgba(103,232,249,0.28); margin: 14px;
+  }
+  .preview-bubble { width: 58%; height: auto; padding: 10px 12px; border-radius: 12px; color: var(--fg); font-size: 11px; }
+  .preview-bubble.alt { margin-left: auto; background: rgba(168,85,247,0.28); }
+  .preview-line.short { width: 42%; }
+  .preview-line.mid { width: 68%; }
   .preview-panel .label {
     position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; padding: 14px 16px;
     background: linear-gradient(0deg, rgba(0,0,0,0.8), transparent);
@@ -366,7 +390,15 @@
 
         <!-- Coder guy -->
         <figure class="tcard">
-          <span class="av"><img src="https://cdn.prod.website-files.com/66708f90d7e407423093fa76/66708f91d7e407423093fd21_john-carter-testimonial-image-dentistry-x-webflow-template.png" alt="Generic Coder Guy" loading="lazy"></span>
+          <span class="av">
+            <svg viewBox="0 0 72 72" width="54" height="54" role="img" aria-label="Generic Coder Guy">
+              <rect width="72" height="72" fill="#111827"/>
+              <circle cx="36" cy="27" r="13" fill="#67e8f9"/>
+              <path d="M16 64c3-16 13-24 20-24s17 8 20 24" fill="#243447"/>
+              <path d="M23 28h26" stroke="#111827" stroke-width="4" stroke-linecap="round"/>
+              <path d="M20 49l-7 6 7 6M52 49l7 6-7 6" stroke="#67e8f9" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
           <div class="tmeta">
             <p class="q">"Cleverly helped us keep local AI, documents, and daily work in one place."</p>
             <div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
@@ -377,7 +409,15 @@
 
         <!-- Woman -->
         <figure class="tcard">
-          <span class="av"><img src="https://images.pexels.com/photos/5876695/pexels-photo-5876695.jpeg?auto=compress&amp;cs=tinysrgb&amp;w=160&amp;h=160&amp;fit=crop" alt="A real woman" loading="lazy"></span>
+          <span class="av">
+            <svg viewBox="0 0 72 72" width="54" height="54" role="img" aria-label="Generic Corporate Woman">
+              <rect width="72" height="72" fill="#1f1630"/>
+              <path d="M20 30c1-14 9-21 17-21s15 8 16 21c1 13-6 21-17 21S19 43 20 30z" fill="#a78bfa"/>
+              <circle cx="36" cy="29" r="12" fill="#f8c9b8"/>
+              <path d="M14 65c4-14 13-21 22-21s18 7 22 21" fill="#2dd4bf"/>
+              <path d="M25 25c8-13 20-12 25 1" stroke="#3b1f56" stroke-width="6" stroke-linecap="round"/>
+            </svg>
+          </span>
           <div class="tmeta">
             <p class="q">"I'm a real person. This is a real testimonial. By a real woman."</p>
             <div class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
@@ -519,7 +559,12 @@
       <div class="previews">
         <div class="preview-panel" tabindex="0">
           <div class="ph"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>[ Chat &amp; Agents ]</span></div>
-          <video muted loop playsinline preload="none"><source src="chat.webm" type="video/webm"><source src="chat.mp4" type="video/mp4"></video>
+          <div class="preview-art chat" aria-hidden="true">
+            <span class="preview-bubble">Ask a local model</span>
+            <span class="preview-bubble alt">Use tools offline</span>
+            <span class="preview-line mid"></span>
+            <span class="preview-line short"></span>
+          </div>
           <div class="label"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat &amp; Agents</div>
         </div>
         <div class="preview-panel" tabindex="0">
@@ -528,7 +573,12 @@
         </div>
         <div class="preview-panel" tabindex="0">
           <div class="ph"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg><span>[ Email Assistant ]</span></div>
-          <video muted loop playsinline preload="none"><source src="email.webm" type="video/webm"><source src="email.mp4" type="video/mp4"></video>
+          <div class="preview-art mail" aria-hidden="true">
+            <span class="preview-line mid"></span>
+            <span class="preview-line"></span>
+            <span class="preview-line short"></span>
+            <span class="preview-bubble alt">Draft locally</span>
+          </div>
           <div class="label"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>Email Assistant</div>
         </div>
       </div>

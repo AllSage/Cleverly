@@ -60,7 +60,7 @@ jobs:
 
       - name: JavaScript syntax checks
         run: |
-          Get-ChildItem -LiteralPath static/js -Filter *.js -File | Sort-Object FullName | ForEach-Object {
+          Get-ChildItem -LiteralPath static -Recurse -Filter *.js -File | Sort-Object FullName | ForEach-Object {
             node --check $_.FullName
             if ($LASTEXITCODE -ne 0) { throw "node --check failed for $($_.FullName)" }
           }

@@ -734,12 +734,24 @@ async def serve_cookbook(request: Request):
 async def serve_training(request: Request):
     return await serve_index(request)
 
+@app.get("/tutorials")
+async def serve_tutorials(request: Request):
+    return await serve_index(request)
+
 @app.get("/loops")
 async def serve_loops(request: Request):
     return await serve_index(request)
 
 @app.get("/code")
 async def serve_code(request: Request):
+    return await serve_index(request)
+
+@app.get("/offline")
+async def serve_offline(request: Request):
+    return await serve_index(request)
+
+@app.get("/setup")
+async def serve_setup(request: Request):
     return await serve_index(request)
 
 @app.get("/operator")
@@ -768,8 +780,11 @@ async def serve_library(request: Request):
 
 @app.get("/backgrounds")
 async def serve_backgrounds(request: Request):
-    """Sandbox page for prototyping background effects. No auth required."""
-    return _serve_html_with_nonce(request, abs_join(BASE_DIR, "static/backgrounds.html"))
+    """Sandbox page for prototyping background effects, when bundled."""
+    backgrounds_path = abs_join(BASE_DIR, "static/backgrounds.html")
+    if os.path.exists(backgrounds_path):
+        return _serve_html_with_nonce(request, backgrounds_path)
+    return await serve_index(request)
 
 @app.get("/login")
 async def serve_login(request: Request):

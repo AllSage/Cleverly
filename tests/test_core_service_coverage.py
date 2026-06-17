@@ -94,7 +94,10 @@ def test_middleware_admin_paths_and_security_headers(monkeypatch):
 
     normal, nonce = asyncio.run(run_path("/chat"))
     assert normal.headers["X-Frame-Options"] == "DENY"
-    assert f"nonce-{nonce}" in normal.headers["Content-Security-Policy"]
+    normal_csp = normal.headers["Content-Security-Policy"]
+    assert f"nonce-{nonce}" in normal_csp
+    assert "https://cdn.jsdelivr.net" not in normal_csp
+    assert "script-src 'self'" in normal_csp
 
     report, _ = asyncio.run(run_path("/api/research/report/abc"))
     assert "https:" in report.headers["Content-Security-Policy"]
