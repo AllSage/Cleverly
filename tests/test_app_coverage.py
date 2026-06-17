@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import re
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -75,6 +76,48 @@ def test_app_import_helpers_exception_handlers_and_html(monkeypatch, tmp_path):
     missing = tmp_path / "missing.html"
     with pytest.raises(FileNotFoundError):
         app_module._serve_html_with_nonce(RequestLike(), str(missing))
+
+
+def test_feature_deeplinks_serve_cleverly_shell(monkeypatch):
+    app_module = _fresh_app(monkeypatch)
+
+    feature_routes = [
+        ("/", app_module.serve_index),
+        ("/notes", app_module.serve_notes),
+        ("/calendar", app_module.serve_calendar),
+        ("/cookbook", app_module.serve_cookbook),
+        ("/training", app_module.serve_training),
+        ("/tutorials", app_module.serve_tutorials),
+        ("/loops", app_module.serve_loops),
+        ("/code", app_module.serve_code),
+        ("/offline", app_module.serve_offline),
+        ("/setup", app_module.serve_setup),
+        ("/email", app_module.serve_email),
+        ("/memory", app_module.serve_memory),
+        ("/gallery", app_module.serve_gallery),
+        ("/tasks", app_module.serve_tasks),
+        ("/library", app_module.serve_library),
+        ("/backgrounds", app_module.serve_backgrounds),
+    ]
+
+    for path, route in feature_routes:
+        response = asyncio.run(route(RequestLike(path)))
+        body = response.body.decode("utf-8", errors="ignore")
+        assert response.status_code == 200, path
+        assert "Cleverly" in body, path
+        assert 'id="sidebar"' in body, path
+        assert not re.search(r"Odysseus|odysseus|(?<![bB])ody-", body), path
+
+
+def test_login_page_serves_cleverly_brand_without_legacy_tokens(monkeypatch):
+    app_module = _fresh_app(monkeypatch)
+
+    response = asyncio.run(app_module.serve_login(RequestLike("/login")))
+    body = response.body.decode("utf-8", errors="ignore")
+
+    assert response.status_code == 200
+    assert "Cleverly" in body
+    assert not re.search(r"Odysseus|odysseus|(?<![bB])ody-", body)
 
 
 def test_app_timeout_middleware_and_static_headers(monkeypatch, tmp_path):
