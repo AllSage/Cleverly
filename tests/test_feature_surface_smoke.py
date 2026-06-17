@@ -73,6 +73,39 @@ def test_static_html_dom_references_are_wired():
     assert sorted(missing_aria_targets) == []
 
 
+def test_static_js_local_imports_resolve_offline():
+    import_patterns = (
+        re.compile(r"""\bimport\s+(?:[^'"]+?\s+from\s+)?['"]([^'"]+)['"]"""),
+        re.compile(r"""\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)"""),
+        re.compile(r"""\bexport\s+[^'"]+?\s+from\s+['"]([^'"]+)['"]"""),
+    )
+    missing_imports = []
+    external_imports = []
+
+    for js_path in sorted((ROOT / "static").rglob("*.js")):
+        text = js_path.read_text(encoding="utf-8", errors="ignore")
+        for pattern in import_patterns:
+            for match in pattern.finditer(text):
+                specifier = match.group(1)
+                if specifier.startswith(("http://", "https://", "//")):
+                    line = text.count("\n", 0, match.start()) + 1
+                    external_imports.append(f"{js_path.relative_to(ROOT)}:{line}:{specifier}")
+                    continue
+                if not specifier.startswith(("./", "../", "/static/")):
+                    continue
+                if specifier.startswith("/static/"):
+                    target = ROOT / specifier.lstrip("/")
+                else:
+                    target = js_path.parent / specifier
+                target = Path(str(target).split("?", 1)[0].split("#", 1)[0]).resolve()
+                if not target.exists():
+                    line = text.count("\n", 0, match.start()) + 1
+                    missing_imports.append(f"{js_path.relative_to(ROOT)}:{line}:{specifier}")
+
+    assert sorted(external_imports) == []
+    assert sorted(missing_imports) == []
+
+
 def test_visible_feature_launchers_are_wired():
     _, app_js, soup = _frontend_sources()
     ids = {tag["id"] for tag in soup.find_all(id=True)}
