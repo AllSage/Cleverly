@@ -201,34 +201,65 @@ def test_direct_frontend_api_calls_match_registered_routes(monkeypatch):
         pattern = re.sub(r"\\\{[^}]+\\\}", r"[^/?#]+", pattern)
         route_patterns.append(re.compile(rf"^{pattern}(?:[?#].*)?$"))
 
+    def normalize_frontend_api_path(raw):
+        remaining_template = raw
+        for prefix in ("${API_BASE}", "${state.API_BASE}", "${apiBase}", "${_apiBase}"):
+            remaining_template = remaining_template.replace(prefix, "")
+        remaining_template = re.sub(r"^\$\{[^}]+\}", "", remaining_template)
+        if not remaining_template.startswith("/api/"):
+            return None
+        remaining_template = re.sub(r"\$\{[^}]*\?[^}]+\}", "", remaining_template)
+        api_path = remaining_template.split("?", 1)[0].split("#", 1)[0]
+        api_path = re.sub(r"\$\{[^}]+\}", "DYNAMIC", api_path)
+        return api_path
+
+    def matches_route(api_path):
+        if any(pattern.match(api_path) for pattern in route_patterns):
+            return True
+        if api_path.endswith("/") and any(route_path.startswith(api_path) for route_path in route_paths):
+            return True
+        if api_path.endswith("DYNAMIC"):
+            trimmed = api_path[: -len("DYNAMIC")]
+            return any(pattern.match(trimmed) for pattern in route_patterns)
+        return False
+
     direct_call = re.compile(
         r"""\b(?:fetch|_api|api|apiFetch)\s*\(\s*([`'"])((?:\$\{[^}]+\})?/api/[^`'"\s,)]*)"""
+    )
+    template_call = re.compile(
+        r"""\b(?:fetch|_api|api|apiFetch)\s*\(\s*`((?:\\.|[^`])*/api/(?:\\.|[^`])*)`"""
     )
     allowed_external_examples = {
         "/api/v1",
         "/api/paas/v4",
     }
+    checked = set()
     leftovers = []
     for path in sorted(ROOT.joinpath("static").rglob("*")):
         if path.suffix not in {".html", ".js"}:
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
         for match in direct_call.finditer(text):
+            if match.group(1) == "`":
+                continue
             raw = match.group(2)
-            remaining_template = raw
-            for prefix in ("${API_BASE}", "${state.API_BASE}", "${apiBase}"):
-                remaining_template = remaining_template.replace(prefix, "")
-            if "${" in remaining_template:
+            api_path = normalize_frontend_api_path(raw)
+            if api_path is None or api_path in allowed_external_examples:
                 continue
-            url = re.sub(r"^\$\{[^}]+\}", "", raw)
-            api_path = url.split("?", 1)[0].split("#", 1)[0]
-            if api_path in allowed_external_examples:
+            checked.add((path, match.start(), api_path))
+            if not matches_route(api_path):
+                line = text.count("\n", 0, match.start()) + 1
+                leftovers.append(f"{path.relative_to(ROOT)}:{line}:{api_path}")
+        for match in template_call.finditer(text):
+            raw = match.group(1)
+            api_path = normalize_frontend_api_path(raw)
+            if api_path is None or api_path in allowed_external_examples:
                 continue
-            matches_registered_route = any(pattern.match(api_path) for pattern in route_patterns)
-            matches_dynamic_prefix = api_path.endswith("/") and any(
-                route_path.startswith(api_path) for route_path in route_paths
-            )
-            if not matches_registered_route and not matches_dynamic_prefix:
+            key = (path, match.start(), api_path)
+            if key in checked:
+                continue
+            checked.add(key)
+            if not matches_route(api_path):
                 line = text.count("\n", 0, match.start()) + 1
                 leftovers.append(f"{path.relative_to(ROOT)}:{line}:{api_path}")
 
