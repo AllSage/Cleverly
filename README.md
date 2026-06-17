@@ -206,16 +206,30 @@ http://127.0.0.1:7000/setup
 
 ### Docker Quick Start
 
-Use this for a normal connected development machine:
+Use this on a connected, non-sensitive Windows prep/development machine. The
+launcher builds the app image, prepares required support images, chooses a
+local model, seals data into Docker volumes, and starts the offline runtime:
+
+```powershell
+git clone https://github.com/AllSage/Cleverly.git
+cd Cleverly
+.\Cleverly.ps1 setup -AllowConnectedPrep
+```
+
+Open `http://127.0.0.1:7000`.
+
+Manual Compose is also supported for development, but the hardened Compose file
+uses `pull_policy: never` for support services so runtime startup cannot pull
+from the internet. On a fresh connected machine, pull those support images
+first, then build/start:
 
 ```bash
 git clone https://github.com/AllSage/Cleverly.git
 cd Cleverly
 cp .env.example .env
+docker compose pull chromadb searxng ntfy
 docker compose up -d --build
 ```
-
-Open `http://127.0.0.1:7000`.
 
 Docker uses the Compose stack name `cleverly` and Docker named volumes for app
 runtime state by default. The main containers default to:
