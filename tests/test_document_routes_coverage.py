@@ -525,6 +525,62 @@ def test_document_crud_version_archive_export_and_tidy_paths(document_routes_env
     assert next(doc for doc in db.docs if doc.id == "doc2").is_active is False
 
 
+def test_document_export_pdf_post_uses_reviewed_modal_values(document_routes_env, monkeypatch, tmp_path):
+    document_routes, db = document_routes_env
+    upload_dir = tmp_path / "uploads"
+    upload_dir.mkdir()
+    source_pdf = upload_dir / "source.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4\n")
+
+    class UploadHandler:
+        def resolve_upload(self, upload_id, *, owner=None, auth_manager=None):
+            assert upload_id == "source.pdf"
+            assert owner == "alice"
+            return {"path": str(source_pdf)}
+
+    UploadHandler.upload_dir = str(upload_dir)
+
+    recorded = {}
+
+    def fake_fill_fields(pdf_path, out_path, values):
+        recorded["pdf_path"] = pdf_path
+        recorded["values"] = values
+        with open(out_path, "wb") as handle:
+            handle.write(b"%PDF-1.4\nfilled\n")
+
+    import src.pdf_form_doc as pdf_form_doc
+    import src.pdf_forms as pdf_forms
+
+    monkeypatch.setattr(pdf_form_doc, "find_source_upload_id", lambda _content: "source.pdf")
+    monkeypatch.setattr(
+        pdf_form_doc,
+        "load_field_sidecar",
+        lambda _path: [
+            {"name": "full_name", "type": "text"},
+            {"name": "accepted", "type": "checkbox"},
+            {"name": "signature", "type": "signature"},
+        ],
+    )
+    monkeypatch.setattr(pdf_form_doc, "parse_markdown_to_values", lambda _content: {"full_name": "from markdown"})
+    monkeypatch.setattr(pdf_form_doc, "parse_markdown_annotations", lambda _content: [])
+    monkeypatch.setattr(pdf_forms, "fill_fields", fake_fill_fields)
+
+    router = document_routes.setup_document_routes(session_manager=None, upload_handler=UploadHandler())
+    request = RequestLike(
+        body={
+            "values": {"full_name": "Reviewed Name", "accepted": True},
+            "signatures": {"not_a_signature_field": "ignored"},
+        }
+    )
+    request.method = "POST"
+
+    response = asyncio.run(_endpoint(router, "/api/document/{doc_id}/export-pdf", "POST")("doc1", request))
+
+    assert response.media_type == "application/pdf"
+    assert recorded["pdf_path"] == str(source_pdf)
+    assert recorded["values"] == {"full_name": "Reviewed Name", "accepted": True}
+
+
 def test_document_route_error_paths(document_routes_env, monkeypatch):
     document_routes, db = document_routes_env
     router = document_routes.setup_document_routes(session_manager=None)

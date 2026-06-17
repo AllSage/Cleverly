@@ -146,6 +146,7 @@ def test_app_registers_major_feature_api_routes(monkeypatch):
         ("/api/memory/add", "POST"),
         ("/api/documents/library", "GET"),
         ("/api/document", "POST"),
+        ("/api/document/{doc_id}/export-pdf", "POST"),
         ("/api/notes", "GET"),
         ("/api/notes", "POST"),
         ("/api/tasks", "GET"),
@@ -189,17 +190,19 @@ def test_app_registers_major_feature_api_routes(monkeypatch):
 
 def test_direct_frontend_api_calls_match_registered_routes(monkeypatch):
     app_module = _fresh_app(monkeypatch)
-    route_paths = [
-        route.path
+    api_routes = [
+        route
         for route in app_module.app.routes
         if getattr(route, "path", "").startswith("/api/")
     ]
+    route_paths = [route.path for route in api_routes]
     route_patterns = []
-    for path in route_paths:
+    for route in api_routes:
+        path = route.path
         pattern = re.escape(path)
         pattern = re.sub(r"\\\{[^}:]+:path\\\}", r".+", pattern)
         pattern = re.sub(r"\\\{[^}]+\\\}", r"[^/?#]+", pattern)
-        route_patterns.append(re.compile(rf"^{pattern}(?:[?#].*)?$"))
+        route_patterns.append((path, set(getattr(route, "methods", set())), re.compile(rf"^{pattern}(?:[?#].*)?$")))
 
     def normalize_frontend_api_path(raw):
         remaining_template = raw
@@ -213,15 +216,104 @@ def test_direct_frontend_api_calls_match_registered_routes(monkeypatch):
         api_path = re.sub(r"\$\{[^}]+\}", "DYNAMIC", api_path)
         return api_path
 
-    def matches_route(api_path):
-        if any(pattern.match(api_path) for pattern in route_patterns):
-            return True
-        if api_path.endswith("/") and any(route_path.startswith(api_path) for route_path in route_paths):
-            return True
+    def matching_route_methods(api_path):
+        matches = [
+            methods
+            for _route_path, methods, pattern in route_patterns
+            if pattern.match(api_path)
+        ]
+        if matches:
+            return matches
+        if api_path.endswith("/"):
+            matches = [
+                methods
+                for route_path, methods, _pattern in route_patterns
+                if route_path.startswith(api_path)
+            ]
+            if matches:
+                return matches
         if api_path.endswith("DYNAMIC"):
             trimmed = api_path[: -len("DYNAMIC")]
-            return any(pattern.match(trimmed) for pattern in route_patterns)
-        return False
+            return [
+                methods
+                for _route_path, methods, pattern in route_patterns
+                if pattern.match(trimmed)
+            ]
+        return []
+
+    def matches_route(api_path, method):
+        matches = matching_route_methods(api_path)
+        if method is None:
+            return bool(matches)
+        return bool(matches) and any(method in methods for methods in matches)
+
+    def frontend_call_method(text, url_end, quote):
+        index = url_end
+        if index < len(text) and text[index] == quote:
+            index += 1
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index < len(text) and text[index] == "+":
+            return None
+        if index >= len(text) or text[index] != ",":
+            return "GET"
+        index += 1
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text) or text[index] != "{":
+            return "GET"
+
+        start = index
+        depth = 0
+        string_quote = None
+        escaped = False
+        line_comment = False
+        block_comment = False
+        pos = index
+        while pos < len(text):
+            char = text[pos]
+            next_char = text[pos + 1] if pos + 1 < len(text) else ""
+            if line_comment:
+                if char == "\n":
+                    line_comment = False
+                pos += 1
+                continue
+            if block_comment:
+                if char == "*" and next_char == "/":
+                    block_comment = False
+                    pos += 2
+                    continue
+                pos += 1
+                continue
+            if string_quote:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == string_quote:
+                    string_quote = None
+                pos += 1
+                continue
+            if char == "/" and next_char == "/":
+                line_comment = True
+                pos += 2
+                continue
+            if char == "/" and next_char == "*":
+                block_comment = True
+                pos += 2
+                continue
+            if char in {"'", '"', "`"}:
+                string_quote = char
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    options = text[start:pos + 1]
+                    method_match = re.search(r"""\bmethod\s*:\s*['"]([A-Z]+)['"]""", options)
+                    return method_match.group(1) if method_match else "GET"
+            pos += 1
+        return "GET"
 
     direct_call = re.compile(
         r"""\b(?:fetch|_api|api|apiFetch)\s*\(\s*([`'"])((?:\$\{[^}]+\})?/api/[^`'"\s,)]*)"""
@@ -247,9 +339,10 @@ def test_direct_frontend_api_calls_match_registered_routes(monkeypatch):
             if api_path is None or api_path in allowed_external_examples:
                 continue
             checked.add((path, match.start(), api_path))
-            if not matches_route(api_path):
+            method = frontend_call_method(text, match.end(), match.group(1))
+            if not matches_route(api_path, method):
                 line = text.count("\n", 0, match.start()) + 1
-                leftovers.append(f"{path.relative_to(ROOT)}:{line}:{api_path}")
+                leftovers.append(f"{path.relative_to(ROOT)}:{line}:{method} {api_path}")
         for match in template_call.finditer(text):
             raw = match.group(1)
             api_path = normalize_frontend_api_path(raw)
@@ -259,9 +352,10 @@ def test_direct_frontend_api_calls_match_registered_routes(monkeypatch):
             if key in checked:
                 continue
             checked.add(key)
-            if not matches_route(api_path):
+            method = frontend_call_method(text, match.end(), "`")
+            if not matches_route(api_path, method):
                 line = text.count("\n", 0, match.start()) + 1
-                leftovers.append(f"{path.relative_to(ROOT)}:{line}:{api_path}")
+                leftovers.append(f"{path.relative_to(ROOT)}:{line}:{method} {api_path}")
 
     assert leftovers == []
 

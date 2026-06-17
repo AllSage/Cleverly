@@ -1323,7 +1323,8 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
         finally:
             db.close()
 
-    # ---- GET /api/document/{doc_id}/export-pdf ----
+    # ---- GET/POST /api/document/{doc_id}/export-pdf ----
+    @router.post("/api/document/{doc_id}/export-pdf")
     @router.get("/api/document/{doc_id}/export-pdf")
     async def export_pdf(doc_id: str, request: Request):
         """Stream the filled PDF for download.
@@ -1371,7 +1372,25 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             schema = load_field_sidecar(pdf_path) or []
             sig_field_names = {f["name"] for f in schema if f.get("type") == "signature"}
 
-            all_values = parse_markdown_to_values(doc.current_content or "")
+            posted_values = None
+            posted_signatures = None
+            if getattr(request, "method", "GET").upper() == "POST":
+                try:
+                    body = await request.json()
+                except Exception:
+                    body = {}
+                if not isinstance(body, dict):
+                    raise HTTPException(400, "Invalid PDF export payload")
+                raw_values = body.get("values")
+                raw_signatures = body.get("signatures")
+                if raw_values is not None and not isinstance(raw_values, dict):
+                    raise HTTPException(400, "PDF export values must be an object")
+                if raw_signatures is not None and not isinstance(raw_signatures, dict):
+                    raise HTTPException(400, "PDF export signatures must be an object")
+                posted_values = raw_values if raw_values is not None else None
+                posted_signatures = raw_signatures if raw_signatures is not None else None
+
+            all_values = posted_values if posted_values is not None else parse_markdown_to_values(doc.current_content or "")
             # Split: signature fields go to stamps, everything else to fill_fields
             text_values: dict = {}
             sig_ids: dict[str, str] = {}
@@ -1380,6 +1399,9 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
                     sig_ids[name] = raw[len("signature:"):].strip()
                 elif name not in sig_field_names:
                     text_values[name] = raw
+            for name, sid in (posted_signatures or {}).items():
+                if name in sig_field_names and sid:
+                    sig_ids[name] = str(sid).strip()
 
             stamps: dict = {}
             if sig_ids:
