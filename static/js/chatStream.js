@@ -175,12 +175,22 @@ export function handleUIControl(uiData) {
           var fn = mod.openPanel || mod.openNotes || (mod.default && (mod.default.openPanel || mod.default.openNotes));
           if (fn) fn();
         }).catch(function(){});
-      } else if (panel === 'memories' || panel === 'skills' || panel === 'settings') {
-        // These live in the sidebar / settings drawer — most just need
-        // an existing button click.
-        var ids = { memories: 'tool-memory-btn', skills: 'skills-btn', settings: 'open-settings-btn' };
-        var btn = document.getElementById(ids[panel]);
-        if (btn) btn.click();
+      } else if (panel === 'memories' || panel === 'skills') {
+        var memBtn = document.getElementById('tool-memory-btn');
+        if (memBtn) memBtn.click();
+        var memoryTab = panel === 'skills' ? 'skills' : 'browse';
+        setTimeout(function() {
+          var tabBtn = document.querySelector('.memory-tab[data-memory-tab="' + memoryTab + '"]');
+          if (tabBtn) tabBtn.click();
+        }, 80);
+      } else if (panel === 'settings') {
+        import('./settings.js').then(function(mod) {
+          var fn = mod.open || (mod.default && mod.default.open);
+          if (fn) fn();
+          else document.getElementById('user-bar-settings')?.click();
+        }).catch(function() {
+          document.getElementById('user-bar-settings')?.click();
+        });
       }
 
     } else if (uiEvent === 'open_email_reply' || uiData.ui_event === 'open_email_reply') {

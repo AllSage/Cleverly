@@ -190,3 +190,14 @@ def test_settings_tabs_and_modal_restore_triggers_are_wired():
                 missing_triggers.append(f"{modal_id}:{kind}:{trigger_id}")
 
     assert missing_triggers == []
+
+
+def test_ui_control_panel_launchers_use_current_feature_entry_points():
+    chat_stream_js = (ROOT / "static" / "js" / "chatStream.js").read_text(encoding="utf-8")
+
+    assert "skills-btn" not in chat_stream_js
+    assert "open-settings-btn" not in chat_stream_js
+    assert "tool-memory-btn" in chat_stream_js
+    assert 'data-memory-tab="' in chat_stream_js
+    assert "user-bar-settings" in chat_stream_js
+    assert "settings.js" in chat_stream_js
