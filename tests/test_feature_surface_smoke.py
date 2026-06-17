@@ -135,3 +135,27 @@ def test_frontend_avoids_removed_sidebar_launcher_ids():
 
     assert leftovers == []
     assert "tool-library-btn" in checked["static/js/documentLibrary.js"]
+
+
+def test_ui_visibility_controls_target_existing_static_elements():
+    html, app_js, soup = _frontend_sources()
+
+    map_match = re.search(r"const UI_VIS_MAP = \{(?P<body>.*?)\n\s*\};", app_js, re.S)
+    assert map_match is not None, "UI visibility selector map is missing"
+
+    ui_map = dict(re.findall(r"'([^']+)'\s*:\s*'([^']+)'", map_match.group("body")))
+    special_controls = {"show-thinking", "text-emojis"}
+
+    control_keys = {
+        tag["data-ui-key"]
+        for tag in soup.select("input[data-ui-key]")
+    }
+    unmapped = sorted(control_keys - set(ui_map) - special_controls)
+    assert unmapped == []
+
+    dead_selectors = []
+    for key, selector in ui_map.items():
+        if not soup.select(selector):
+            dead_selectors.append(f"{key}: {selector}")
+
+    assert dead_selectors == []

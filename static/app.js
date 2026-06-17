@@ -638,9 +638,7 @@ function initializeEventListeners() {
     // Close document panel if open
     if (documentModule && documentModule.closePanel) documentModule.closePanel();
     if (researchPanelModule && researchPanelModule.isOpen()) researchPanelModule.closePanel();
-    // Reset research overflow dot (but don't touch research state — caller manages that)
-    const _overflowRes = el('overflow-research-btn');
-    if (_overflowRes) _overflowRes.classList.remove('active');
+    // Reset active tool indicators, but don't touch research state here.
     if (typeof updatePlusDot === 'function') updatePlusDot();
     // Reset agent mode to Chat
     const modeToggle = el('agent-mode-toggle');
@@ -649,20 +647,14 @@ function initializeEventListeners() {
     if (presetsModule && presetsModule.deactivateCharacter) presetsModule.deactivateCharacter();
   }
 
-  /** Sync Research indicator button + overflow + tool sidebar active state. */
+  /** Sync Research indicator button + tool sidebar active state. */
   function _syncResearchIndicator(active) {
     const btn = el('research-toggle-btn');
-    const overflow = el('overflow-research-btn');
     const toolBtn = el('tool-research-btn');
     const chk = el('research-toggle');
     if (btn) {
       btn.style.display = active ? '' : 'none';
       btn.classList.toggle('active', active);
-    }
-    // Hide from overflow menu when showing in chatbox (avoid duplicate)
-    if (overflow) {
-      overflow.classList.toggle('active', active);
-      overflow.style.display = active ? 'none' : '';
     }
     if (toolBtn) toolBtn.classList.toggle('active', active);
     if (chk) chk.checked = active;
@@ -1191,8 +1183,6 @@ function initializeEventListeners() {
         if (!p.can_use_research) {
           const resBtn = document.getElementById('research-toggle-btn');
           if (resBtn) resBtn.style.display = 'none';
-          const resOverflow = document.getElementById('overflow-research-btn');
-          if (resOverflow) resOverflow.style.display = 'none';
         }
         // Hide image generation options
         if (!p.can_generate_images) {
@@ -1354,7 +1344,6 @@ function initializeEventListeners() {
       deep_research: [
         '#research-toggle-btn',
         '#tool-research-btn',
-        '#overflow-research-btn',
         '#rail-research',
         '[data-online-feature="deep_research"]',
       ],
@@ -1414,7 +1403,7 @@ function initializeEventListeners() {
 
     const hiddenUiKeys = [];
     if (features.web_search === false) hiddenUiKeys.push('web-toggle-btn');
-    if (features.deep_research === false) hiddenUiKeys.push('tool-research', 'research-btn');
+    if (features.deep_research === false) hiddenUiKeys.push('tool-research');
     if (features.email === false) hiddenUiKeys.push('email-section');
     hiddenUiKeys.forEach(key => {
       document.querySelectorAll(`[data-ui-key="${key}"]`).forEach(node => {
@@ -1940,9 +1929,7 @@ function initializeEventListeners() {
       el('research-toggle').checked = resState;
       researchBtn.classList.toggle('active', resState);
       researchBtn.style.display = resState ? '' : 'none';
-      // Sync overflow + tool sidebar on load
-      const overflowRes = el('overflow-research-btn');
-      if (overflowRes) overflowRes.classList.toggle('active', resState);
+      // Sync tool sidebar on load.
       const toolRes = el('tool-research-btn');
       if (toolRes) toolRes.classList.toggle('active', resState);
       // On load: if both research and web are ON, research wins
@@ -2205,39 +2192,6 @@ function initializeEventListeners() {
     });
   }
 
-  // ── Overflow Research toggle ──
-  const overflowResearchBtn = el('overflow-research-btn');
-  if (overflowResearchBtn) {
-    overflowResearchBtn.addEventListener('click', () => {
-      const chk = el('research-toggle');
-      const turningOn = chk ? !chk.checked : false;
-      _syncResearchIndicator(turningOn);
-      if (turningOn) {
-        _showToolSplash('research');
-        // Clear character — mutually exclusive with research
-        if (presetsModule && presetsModule.deactivateCharacter) presetsModule.deactivateCharacter();
-        // Mutual exclusion with web search
-        const webChk = el('web-toggle');
-        const webBtn = el('web-toggle-btn');
-        if (webChk && webChk.checked) {
-          webChk.checked = false;
-          if (webBtn) webBtn.classList.remove('active');
-          saveToolPref('web', (loadToggleState().mode || 'chat'), false);
-        }
-        // Research requires chat mode
-        const rs2 = loadToggleState();
-        if (rs2.mode === 'agent') {
-          rs2.mode = 'chat';
-          saveToggleState(rs2);
-          const ab2 = el('mode-agent-btn'), cb2 = el('mode-chat-btn');
-          if (ab2) ab2.classList.remove('active');
-          if (cb2) cb2.classList.add('active');
-          applyModeToToggles('chat');
-        }
-      }
-    });
-  }
-
   // ── Overflow Group Chat toggle ──
   const overflowGroupBtn = el('overflow-group-btn');
   if (overflowGroupBtn) {
@@ -2446,7 +2400,6 @@ function initializeEventListeners() {
     'mode-toggle':         '.mode-toggle',
     'preset-mini-btn':     '#overflow-preset-btn',
     'attach-btn':          '#overflow-attach-btn',
-    'research-btn':        '#overflow-research-btn',
     'rail-new-chat':       '#rail-new-session',
   };
 
