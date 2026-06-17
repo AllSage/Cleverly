@@ -2,6 +2,7 @@ import asyncio
 import importlib
 import re
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -10,6 +11,9 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
 from core.exceptions import InvalidFileUploadError, LLMServiceError, SessionNotFoundError, WebSearchError
+
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def _fresh_app(monkeypatch):
@@ -181,6 +185,54 @@ def test_app_registers_major_feature_api_routes(monkeypatch):
 
     missing = sorted(expected - registered)
     assert missing == []
+
+
+def test_direct_frontend_api_calls_match_registered_routes(monkeypatch):
+    app_module = _fresh_app(monkeypatch)
+    route_paths = [
+        route.path
+        for route in app_module.app.routes
+        if getattr(route, "path", "").startswith("/api/")
+    ]
+    route_patterns = []
+    for path in route_paths:
+        pattern = re.escape(path)
+        pattern = re.sub(r"\\\{[^}:]+:path\\\}", r".+", pattern)
+        pattern = re.sub(r"\\\{[^}]+\\\}", r"[^/?#]+", pattern)
+        route_patterns.append(re.compile(rf"^{pattern}(?:[?#].*)?$"))
+
+    direct_call = re.compile(
+        r"""\b(?:fetch|_api|api|apiFetch)\s*\(\s*([`'"])((?:\$\{[^}]+\})?/api/[^`'"\s,)]*)"""
+    )
+    allowed_external_examples = {
+        "/api/v1",
+        "/api/paas/v4",
+    }
+    leftovers = []
+    for path in sorted(ROOT.joinpath("static").rglob("*")):
+        if path.suffix not in {".html", ".js"}:
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for match in direct_call.finditer(text):
+            raw = match.group(2)
+            remaining_template = raw
+            for prefix in ("${API_BASE}", "${state.API_BASE}", "${apiBase}"):
+                remaining_template = remaining_template.replace(prefix, "")
+            if "${" in remaining_template:
+                continue
+            url = re.sub(r"^\$\{[^}]+\}", "", raw)
+            api_path = url.split("?", 1)[0].split("#", 1)[0]
+            if api_path in allowed_external_examples:
+                continue
+            matches_registered_route = any(pattern.match(api_path) for pattern in route_patterns)
+            matches_dynamic_prefix = api_path.endswith("/") and any(
+                route_path.startswith(api_path) for route_path in route_paths
+            )
+            if not matches_registered_route and not matches_dynamic_prefix:
+                line = text.count("\n", 0, match.start()) + 1
+                leftovers.append(f"{path.relative_to(ROOT)}:{line}:{api_path}")
+
+    assert leftovers == []
 
 
 def test_app_timeout_middleware_and_static_headers(monkeypatch, tmp_path):
