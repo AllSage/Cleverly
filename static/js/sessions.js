@@ -24,7 +24,7 @@ let _showAllSessions = false;
 let _expandedFolders = {};  // folderName -> true if "show more" clicked
 let _sortMode = Storage.get('cleverly-session-sort') || 'active'; // default to last active
 let _autoCreateInProgress = false; // guard against recursive auto-create
-const _INCOGNITO_SESSIONS_KEY = 'ody-incognito-sessions'; // sessionStorage key for incognito session IDs
+const _INCOGNITO_SESSIONS_KEY = 'cleverly-incognito-sessions'; // sessionStorage key for incognito session IDs
 const _isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 const _mod = _isMac ? '⌘' : 'Ctrl';
 
@@ -1085,10 +1085,10 @@ function _initSwipeToDelete(list) {
 }
 
 function _showSwipeHint(list) {
-  if ('ontouchstart' in window && !localStorage.getItem('ody-swipe-hint-shown')) {
+  if ('ontouchstart' in window && !localStorage.getItem('cleverly-swipe-hint-shown')) {
     const firstItem = list.querySelector('.session-item');
     if (firstItem) {
-      localStorage.setItem('ody-swipe-hint-shown', '1');
+      localStorage.setItem('cleverly-swipe-hint-shown', '1');
       const hint = document.createElement('div');
       hint.className = 'swipe-hint';
       hint.innerHTML = '<span class="swipe-hint-arrow">\u2190</span> swipe to delete';
@@ -1309,10 +1309,10 @@ export async function loadSessions() {
     await _cleanupIncognitoSessions();
 
     // Use prefetched data from login page if available (first load only)
-    const prefetched = sessionStorage.getItem('ody-prefetch-sessions');
+    const prefetched = sessionStorage.getItem('cleverly-prefetch-sessions');
     let fetched;
     if (prefetched) {
-      sessionStorage.removeItem('ody-prefetch-sessions');
+      sessionStorage.removeItem('cleverly-prefetch-sessions');
       fetched = JSON.parse(prefetched);
     } else {
       const res = await fetch(`${API_BASE}/api/sessions`);
@@ -1383,9 +1383,9 @@ export async function loadSessions() {
     // picker would still show the old model's name from cached state). See
     // the targetId resolution above (hash → currentSession → lastSessionId →
     // most-recent).
-    const _isFirstLoad = !sessionStorage.getItem('ody-session-active');
+    const _isFirstLoad = !sessionStorage.getItem('cleverly-session-active');
     if (_isFirstLoad) {
-      sessionStorage.setItem('ody-session-active', '1');
+      sessionStorage.setItem('cleverly-session-active', '1');
       if (!targetId) {
         try {
           const dcRes = await fetch(`${API_BASE}/api/default-chat`);

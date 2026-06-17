@@ -1453,8 +1453,8 @@ function initializeEventListeners() {
     });
   }
 
-  const _prefetchedFeatures = sessionStorage.getItem('ody-prefetch-features');
-  sessionStorage.removeItem('ody-prefetch-features');
+  const _prefetchedFeatures = sessionStorage.getItem('cleverly-prefetch-features');
+  sessionStorage.removeItem('cleverly-prefetch-features');
   window._initFeaturesReady = (_prefetchedFeatures
     ? Promise.resolve(JSON.parse(_prefetchedFeatures))
     : fetch(`${API_BASE}/api/auth/features`, { credentials: 'same-origin' }).then(r => r.json())
@@ -1473,8 +1473,8 @@ function initializeEventListeners() {
     .catch(() => {});
 
   // Hide Gallery when image generation is disabled in settings
-  const _prefetchedSettings = sessionStorage.getItem('ody-prefetch-settings');
-  sessionStorage.removeItem('ody-prefetch-settings');
+  const _prefetchedSettings = sessionStorage.getItem('cleverly-prefetch-settings');
+  sessionStorage.removeItem('cleverly-prefetch-settings');
   window._initSettingsReady = (_prefetchedSettings
     ? Promise.resolve(JSON.parse(_prefetchedSettings))
     : fetch(`${API_BASE}/api/auth/settings`, { credentials: 'same-origin' }).then(r => r.json())

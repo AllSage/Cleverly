@@ -79,3 +79,21 @@ def test_static_feature_modals_have_required_shells():
         assert soup.select_one(f"#{modal_id} .{body_class}") is not None, f"{modal_id} body is missing"
         assert soup.find(id=f"close-{modal_id}") is not None, f"{modal_id} close button is missing"
 
+
+def test_active_frontend_has_no_old_brand_tokens():
+    checked_files = [
+        ROOT / "static" / "index.html",
+        ROOT / "static" / "login.html",
+        ROOT / "static" / "app.js",
+        ROOT / "static" / "style.css",
+        *sorted((ROOT / "static" / "js").rglob("*.js")),
+    ]
+    old_brand = re.compile(r"Odysseus|odysseus|(?<![bB])ody-")
+
+    leftovers = []
+    for path in checked_files:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for match in old_brand.finditer(text):
+            leftovers.append(f"{path.relative_to(ROOT)}:{text.count(chr(10), 0, match.start()) + 1}:{match.group(0)}")
+
+    assert leftovers == []

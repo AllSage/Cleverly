@@ -434,7 +434,7 @@
       const _rem = document.getElementById('remember').checked;
       if (_rem) localStorage.setItem('cleverly-last-user', username);
       else localStorage.removeItem('cleverly-last-user');
-      sessionStorage.removeItem('ody-session-active');
+      sessionStorage.removeItem('cleverly-session-active');
       submitBtn.innerHTML = '<span class="login-spinner" aria-hidden="true"></span>';
       submitBtn.disabled = true;
       Promise.all([
@@ -442,9 +442,9 @@
         fetch('/api/auth/features', { credentials: 'same-origin' }).then(r => r.json()),
         fetch('/api/auth/settings', { credentials: 'same-origin' }).then(r => r.json()),
       ]).then(([sess, feat, sett]) => {
-        sessionStorage.setItem('ody-prefetch-sessions', JSON.stringify(sess));
-        sessionStorage.setItem('ody-prefetch-features', JSON.stringify(feat));
-        sessionStorage.setItem('ody-prefetch-settings', JSON.stringify(sett));
+        sessionStorage.setItem('cleverly-prefetch-sessions', JSON.stringify(sess));
+        sessionStorage.setItem('cleverly-prefetch-features', JSON.stringify(feat));
+        sessionStorage.setItem('cleverly-prefetch-settings', JSON.stringify(sett));
       }).catch(() => {}).finally(() => { window.location.replace('/'); });
     }
     async function doLogin(totpCode) {
