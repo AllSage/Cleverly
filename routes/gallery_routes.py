@@ -10,12 +10,25 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from core.database import SessionLocal, GalleryImage, GalleryAlbum, ModelEndpoint
 from core.database import Session as DbSession
 from src.auth_helpers import get_current_user, require_privilege
+from src.offline_policy import is_local_model_url
+from src.settings import offline_mode
 
 from routes.gallery_helpers import (
     GalleryPatch, _extract_exif, _image_to_dict, _owner_filter, _human_size,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_offline_local_endpoint(url: str, label: str = "image endpoint") -> None:
+    if offline_mode() and not is_local_model_url(url):
+        raise HTTPException(403, f"External {label} is disabled in offline mode")
+
+
+def _ensure_offline_local_image_url(url: str) -> None:
+    if offline_mode() and not is_local_model_url(url):
+        raise HTTPException(502, "Image endpoint returned an external image URL while offline; configure it to return b64_json.")
+
 
 def setup_gallery_routes() -> APIRouter:
     router = APIRouter(tags=["gallery"])
@@ -255,6 +268,7 @@ def setup_gallery_routes() -> APIRouter:
         base_url = ep.base_url.rstrip("/")
         if not base_url.endswith("/v1"):
             base_url += "/v1"
+        _ensure_offline_local_endpoint(base_url, "image upscale endpoint")
 
         # Use img2img endpoint if available, otherwise upscale via canvas on client
         try:
@@ -298,6 +312,7 @@ def setup_gallery_routes() -> APIRouter:
         base_url = ep.base_url.rstrip("/")
         if not base_url.endswith("/v1"):
             base_url += "/v1"
+        _ensure_offline_local_endpoint(base_url, "image style-transfer endpoint")
 
         try:
             async with httpx.AsyncClient(timeout=180) as client:
@@ -950,6 +965,7 @@ def setup_gallery_routes() -> APIRouter:
 
         if not base.endswith("/v1"):
             base += "/v1"
+        _ensure_offline_local_endpoint(base, "image inpaint endpoint")
 
         is_openai = "api.openai.com" in base
 
@@ -1031,6 +1047,7 @@ def setup_gallery_routes() -> APIRouter:
                         if item.get("b64_json"):
                             raw_b64 = item["b64_json"]
                         elif item.get("url"):
+                            _ensure_offline_local_image_url(item["url"])
                             async with httpx.AsyncClient(timeout=60) as c2:
                                 img_r = await c2.get(item["url"])
                                 if img_r.status_code == 200:
@@ -1133,6 +1150,7 @@ def setup_gallery_routes() -> APIRouter:
 
         if not base.endswith("/v1"):
             base += "/v1"
+        _ensure_offline_local_endpoint(base, "image harmonize endpoint")
 
         prompt = body.get("prompt") or "natural lighting, harmonious color, seamless blend"
         # Legacy single-strength control (old clients) → maps to color_match
@@ -1260,6 +1278,7 @@ def setup_gallery_routes() -> APIRouter:
                             if item.get("b64_json"):
                                 return {"image": item["b64_json"]}
                             if item.get("url"):
+                                _ensure_offline_local_image_url(item["url"])
                                 async with httpx.AsyncClient(timeout=60) as c2:
                                     ir = await c2.get(item["url"])
                                     if ir.status_code == 200:
@@ -1696,6 +1715,7 @@ def setup_gallery_routes() -> APIRouter:
                 return {"error": "No vision-capable endpoint configured"}
 
             # Call vision model — format differs between Anthropic and OpenAI
+            _ensure_offline_local_endpoint(chat_url, "vision endpoint")
             from src.llm_core import _detect_provider
             provider = _detect_provider(chat_url)
             tag_prompt = (

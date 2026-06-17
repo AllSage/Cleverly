@@ -495,6 +495,24 @@ def test_gallery_helpers_owner_filter_blocks_anonymous():
     assert query.condition is False
 
 
+def test_gallery_offline_endpoint_guards(monkeypatch):
+    import routes.gallery_routes as routes
+
+    monkeypatch.setattr(routes, "offline_mode", lambda: True)
+    monkeypatch.setattr(routes, "is_local_model_url", lambda url: "localhost" in url)
+
+    routes._ensure_offline_local_endpoint("http://localhost:8100/v1", "image endpoint")
+    routes._ensure_offline_local_image_url("http://localhost:8100/image.png")
+
+    with pytest.raises(HTTPException) as endpoint_exc:
+        routes._ensure_offline_local_endpoint("https://api.openai.com/v1", "image endpoint")
+    assert endpoint_exc.value.status_code == 403
+
+    with pytest.raises(HTTPException) as image_exc:
+        routes._ensure_offline_local_image_url("https://cdn.example/image.png")
+    assert image_exc.value.status_code == 502
+
+
 @pytest.mark.asyncio
 async def test_gallery_upload_replace_rename_rotate_and_helpers(gallery_env):
     import routes.gallery_helpers as helpers

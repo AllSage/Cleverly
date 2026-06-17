@@ -8,6 +8,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 
+from src.offline_policy import is_local_model_url
+from src.settings import offline_mode
+
 logger = logging.getLogger(__name__)
 
 # Cache for discovered hosts
@@ -120,6 +123,8 @@ class ModelDiscovery:
     def _check_port(self, host: str, port: int) -> Optional[Dict[str, Any]]:
         """Check a single host:port for models."""
         base = f"http://{host}:{port}/v1"
+        if offline_mode() and not is_local_model_url(base):
+            return None
         try:
             r = httpx.get(f"{base}/models", timeout=3)
             if not r.is_success:
@@ -174,7 +179,7 @@ class ModelDiscovery:
         items = discovery["items"]
         providers = [{"provider": "vllm", "hosts": discovery["hosts"], "items": items}]
 
-        if self.openai_api_key:
+        if self.openai_api_key and not offline_mode():
             openai_models = [
                 "gpt-5.2-codex", "gpt-4o-mini", "gpt-image-1.5",
                 "gpt-4o", "gpt-5.2", "gpt-5.2-pro",

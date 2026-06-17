@@ -294,6 +294,16 @@ def test_settings_cache_offline_user_and_save_paths(monkeypatch, tmp_path):
     assert settings.load_features()["memory"] is True
 
 
+def test_startup_ollama_probe_blocks_external_url_offline(monkeypatch):
+    from src import startup_endpoints
+
+    monkeypatch.setattr(startup_endpoints, "offline_mode", lambda: True)
+    monkeypatch.setattr(startup_endpoints, "is_local_model_url", lambda url: "localhost" in url)
+    monkeypatch.setattr(startup_endpoints.httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+
+    assert startup_endpoints._ollama_models("https://ollama.example:11434") == []
+
+
 def test_memory_service_vector_and_keyword_paths(monkeypatch, tmp_path):
     import services.memory.service as memory_service
 

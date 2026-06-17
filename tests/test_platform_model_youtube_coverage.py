@@ -132,6 +132,15 @@ def test_model_discovery_hosts_ports_providers_and_http(monkeypatch):
     monkeypatch.setattr(no_openai, "discover_models", lambda: {"hosts": ["h"], "items": []})
     assert no_openai.get_providers()["providers"] == [{"provider": "vllm", "hosts": ["h"], "items": []}]
 
+    monkeypatch.setattr(md, "offline_mode", lambda: True)
+    monkeypatch.setattr(md, "is_local_model_url", lambda url: "localhost" in url)
+    monkeypatch.setattr(md.httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+    offline_discovery = md.ModelDiscovery("localhost", openai_api_key="sk-test")
+    assert offline_discovery._check_port("api.example.com", 8000) is None
+    offline_providers = offline_discovery.get_providers()["providers"]
+    assert len(offline_providers) == 1
+    assert offline_providers[0]["provider"] == "vllm"
+
 
 def test_platform_compat_posix_and_windows_branches(monkeypatch, tmp_path):
     import core.platform_compat as pc
@@ -353,6 +362,26 @@ def test_youtube_helpers_and_formatters(monkeypatch, module_name):
 @pytest.mark.asyncio
 async def test_youtube_transcript_and_comments(monkeypatch, module_name):
     yt = importlib.import_module(module_name)
+
+    monkeypatch.setattr(yt, "offline_mode", lambda: True)
+    blocked_transcript = await yt.extract_transcript_async("url", "vid")
+    assert blocked_transcript == {
+        "success": False,
+        "error": "YouTube transcript fetching is disabled in offline mode",
+        "transcript": None,
+    }
+    monkeypatch.setattr(
+        yt.asyncio,
+        "create_subprocess_exec",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")),
+    )
+    blocked_comments = await yt.fetch_youtube_comments("vid")
+    assert blocked_comments == {
+        "success": False,
+        "error": "YouTube comment fetching is disabled in offline mode",
+        "comments": [],
+    }
+    monkeypatch.setattr(yt, "offline_mode", lambda: False)
 
     yt.YOUTUBE_AVAILABLE = False
     yt.YouTubeTranscriptApi = None

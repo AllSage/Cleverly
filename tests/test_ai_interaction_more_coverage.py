@@ -329,3 +329,42 @@ def test_ai_ui_control_and_list_models(monkeypatch):
     assert asyncio.run(ai.do_ui_control("open_email_reply 101 INBOX reply-all"))["mode"] == "reply-all"
     assert "Toggle states" in asyncio.run(ai.do_ui_control("get_toggles"))["results"]
     assert "Unknown action" in asyncio.run(ai.do_ui_control("unknown"))["error"]
+
+
+def test_generate_image_blocks_external_endpoint_offline(monkeypatch):
+    ai = _ai()
+    monkeypatch.setattr(ai, "offline_mode", lambda: True)
+    monkeypatch.setattr(ai, "is_local_model_url", lambda url: "localhost" in url)
+    monkeypatch.setattr(
+        ai,
+        "_resolve_model",
+        lambda _model: ("https://api.openai.com/v1/chat/completions", "gpt-image-1", {}),
+    )
+
+    import httpx
+
+    class BlockedClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("network")
+
+    monkeypatch.setattr(httpx, "AsyncClient", BlockedClient)
+
+    result = asyncio.run(ai.do_generate_image("Draw a sealed computer\ngpt-image-1"))
+    assert result == {"error": "External image generation endpoint is disabled in offline mode."}
+
+
+def test_list_models_marks_external_endpoint_disabled_offline(monkeypatch):
+    ai = _ai()
+    _install_llm(monkeypatch)
+    endpoint = ModelEndpoint(name="Cloud", base_url="https://api.openai.com/v1", api_key="sk", is_enabled=True)
+    _install_database(monkeypatch, {ModelEndpoint: [endpoint]})
+    monkeypatch.setattr(ai, "_normalize_base", lambda base: base.rstrip("/"))
+    monkeypatch.setattr(ai, "offline_mode", lambda: True)
+    monkeypatch.setattr(ai, "is_local_model_url", lambda url: False)
+    monkeypatch.setattr(ai, "build_headers", lambda key, base: {})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+    result = asyncio.run(ai.do_list_models(""))
+    assert "external endpoint disabled in offline mode" in result["results"]

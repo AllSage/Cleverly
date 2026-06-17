@@ -12,6 +12,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+from src.settings import offline_mode
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -91,6 +93,9 @@ async def extract_transcript_async(
     Returns:
         Dict with success/error/transcript keys
     """
+    if offline_mode():
+        return {"success": False, "error": "YouTube transcript fetching is disabled in offline mode", "transcript": None}
+
     if not YOUTUBE_AVAILABLE or YouTubeTranscriptApi is None:
         return {"success": False, "error": "YouTube transcript API not available", "transcript": None}
 
@@ -186,6 +191,9 @@ async def fetch_youtube_comments(
 
     Returns dict with 'success', 'comments' list, 'error'.
     """
+    if offline_mode():
+        return {"success": False, "error": "YouTube comment fetching is disabled in offline mode", "comments": []}
+
     try:
         cmd = [
             _find_ytdlp(),

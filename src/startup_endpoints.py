@@ -12,7 +12,8 @@ import httpx
 
 from core.database import ModelEndpoint, SessionLocal
 from src.endpoint_resolver import normalize_base
-from src.settings import load_settings, save_settings
+from src.offline_policy import is_local_model_url
+from src.settings import load_settings, save_settings, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,9 @@ def _ollama_api_root(base_url: str) -> str:
 def _ollama_models(base_url: str, timeout: float = 5.0) -> list[str]:
     root = _ollama_api_root(base_url)
     if not root:
+        return []
+    if offline_mode() and not is_local_model_url(root):
+        logger.info("Bundled Ollama model probe blocked by offline mode: %s", root)
         return []
     try:
         response = httpx.get(root + "/tags", timeout=timeout)

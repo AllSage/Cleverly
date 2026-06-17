@@ -10,6 +10,9 @@ from fastapi import HTTPException
 from typing import Optional, Dict, List
 from urllib.parse import urlparse
 
+from src.offline_policy import is_local_model_url
+from src.settings import offline_mode
+
 logger = logging.getLogger(__name__)
 
 class LLMConfig:
@@ -80,6 +83,14 @@ def seconds_since_model_activity(url: str, model: str) -> Optional[float]:
     if not ts:
         return None
     return max(0.0, time.time() - ts)
+
+
+def _external_model_endpoint_blocked(url: str) -> bool:
+    return offline_mode() and not is_local_model_url(url)
+
+
+def _offline_model_endpoint_error(url: str) -> HTTPException:
+    return HTTPException(403, f"External model endpoint is disabled in offline mode: {_host_key(url)}")
 
 def _host_key(url: str) -> str:
     from urllib.parse import urlsplit
@@ -484,6 +495,9 @@ def _normalize_anthropic_url(url: str) -> str:
 
 def list_model_ids(base_chat_url: str, timeout: int = LLMConfig.DEFAULT_TIMEOUT, headers: Optional[Dict] = None) -> List[str]:
     """List available model IDs from an endpoint."""
+    if _external_model_endpoint_blocked(base_chat_url):
+        logger.info(f"Model listing blocked by offline mode: {base_chat_url}")
+        return []
     provider = _detect_provider(base_chat_url)
     if provider == "anthropic":
         return list(ANTHROPIC_MODELS)
@@ -535,6 +549,8 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
              max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None, 
              timeout: int = LLMConfig.DEFAULT_TIMEOUT, prompt_type: Optional[str] = None) -> str:
     """Synchronous LLM call with optional prompt type enhancement."""
+    if _external_model_endpoint_blocked(url):
+        raise _offline_model_endpoint_error(url)
     h = _provider_headers(_detect_provider(url))
     # Tolerate headers that arrive as a JSON string (some sessions stored them
     # double-encoded) — otherwise h.update() throws "dictionary update sequence
@@ -659,6 +675,9 @@ async def llm_call_async(
     prompt_type: Optional[str] = None
 ) -> str:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging."""
+    if _external_model_endpoint_blocked(url):
+        raise _offline_model_endpoint_error(url)
+
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 
@@ -762,6 +781,11 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
       - event: error                       — errors
       - data: [DONE]                       — end of stream
     """
+    if _external_model_endpoint_blocked(url):
+        err = _offline_model_endpoint_error(url)
+        yield f'event: error\ndata: {json.dumps({"error": err.detail, "status": err.status_code})}\n\n'
+        return
+
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 

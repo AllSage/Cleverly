@@ -16,6 +16,7 @@ import sys
 import time
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
+from src.settings import offline_mode
 from src.tool_security import is_public_blocked_tool, owner_is_admin_or_single_user
 
 MAX_OUTPUT_CHARS = 10_000
@@ -417,6 +418,8 @@ async def _direct_fallback(
             return {"output": f"Wrote {size} bytes to {path}", "exit_code": 0}
 
         if tool == "web_search":
+            if offline_mode():
+                return {"error": "web_search is disabled in offline mode", "exit_code": 1}
             from src.search import comprehensive_web_search
             raw = content.strip()
             query = raw
@@ -468,6 +471,8 @@ async def _direct_fallback(
             return {"output": output, "exit_code": 0}
 
         if tool == "web_fetch":
+            if offline_mode():
+                return {"error": "web_fetch is disabled in offline mode", "exit_code": 1}
             # Lightweight single-URL fetch. Wraps the SSRF-safe fetcher used
             # by deep research, so private/loopback/metadata addresses are
             # already blocked there.

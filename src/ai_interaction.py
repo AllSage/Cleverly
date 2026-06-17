@@ -56,6 +56,8 @@ def set_rag_manager(rag_mgr, personal_docs_mgr=None):
 # ---------------------------------------------------------------------------
 
 from src.endpoint_resolver import normalize_base as _normalize_base, build_chat_url, build_headers, build_models_url
+from src.offline_policy import is_local_model_url
+from src.settings import offline_mode
 
 
 def _resolve_model(spec: str) -> Tuple[str, str, Dict]:
@@ -94,6 +96,8 @@ def _resolve_model(spec: str) -> Tuple[str, str, Dict]:
 
         for ep in endpoints:
             base = _normalize_base(ep.base_url)
+            if offline_mode() and not is_local_model_url(base):
+                continue
             provider = _detect_provider(base)
             headers = build_headers(ep.api_key, base)
 
@@ -1113,7 +1117,9 @@ async def do_list_models(content: str, session_id: Optional[str] = None) -> Dict
             headers = build_headers(ep.api_key, base)
 
             model_ids = []
-            if provider == "anthropic":
+            if offline_mode() and not is_local_model_url(base):
+                model_ids = ["(external endpoint disabled in offline mode)"]
+            elif provider == "anthropic":
                 model_ids = list(ANTHROPIC_MODELS)
             else:
                 try:
@@ -1624,6 +1630,8 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
 
     # Build the images endpoint URL from the chat completions URL
     base_url = url.replace("/chat/completions", "").replace("/v1/messages", "").rstrip("/")
+    if offline_mode() and not is_local_model_url(base_url):
+        return {"error": "External image generation endpoint is disabled in offline mode."}
     images_url = base_url + "/images/generations"
 
     # Validate size for cloud image models (local diffusion accepts any WxH)
@@ -1708,6 +1716,8 @@ async def do_generate_image(content: str, session_id: Optional[str] = None, owne
 
             elif img.get("url"):
                 # Download external URL and save locally (DALL-E returns temp URLs)
+                if offline_mode() and not is_local_model_url(img["url"]):
+                    return {"error": "Image endpoint returned an external image URL while offline; configure it to return b64_json."}
                 try:
                     dl_resp = httpx.get(img["url"], timeout=60)
                     if dl_resp.status_code == 200:

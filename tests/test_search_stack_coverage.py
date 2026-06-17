@@ -429,6 +429,7 @@ def test_content_helpers_fetch_cache_pdf_html_and_errors(prefix, tmp_path, monke
     monkeypatch.setattr(content, "CONTENT_CACHE_DIR", tmp_path)
     monkeypatch.setattr(content, "content_cache_index", {})
     monkeypatch.setattr(content, "cleanup_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(content, "offline_mode", lambda: False)
 
     assert content._public_http_url("ftp://example.com") is False
     assert content._public_http_url("http://localhost") is False
@@ -506,12 +507,47 @@ def test_content_helpers_fetch_cache_pdf_html_and_errors(prefix, tmp_path, monke
 
 
 @pytest.mark.parametrize("prefix", SEARCH_MODULE_PREFIXES)
+def test_search_core_and_content_block_network_in_offline_mode(prefix, tmp_path, monkeypatch):
+    core = _import(prefix, "core")
+    content = _import(prefix, "content")
+
+    monkeypatch.setattr(core, "offline_mode", lambda: True)
+    monkeypatch.setattr(core, "_call_provider", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+    assert core.comprehensive_web_search("local only", return_sources=True) == (
+        "Web search is disabled in offline mode.",
+        [],
+    )
+
+    monkeypatch.setattr(content, "CONTENT_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(content, "content_cache_index", {})
+    monkeypatch.setattr(content, "cleanup_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(content, "offline_mode", lambda: True)
+    monkeypatch.setattr(content, "_get_public_url", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+
+    cached_url = "https://example.com/cached"
+    cache_key = content.generate_cache_key(cached_url)
+    (tmp_path / f"{cache_key}.cache").write_text(
+        json.dumps({
+            "timestamp": datetime.now().isoformat(),
+            "data": {"success": True, "title": "Cached", "content": "cached body"},
+        }),
+        encoding="utf-8",
+    )
+    assert content.fetch_webpage_content(cached_url)["title"] == "Cached"
+
+    blocked = content.fetch_webpage_content("https://example.com/miss")
+    assert blocked["success"] is False
+    assert blocked["error"] == "Web fetch is disabled in offline mode"
+
+
+@pytest.mark.parametrize("prefix", SEARCH_MODULE_PREFIXES)
 def test_content_remaining_url_cache_pdf_parse_and_cache_edges(prefix, tmp_path, monkeypatch):
     content = _import(prefix, "content")
 
     monkeypatch.setattr(content, "CONTENT_CACHE_DIR", tmp_path)
     monkeypatch.setattr(content, "content_cache_index", {})
     monkeypatch.setattr(content, "cleanup_cache", lambda *args, **kwargs: None)
+    monkeypatch.setattr(content, "offline_mode", lambda: False)
 
     if prefix == "services.search":
         monkeypatch.setattr(

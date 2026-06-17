@@ -12,6 +12,9 @@ from urllib.parse import urlparse
 
 import httpx
 
+from src.offline_policy import is_local_model_url
+from src.settings import offline_mode
+
 logger = logging.getLogger(__name__)
 
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "host.docker.internal"}
@@ -198,6 +201,8 @@ def _query_context_length(endpoint_url: str, model: str) -> int:
     """Query the model API for context length."""
     known = _lookup_known(model)
     api_ctx = None
+    if offline_mode() and not is_local_model_url(endpoint_url):
+        return known or DEFAULT_CONTEXT
 
     # Try llama.cpp /slots endpoint first — reports actual serving context
     if _is_local_endpoint(endpoint_url):

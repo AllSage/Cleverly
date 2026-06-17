@@ -39,6 +39,7 @@ from .content import (
     extract_quotes,
     extract_statistics,
 )
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +236,10 @@ def comprehensive_web_search(
     logger.info(f"Starting comprehensive search for: {query}")
     if time_filter:
         logger.info(f"Applying time filter: {time_filter}")
+    if offline_mode():
+        logger.info("Search is disabled because offline mode is enabled")
+        msg = "Web search is disabled in offline mode."
+        return (msg, []) if return_sources else msg
 
     settings = _get_search_settings()
     search_provider = settings.get("search_provider", "searxng")

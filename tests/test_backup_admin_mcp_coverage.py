@@ -709,6 +709,7 @@ def test_image_generation_mcp_server_success_errors_and_gallery(monkeypatch, tmp
     settings = {"image_model": "", "image_quality": "high"}
     settings_module.load_settings = lambda: dict(settings)
     settings_module.get_setting = lambda key, default=None: default
+    settings_module.offline_mode = lambda: False
     ai_module = types.ModuleType("src.ai_interaction")
     resolved = []
 
@@ -793,6 +794,13 @@ def test_image_generation_mcp_server_success_errors_and_gallery(monkeypatch, tmp
     disabled = asyncio.run(image_server.call_tool("generate_image", {"prompt": "x"}))[0].text
     assert "disabled" in disabled
     settings_module.get_setting = lambda key, default=None: default
+
+    settings_module.offline_mode = lambda: True
+    ai_module._resolve_model = lambda model_spec: ("https://api.openai.com/v1/chat/completions", "gpt-image-1", {})
+    blocked = asyncio.run(image_server.call_tool("generate_image", {"prompt": "x", "model": "gpt-image-1"}))[0].text
+    assert "External image generation endpoint is disabled in offline mode" in blocked
+    settings_module.offline_mode = lambda: False
+    ai_module._resolve_model = resolve_model
 
     settings["image_model"] = "dall-e-3"
     Client.next_response = Response(status_code=500, body={"error": {"message": "bad request"}}, text="raw")

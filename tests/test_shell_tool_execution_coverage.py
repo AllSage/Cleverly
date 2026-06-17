@@ -372,6 +372,8 @@ async def test_direct_fallback_web_search_and_fetch_are_no_network(monkeypatch):
     import src.search.content as search_content
     import src.tool_execution as tool_execution
 
+    monkeypatch.setattr(tool_execution, "offline_mode", lambda: False)
+
     def fake_search(query, max_pages=5, time_filter=None, return_sources=False):
         assert query == "latest local ai"
         assert max_pages == 3
@@ -401,6 +403,12 @@ async def test_direct_fallback_web_search_and_fetch_are_no_network(monkeypatch):
     fetched = await tool_execution._direct_fallback("web_fetch", "example.com")
     assert fetched["exit_code"] == 0
     assert fetched["output"].startswith("# Demo\nSource: https://example.com")
+
+    monkeypatch.setattr(tool_execution, "offline_mode", lambda: True)
+    blocked_search = await tool_execution._direct_fallback("web_search", "latest local ai")
+    assert blocked_search == {"error": "web_search is disabled in offline mode", "exit_code": 1}
+    blocked_fetch = await tool_execution._direct_fallback("web_fetch", "example.com")
+    assert blocked_fetch == {"error": "web_fetch is disabled in offline mode", "exit_code": 1}
 
 
 class Column:

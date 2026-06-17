@@ -54,7 +54,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     try:
         import httpx
-        from src.settings import load_settings, get_setting
+        from src.offline_policy import is_local_model_url
+        from src.settings import load_settings, get_setting, offline_mode
         from src.ai_interaction import _resolve_model
 
         if not get_setting("image_gen_enabled", True):
@@ -83,6 +84,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
         is_gpt_image = "gpt-image" in model_id.lower()
         base_url = url.replace("/chat/completions", "").replace("/v1/messages", "").rstrip("/")
+        if offline_mode() and not is_local_model_url(base_url):
+            return [TextContent(type="text", text="Error: External image generation endpoint is disabled in offline mode.")]
         images_url = base_url + "/images/generations"
 
         valid_gpt_sizes = {"1024x1024", "1024x1536", "1536x1024", "auto"}
@@ -142,6 +145,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     pass
 
             elif img.get("url"):
+                if offline_mode() and not is_local_model_url(img["url"]):
+                    return [TextContent(type="text", text="Error: Image endpoint returned an external image URL while offline; configure it to return b64_json.")]
                 image_url = img["url"]
             else:
                 return [TextContent(type="text", text="Error: Unexpected image API response format")]
