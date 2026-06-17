@@ -159,3 +159,34 @@ def test_ui_visibility_controls_target_existing_static_elements():
             dead_selectors.append(f"{key}: {selector}")
 
     assert dead_selectors == []
+
+
+def test_settings_tabs_and_modal_restore_triggers_are_wired():
+    _, _, soup = _frontend_sources()
+    modal_manager_js = (ROOT / "static" / "js" / "modalManager.js").read_text(encoding="utf-8")
+    ids = {tag["id"] for tag in soup.find_all(id=True)}
+
+    tabs = {tag["data-settings-tab"] for tag in soup.select("[data-settings-tab]")}
+    panels = {tag["data-settings-panel"] for tag in soup.select("[data-settings-panel]")}
+    assert sorted(tabs - panels) == []
+    assert sorted(panels - tabs) == []
+
+    map_match = re.search(r"const _AUTO_WIRE = \{(?P<body>.*?)\n\};", modal_manager_js, re.S)
+    assert map_match is not None, "modal auto-wire map is missing"
+
+    trigger_entries = re.findall(
+        r"'([^']+)'\s*:\s*\{\s*rail:\s*(null|'[^']+')\s*,\s*sidebar:\s*(null|'[^']+')",
+        map_match.group("body"),
+    )
+    assert trigger_entries, "modal auto-wire map has no parseable trigger entries"
+
+    missing_triggers = []
+    for modal_id, rail_id, sidebar_id in trigger_entries:
+        for kind, raw_id in (("rail", rail_id), ("sidebar", sidebar_id)):
+            if raw_id == "null":
+                continue
+            trigger_id = raw_id.strip("'")
+            if trigger_id not in ids:
+                missing_triggers.append(f"{modal_id}:{kind}:{trigger_id}")
+
+    assert missing_triggers == []

@@ -3012,8 +3012,8 @@ async function _cmdTourSettings(args, ctx) {
   // Open the settings modal.
   let modal = document.getElementById('settings-modal');
   if (!modal || modal.classList.contains('hidden')) {
-    const opener = document.getElementById('rail-settings')
-      || document.getElementById('tool-settings-btn');
+    const opener = document.getElementById('user-bar-settings')
+      || document.getElementById('rail-settings');
     if (opener) opener.click();
     for (let i = 0; i < 25; i++) {
       await new Promise(r => setTimeout(r, 80));
