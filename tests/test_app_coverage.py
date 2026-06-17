@@ -321,6 +321,9 @@ def test_direct_frontend_api_calls_match_registered_routes(monkeypatch):
     template_call = re.compile(
         r"""\b(?:fetch|_api|api|apiFetch)\s*\(\s*`((?:\\.|[^`])*/api/(?:\\.|[^`])*)`"""
     )
+    api_constant = re.compile(r"""\b(?:const|let|var)\s+API\s*=\s*['"]([^'"]+)['"]""")
+    api_template_call = re.compile(r"""\bfetch\s*\(\s*`\$\{API\}((?:\\.|[^`])*)`""")
+    api_helper_call = re.compile(r"""(?<!function\s)\bapi\s*\(\s*([`'"])((?:\\.|(?!\1).)*?)\1""")
     allowed_external_examples = {
         "/api/v1",
         "/api/paas/v4",
@@ -356,6 +359,34 @@ def test_direct_frontend_api_calls_match_registered_routes(monkeypatch):
             if not matches_route(api_path, method):
                 line = text.count("\n", 0, match.start()) + 1
                 leftovers.append(f"{path.relative_to(ROOT)}:{line}:{method} {api_path}")
+        api_match = api_constant.search(text)
+        if api_match and api_match.group(1).startswith("/api"):
+            api_base = api_match.group(1)
+            for match in api_template_call.finditer(text):
+                api_path = normalize_frontend_api_path(api_base + match.group(1))
+                if api_path is None:
+                    continue
+                key = (path, match.start(), api_path)
+                if key in checked:
+                    continue
+                checked.add(key)
+                method = frontend_call_method(text, match.end(), "`")
+                if not matches_route(api_path, method):
+                    line = text.count("\n", 0, match.start()) + 1
+                    leftovers.append(f"{path.relative_to(ROOT)}:{line}:{method} {api_path}")
+            if re.search(r"(?:async\s+)?function\s+api\s*\(", text):
+                for match in api_helper_call.finditer(text):
+                    api_path = normalize_frontend_api_path(api_base + match.group(2))
+                    if api_path is None:
+                        continue
+                    key = (path, match.start(), api_path)
+                    if key in checked:
+                        continue
+                    checked.add(key)
+                    method = frontend_call_method(text, match.end(), match.group(1))
+                    if not matches_route(api_path, method):
+                        line = text.count("\n", 0, match.start()) + 1
+                        leftovers.append(f"{path.relative_to(ROOT)}:{line}:{method} {api_path}")
 
     assert leftovers == []
 
