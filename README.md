@@ -390,6 +390,10 @@ GitHub Actions includes:
   SBOM/model/security reports, artifact upload, and GitHub artifact
   attestations.
 
+The optional Bombadil UI exploration spec does not store login credentials in
+source. Set `CLEVERLY_BOMBADIL_USERNAME` and `CLEVERLY_BOMBADIL_PASSWORD` when
+running `tests/bombadil-spec.ts` against a configured local account.
+
 After pushing the workflows, configure branch protection from an authenticated
 GitHub admin shell:
 

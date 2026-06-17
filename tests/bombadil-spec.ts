@@ -1,10 +1,14 @@
 /**
- * Bombadil spec for Cleverly UI
+ * Bombadil spec for Cleverly UI.
  */
 import { extract, always, eventually, now, actions } from "@antithesishq/bombadil";
 export * from "@antithesishq/bombadil/defaults";
 
-// ── Extractors (only place you can access the DOM) ──
+const runtimeEnv = ((globalThis as any).process && (globalThis as any).process.env) || {};
+const TEST_USERNAME = runtimeEnv.CLEVERLY_BOMBADIL_USERNAME || "cleverly-demo";
+const TEST_PASSWORD = runtimeEnv.CLEVERLY_BOMBADIL_PASSWORD || "cleverly-demo-password";
+
+// Extractors. This is the only place the spec reads the DOM.
 
 const onLoginPage = extract((state) => {
   return state.document.querySelector("#username") !== null;
@@ -57,21 +61,21 @@ const clickableElements = extract((state) => {
   return els;
 });
 
-// ── Login actions ──
+// Login actions.
 
 export const login = actions(() => {
   const le = loginElements.current;
   if (!le) return [];
   return [
     { Click: { name: "username", point: le.user } },
-    { TypeText: { text: "tester", delayMillis: 30 } },
+    { TypeText: { text: TEST_USERNAME, delayMillis: 30 } },
     { Click: { name: "password", point: le.pass } },
-    { TypeText: { text: "iloveass123", delayMillis: 30 } },
+    { TypeText: { text: TEST_PASSWORD, delayMillis: 30 } },
     { Click: { name: "submit", point: le.btn } },
   ];
 });
 
-// ── App exploration ──
+// App exploration.
 
 export const explore = actions(() => {
   if (onLoginPage.current) return [];
@@ -96,7 +100,7 @@ export const explore = actions(() => {
   return acts;
 });
 
-// ── Properties ──
+// Properties.
 
 export const noBlankPage = always(() => pageHasContent.current === true);
 export const noModalStacking = always(() => (visibleModals.current || 0) <= 2);
