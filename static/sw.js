@@ -7,7 +7,7 @@
 //   - Other static assets (images/fonts/libs): cache-first with bg refresh.
 //   - API / non-GET: never cached.
 // Bump CACHE_NAME whenever the precache list or SW logic changes.
-const CACHE_NAME = 'cleverly-v330';
+const CACHE_NAME = 'cleverly-v331';
 const APP_SHELL_ROUTES = new Set([
   '/',
   '/notes',
@@ -180,7 +180,11 @@ const PRECACHE = [
   '/static/js/researchSynapse.js',
   '/static/js/signature.js',
   '/static/js/windowDrag.js',
+  '/static/lib/docx.umd.min.js',
   '/static/lib/highlight.min.js',
+  '/static/lib/html2pdf.bundle.min.js',
+  '/static/lib/mammoth.browser.min.js',
+  '/static/lib/xlsx.full.min.js',
 ];
 
 self.addEventListener('install', (e) => {

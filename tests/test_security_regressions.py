@@ -52,6 +52,14 @@ def test_app_shell_does_not_load_active_external_assets():
     assert 'src="https://' not in landing_html
 
 
+def test_code_runner_uses_bundled_or_server_runtimes_only():
+    code_runner = Path("static/js/codeRunner.js").read_text(encoding="utf-8")
+
+    assert "pyodide" not in code_runner.lower()
+    assert "python -c " in code_runner
+    assert "python3 -c " not in code_runner
+
+
 def test_bundled_static_references_resolve():
     import re
 
@@ -165,6 +173,32 @@ def test_service_worker_precaches_critical_shell_assets():
         "/static/fonts/Inter-SemiBold.woff2",
     }
     assert critical.issubset(refs)
+    assert sorted(refs - precache) == []
+
+
+def test_service_worker_precaches_runtime_static_libs():
+    import re
+
+    sw_js = Path("static/sw.js").read_text(encoding="utf-8")
+    precache = set(re.findall(r"""['"](/static/[^'"]+|/)['"]""", sw_js))
+    refs = set()
+    missing = []
+
+    for source in [
+        Path("static/index.html"),
+        Path("static/login.html"),
+        Path("static/landing.html"),
+        *Path("static/js").rglob("*.js"),
+    ]:
+        text = source.read_text(encoding="utf-8")
+        for match in re.finditer(r"""['"](/static/lib/[^'"]+\.js)['"]""", text):
+            ref = match.group(1)
+            if Path(ref.lstrip("/")).exists():
+                refs.add(ref)
+            else:
+                missing.append((str(source), ref))
+
+    assert missing == []
     assert sorted(refs - precache) == []
 
 

@@ -3,12 +3,9 @@
 import * as uiModule from './ui.js';
 
 /**
- * In-browser code runner for Python (Pyodide), JavaScript, and HTML
+ * Code runner for Python, JavaScript, and HTML.
+ * Python and shell snippets execute through the offline server runner.
  */
-
-let pyodideInstance = null;
-let pyodideLoading = false;
-const pyodideQueue = [];
 
 /**
  * Get or create an output panel below the <pre> element
@@ -140,102 +137,10 @@ function addCopyBtn_unused(panel, text) {
 function addCloseBtn(_panel) { /* no-op */ }
 
 /**
- * Lazy-load Pyodide from a local bundle only.
- */
-function loadPyodide() {
-  if (pyodideInstance) return Promise.resolve(pyodideInstance);
-  if (pyodideLoading) {
-    return new Promise((resolve, reject) => {
-      pyodideQueue.push({ resolve, reject });
-    });
-  }
-  pyodideLoading = true;
-
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = '/static/lib/pyodide/pyodide.js';
-    script.onload = () => {
-      window.loadPyodide({ indexURL: '/static/lib/pyodide/' })
-        .then(py => {
-          pyodideInstance = py;
-          pyodideLoading = false;
-          pyodideQueue.forEach(q => q.resolve(py));
-          pyodideQueue.length = 0;
-          resolve(py);
-        })
-        .catch(err => {
-          pyodideLoading = false;
-          pyodideQueue.forEach(q => q.reject(err));
-          pyodideQueue.length = 0;
-          reject(err);
-        });
-    };
-    script.onerror = () => {
-      pyodideLoading = false;
-      const err = new Error('Failed to load local Pyodide bundle');
-      pyodideQueue.forEach(q => q.reject(err));
-      pyodideQueue.length = 0;
-      reject(err);
-    };
-    document.head.appendChild(script);
-  });
-}
-
-/**
- * Run Python code via Pyodide
+ * Run Python code through the same offline server-side runner used by Run.
  */
 export async function runPython(code, panel) {
-  showLoading(panel, 'Loading local Python runtime...');
-
-  let py;
-  try {
-    py = await loadPyodide();
-  } catch (e) {
-    showOutput(panel, 'Failed to load Python runtime: ' + e.message, true);
-    addCloseBtn(panel);
-    return;
-  }
-
-  showLoading(panel, 'Running...');
-
-  const wrapper = `
-import sys, io
-_stdout = io.StringIO()
-_stderr = io.StringIO()
-sys.stdout = _stdout
-sys.stderr = _stderr
-try:
-    exec(${JSON.stringify(code)})
-except Exception as _e:
-    _stderr.write(str(_e))
-finally:
-    sys.stdout = sys.__stdout__
-    sys.stderr = sys.__stderr__
-(_stdout.getvalue(), _stderr.getvalue())
-`;
-
-  try {
-    const result = await Promise.race([
-      py.runPythonAsync(wrapper),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Execution timed out (10 s)')), 10000))
-    ]);
-
-    const stdout = result.toJs ? result.toJs()[0] : (result[0] || '');
-    const stderr = result.toJs ? result.toJs()[1] : (result[1] || '');
-    if (result.destroy) result.destroy();
-
-    panel.innerHTML = '';
-    if (stderr) {
-      showOutput(panel, stderr, true);
-    } else if (stdout) {
-      showOutput(panel, stdout, false);
-    } else {
-      showOutput(panel, '(no output)', false);
-    }
-  } catch (e) {
-    showOutput(panel, e.message, true);
-  }
-  addCloseBtn(panel);
+  return runServer(code, panel, 'python');
 }
 
 /**
@@ -312,7 +217,7 @@ export async function runServer(code, panel, lang) {
   showLoading(panel, 'Running on server...');
   var command;
   if (lang === 'python' || lang === 'py') {
-    command = 'python3 -c ' + JSON.stringify(code);
+    command = 'python -c ' + JSON.stringify(code);
   } else {
     command = 'bash -c ' + JSON.stringify(code);
   }

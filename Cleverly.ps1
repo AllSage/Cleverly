@@ -342,6 +342,19 @@ function Write-Step([string]$Message) {
     Write-Host ("==> " + $Message) -ForegroundColor Cyan
 }
 
+function Open-CleverlyUrl([string]$TargetUrl) {
+    if ([string]::IsNullOrWhiteSpace($TargetUrl)) { return }
+    try {
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = $TargetUrl
+        $startInfo.UseShellExecute = $true
+        [System.Diagnostics.Process]::Start($startInfo) | Out-Null
+    } catch {
+        Write-Host ("WARNING: Cleverly is running, but Windows could not open the browser automatically: " + $_.Exception.Message) -ForegroundColor Yellow
+        Write-Host ("Open this URL manually: " + $TargetUrl) -ForegroundColor Yellow
+    }
+}
+
 function Require-Docker {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
         Fail "Docker was not found. Install Docker Desktop, start it, then run this again."
@@ -605,7 +618,7 @@ function Start-Cleverly {
     Write-Host ("Primary model: " + $script:PrimaryModel) -ForegroundColor Green
     Show-Status
     if (-not $NoOpen) {
-        Start-Process $Url
+        Open-CleverlyUrl $Url
     }
 }
 
@@ -979,7 +992,7 @@ switch ($Action) {
     "stop" { Stop-Cleverly }
     "restart" { Stop-Cleverly; Start-Cleverly }
     "status" { Require-Docker; Show-Status }
-    "open" { Start-Process $Url }
+    "open" { Open-CleverlyUrl $Url }
     "logs" { Require-Docker; docker logs -f --tail 200 cleverly }
     "prep" { Prep-Cleverly }
     "doctor" { Invoke-Doctor }

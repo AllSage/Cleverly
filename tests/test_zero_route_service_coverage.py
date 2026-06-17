@@ -85,6 +85,7 @@ def test_search_routes_request_formats_provider_listing_and_errors(monkeypatch):
     )
     monkeypatch.setattr(search_routes, "_get_provider_key", lambda provider: "secret" if provider == "keyed" else "")
     monkeypatch.setattr(search_routes, "_get_search_instance", lambda: None)
+    monkeypatch.setattr(search_routes, "offline_mode", lambda: False)
     monkeypatch.setattr(search_routes.time, "time", lambda: 100.0)
 
     router = search_routes.setup_search_routes(config=None)
@@ -111,6 +112,13 @@ def test_search_routes_request_formats_provider_listing_and_errors(monkeypatch):
     monkeypatch.setattr(search_routes, "_get_provider_key", lambda provider: "")
     providers_without_key = asyncio.run(_endpoint(router, "/api/search/providers")())
     assert providers_without_key[1] == {"id": "keyed", "label": "Keyed", "available": False}
+
+    monkeypatch.setattr(search_routes, "offline_mode", lambda: True)
+    blocked = asyncio.run(_endpoint(router, "/api/search")(RequestLike(json_body={"query": "x"})))
+    assert blocked == {"context": "", "sources": [], "error": "Web search is disabled in offline mode"}
+    blocked_query = asyncio.run(_endpoint(router, "/api/search/query")(RequestLike(json_body={"query": "x", "provider": "duck"})))
+    assert blocked_query == {"results": [], "provider": "duck", "error": "Web search is disabled in offline mode"}
+    monkeypatch.setattr(search_routes, "offline_mode", lambda: False)
 
     assert asyncio.run(_endpoint(router, "/api/search/query")(RequestLike(json_body={"provider": "duck"}))) == {
         "results": [],
@@ -279,6 +287,7 @@ def test_stt_service_dispatch_local_api_stats_and_singleton(monkeypatch, tmp_pat
         "stt_language": "",
     }
     monkeypatch.setattr(service, "_load_settings", lambda: dict(settings))
+    monkeypatch.setattr(stt_module, "offline_mode", lambda: False)
     assert service.available is False
     assert service.transcribe(b"audio") is None
 
@@ -407,6 +416,17 @@ def test_stt_service_dispatch_local_api_stats_and_singleton(monkeypatch, tmp_pat
     )
     assert db.closed is True
 
+    class RemoteEndpoint:
+        base_url = "https://stt.example/v1"
+        api_key = "remote"
+
+    db_remote = DB(RemoteEndpoint())
+    fake_database.SessionLocal = lambda: db_remote
+    monkeypatch.setattr(stt_module, "offline_mode", lambda: True)
+    assert service._transcribe_api(b"audio", "remote", "whisper") is None
+    assert post_calls[-1][0] == "http://endpoint/audio/transcriptions"
+    monkeypatch.setattr(stt_module, "offline_mode", lambda: False)
+
     db_missing = DB(None)
     fake_database.SessionLocal = lambda: db_missing
     assert service._transcribe_api(b"audio", "missing", "whisper") is None
@@ -456,6 +476,7 @@ def test_tts_service_cache_dispatch_stats_kokoro_and_singleton(monkeypatch, tmp_
         "tts_speed": "1.5",
     }
     monkeypatch.setattr(service, "_load_settings", lambda: dict(settings))
+    monkeypatch.setattr(tts_module, "offline_mode", lambda: False)
 
     key = service._cache_key("text", "endpoint:one", "tts-1", "alloy", 1.5)
     assert len(key) == 64
@@ -536,6 +557,16 @@ def test_tts_service_cache_dispatch_stats_kokoro_and_singleton(monkeypatch, tmp_
     assert post_calls[-1][0] == "http://endpoint/audio/speech"
     assert post_calls[-1][1]["speed"] == 1.25
     assert post_calls[-1][2] == {"Content-Type": "application/json"}
+
+    class RemoteEndpoint:
+        base_url = "https://tts.example/v1"
+        api_key = "remote"
+
+    fake_database.SessionLocal = lambda: DB(RemoteEndpoint())
+    monkeypatch.setattr(tts_module, "offline_mode", lambda: True)
+    assert service._synthesize_api("hello", "remote", "tts-1", "alloy") is None
+    assert post_calls[-1][0] == "http://endpoint/audio/speech"
+    monkeypatch.setattr(tts_module, "offline_mode", lambda: False)
 
     fake_database.SessionLocal = lambda: DB(None)
     assert service._synthesize_api("hello", "missing", "tts-1", "alloy") is None

@@ -99,6 +99,7 @@ def test_emoji_routes_invalid_cached_fetch_and_failure(monkeypatch, tmp_path):
 
     cache_dir = tmp_path / "emoji"
     monkeypatch.setattr(emoji_routes, "_CACHE_DIR", cache_dir)
+    monkeypatch.setattr(emoji_routes, "offline_mode", lambda: False)
     router = emoji_routes.setup_emoji_routes()
     emoji_svg = _endpoint(router, "/api/emoji/{code}.svg")
 
@@ -114,6 +115,17 @@ def test_emoji_routes_invalid_cached_fetch_and_failure(monkeypatch, tmp_path):
     assert str(cached_response.path).endswith("1f600.svg")
 
     cached.unlink()
+
+    class OfflineClient:
+        def __init__(self, *_args, **_kwargs):
+            raise AssertionError("offline emoji route must not create an HTTP client")
+
+    monkeypatch.setattr(emoji_routes, "offline_mode", lambda: True)
+    monkeypatch.setattr(emoji_routes.httpx, "AsyncClient", OfflineClient)
+    offline_uncached = asyncio.run(emoji_svg("1f600"))
+    assert offline_uncached.body == emoji_routes._BLANK_SVG
+
+    monkeypatch.setattr(emoji_routes, "offline_mode", lambda: False)
 
     class GoodResponse:
         status_code = 200
@@ -458,6 +470,7 @@ def test_diagnostics_routes_success_and_error_paths(monkeypatch):
     monkeypatch.setitem(sys.modules, "core.database", core_database)
     monkeypatch.setattr(diagnostics_routes, "require_admin", lambda request: None)
     monkeypatch.setattr(diagnostics_routes, "extract_youtube_id", lambda url: "vid" if "watch" in url else None)
+    monkeypatch.setattr(diagnostics_routes, "offline_mode", lambda: False)
 
     async def transcript(url, video_id):
         return {"success": True, "transcript": "t" * 600}
@@ -480,6 +493,11 @@ def test_diagnostics_routes_success_and_error_paths(monkeypatch):
 
     no_rag = diagnostics_routes.setup_diagnostics_routes(None, False, Research())
     assert asyncio.run(_endpoint(no_rag, "/api/rag/stats")(request)) == {"error": "RAG system not available"}
+    monkeypatch.setattr(diagnostics_routes, "offline_mode", lambda: True)
+    assert asyncio.run(_endpoint(router, "/api/test/youtube")(request, url="https://youtube.com/watch?v=vid")) == {
+        "error": "YouTube diagnostics are disabled in offline mode"
+    }
+    monkeypatch.setattr(diagnostics_routes, "offline_mode", lambda: False)
     assert asyncio.run(_endpoint(router, "/api/test/youtube")(request, url="bad")) == {"error": "Invalid YouTube URL"}
 
     async def transcript_fail(url, video_id):

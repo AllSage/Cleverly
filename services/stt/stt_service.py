@@ -8,6 +8,9 @@ import tempfile
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+from src.offline_policy import is_local_model_url
+from src.settings import offline_mode
+
 logger = logging.getLogger(__name__)
 
 
@@ -114,6 +117,10 @@ class STTService:
             api_key = ep.api_key
         finally:
             db.close()
+
+        if offline_mode() and not is_local_model_url(base_url):
+            logger.error("Blocked API STT endpoint in offline mode: %s", base_url)
+            return None
 
         url = base_url + "/audio/transcriptions"
         headers = {}

@@ -360,6 +360,20 @@ function Open-LocalPath {
     }
 }
 
+function Open-CleverlyUrl {
+    param([string]$TargetUrl)
+    if ([string]::IsNullOrWhiteSpace($TargetUrl)) { return }
+    try {
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = $TargetUrl
+        $startInfo.UseShellExecute = $true
+        [System.Diagnostics.Process]::Start($startInfo) | Out-Null
+    } catch {
+        Write-OutputBox ("WARNING: Windows could not open the browser automatically: " + $_.Exception.Message)
+        Write-OutputBox ("Open this URL manually: " + $TargetUrl)
+    }
+}
+
 function Write-CommandResult {
     param([pscustomobject]$Result)
     if ($Result.StdOut) { Write-OutputBox $Result.StdOut.TrimEnd() }
@@ -613,7 +627,7 @@ $open = New-Object System.Windows.Forms.Button
 $open.Text = "Open UI"
 $open.Anchor = "Top,Right"
 $open.SetBounds(684, 20, 112, 34)
-$open.Add_Click({ Start-Process $Url })
+$open.Add_Click({ Open-CleverlyUrl $Url })
 $form.Controls.Add($open)
 
 $form.Add_Shown({

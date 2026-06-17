@@ -10,6 +10,7 @@ import time
 from services.search import get_search_config, comprehensive_web_search, PROVIDER_INFO
 from services.search.core import _call_provider
 from services.search.providers import _get_provider_key, _get_search_instance
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,8 @@ def setup_search_routes(config) -> APIRouter:
         query = str(values.get("query") or values.get("q") or "").strip()
         if not query:
             return {"context": "", "sources": [], "error": "query is required"}
+        if offline_mode():
+            return {"context": "", "sources": [], "error": "Web search is disabled in offline mode"}
         time_filter = values.get("time_filter") or values.get("freshness")
         if time_filter is not None:
             time_filter = str(time_filter).strip() or None
@@ -96,6 +99,8 @@ def setup_search_routes(config) -> APIRouter:
             count = 10
         if not query:
             return {"results": [], "provider": provider, "error": "query is required"}
+        if offline_mode():
+            return {"results": [], "provider": provider, "error": "Web search is disabled in offline mode"}
         if provider not in PROVIDER_INFO or provider == "disabled":
             return {"results": [], "provider": provider, "error": "Unknown provider"}
         t0 = time.time()

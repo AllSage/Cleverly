@@ -9,6 +9,9 @@ import httpx
 from pathlib import Path
 from typing import Optional, Dict, Any
 
+from src.offline_policy import is_local_model_url
+from src.settings import offline_mode
+
 logger = logging.getLogger(__name__)
 
 
@@ -101,6 +104,10 @@ class TTSService:
             api_key = ep.api_key
         finally:
             db.close()
+
+        if offline_mode() and not is_local_model_url(base_url):
+            logger.error("Blocked API TTS endpoint in offline mode: %s", base_url)
+            return None
 
         url = base_url + "/audio/speech"
         headers = {"Content-Type": "application/json"}

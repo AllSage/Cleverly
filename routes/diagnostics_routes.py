@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Form, Request
 from services.youtube.youtube_handler import extract_youtube_id, extract_transcript_async
 from core.constants import DEFAULT_HOST
 from core.middleware import require_admin
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,8 @@ def setup_diagnostics_routes(
     @router.get("/api/test/youtube")
     async def test_youtube(request: Request, url: str) -> Dict[str, Any]:
         require_admin(request)
+        if offline_mode():
+            return {"error": "YouTube diagnostics are disabled in offline mode"}
         try:
             video_id = extract_youtube_id(url)
             if not video_id:

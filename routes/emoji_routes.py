@@ -3,11 +3,12 @@
 #   <span class="emoji" style="--em:url('/api/emoji/<codepoints>.svg')">
 # which uses the returned SVG as a CSS mask tinted to the text color, so emoji
 # render as monochrome line icons (project rule: never colorful emoji). The
-# black line-art SVGs are lazily fetched from the OpenMoji CDN on first use and
-# cached on disk, so:
+# black line-art SVGs can be lazily fetched from the OpenMoji CDN when online
+# and cached on disk, so:
 #   - the client only ever talks to our own origin (no CDN dep, no CSP change),
 #   - the repo isn't bloated with thousands of SVG files,
-#   - it works offline once an emoji has been seen once.
+#   - sealed/offline mode never makes an outbound request and only serves
+#     already-cached emoji.
 # Unknown/unreachable codepoints return a transparent SVG (not 404), so the CSS
 # mask shows nothing rather than a solid currentColor box.
 import logging
@@ -17,6 +18,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter
 from fastapi.responses import FileResponse, Response
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,8 @@ def setup_emoji_routes() -> APIRouter:
         fp = _CACHE_DIR / f"{code}.svg"
         if fp.exists():
             return FileResponse(fp, media_type="image/svg+xml", headers=_SVG_HEADERS)
+        if offline_mode():
+            return _blank()
 
         # First time we've seen this emoji — fetch the OpenMoji black SVG + cache
         # it. OpenMoji filenames are the codepoints uppercased.
