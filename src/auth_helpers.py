@@ -1,7 +1,35 @@
 """Shared auth helpers used by all route files."""
 
+import os
 from typing import Optional
 from fastapi import Request, HTTPException
+
+
+_PROXY_FWD_HEADERS = (
+    "cf-connecting-ip",
+    "cf-ray",
+    "cf-visitor",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-real-ip",
+    "forwarded",
+)
+
+
+def _header_value(headers, name: str):
+    try:
+        return headers.get(name) or headers.get(name.lower()) or headers.get(name.title())
+    except Exception:
+        return None
+
+
+def _is_direct_loopback(request: Request) -> bool:
+    client = getattr(request, "client", None)
+    host = (client.host if client else "") or ""
+    if host not in ("127.0.0.1", "::1", "localhost"):
+        return False
+    headers = getattr(request, "headers", {}) or {}
+    return not any(_header_value(headers, header) for header in _PROXY_FWD_HEADERS)
 
 
 def get_current_user(request: Request) -> Optional[str]:
@@ -22,12 +50,12 @@ def require_user(request: Request) -> str:
     if u:
         return u
     auth_mgr = getattr(request.app.state, "auth_manager", None)
+    if os.getenv("AUTH_ENABLED", "true").lower() == "false" and _is_direct_loopback(request):
+        return ""
     if auth_mgr is not None and getattr(auth_mgr, "is_configured", False):
         raise HTTPException(401, "Not authenticated")
     # Unconfigured / first-run mode: only allow loopback callers.
-    client = getattr(request, "client", None)
-    host = (client.host if client else "") or ""
-    if host in ("127.0.0.1", "::1", "localhost"):
+    if _is_direct_loopback(request):
         return ""
     raise HTTPException(401, "Not authenticated")
 

@@ -108,7 +108,7 @@ def test_middleware_admin_paths_and_security_headers(monkeypatch):
     assert tool.headers["X-Content-Type-Options"] == "nosniff"
 
 
-def test_auth_helpers_privileges_and_owner_filter():
+def test_auth_helpers_privileges_and_owner_filter(monkeypatch):
     from src import auth_helpers
 
     class AuthManager:
@@ -127,11 +127,21 @@ def test_auth_helpers_privileges_and_owner_filter():
             state=SimpleNamespace(current_user=user),
             app=SimpleNamespace(state=SimpleNamespace(auth_manager=auth)),
             client=SimpleNamespace(host=host),
+            headers={},
         )
 
     assert auth_helpers.get_current_user(req("alice")) == "alice"
     assert auth_helpers.require_user(req("alice", AuthManager())) == "alice"
     assert auth_helpers.require_user(req(None, None, host="127.0.0.1")) == ""
+
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    assert auth_helpers.require_user(req(None, AuthManager(), host="127.0.0.1")) == ""
+    proxied = req(None, AuthManager(), host="127.0.0.1")
+    proxied.headers = {"x-forwarded-for": "198.51.100.20"}
+    with pytest.raises(HTTPException) as proxied_unauth:
+        auth_helpers.require_user(proxied)
+    assert proxied_unauth.value.status_code == 401
+    monkeypatch.delenv("AUTH_ENABLED", raising=False)
 
     with pytest.raises(HTTPException) as unauth:
         auth_helpers.require_user(req(None, AuthManager()))
