@@ -120,6 +120,69 @@ def test_login_page_serves_cleverly_brand_without_legacy_tokens(monkeypatch):
     assert not re.search(r"Odysseus|odysseus|(?<![bB])ody-", body)
 
 
+def test_app_registers_major_feature_api_routes(monkeypatch):
+    app_module = _fresh_app(monkeypatch)
+    registered = {
+        (route.path, method)
+        for route in app_module.app.routes
+        for method in getattr(route, "methods", set())
+    }
+
+    expected = {
+        # Chat, sessions, search, settings.
+        ("/api/chat", "POST"),
+        ("/api/chat_stream", "POST"),
+        ("/api/sessions", "GET"),
+        ("/api/session", "POST"),
+        ("/api/search/config", "GET"),
+        ("/api/search/query", "POST"),
+        ("/api/prefs", "GET"),
+        # Memory, documents, notes, tasks.
+        ("/api/memory", "GET"),
+        ("/api/memory/add", "POST"),
+        ("/api/documents/library", "GET"),
+        ("/api/document", "POST"),
+        ("/api/notes", "GET"),
+        ("/api/notes", "POST"),
+        ("/api/tasks", "GET"),
+        ("/api/tasks", "POST"),
+        # Calendar, cookbook, training, code workspace.
+        ("/api/calendar/config", "GET"),
+        ("/api/calendar/events", "GET"),
+        ("/api/cookbook/state", "GET"),
+        ("/api/cookbook/gpus", "GET"),
+        ("/api/model/cached", "GET"),
+        ("/api/training/status", "GET"),
+        ("/api/training/finetune/status", "GET"),
+        ("/api/code-workspaces", "GET"),
+        ("/api/code-workspaces", "POST"),
+        ("/api/code-workspaces/{workspace_id}/agent", "POST"),
+        # Offline control, model setup, gallery, email, contacts.
+        ("/api/offline-control/status", "GET"),
+        ("/api/offline-control/models/local", "GET"),
+        ("/api/offline-control/models/primary", "GET"),
+        ("/api/offline-control/models/recommendations", "GET"),
+        ("/api/models", "GET"),
+        ("/api/model-endpoints", "GET"),
+        ("/api/gallery/library", "GET"),
+        ("/api/gallery/upload", "POST"),
+        ("/api/email/list", "GET"),
+        ("/api/email/folders", "GET"),
+        ("/api/contacts/list", "GET"),
+        # Compare, skills, research, backup, operator.
+        ("/api/compare/start", "POST"),
+        ("/api/compare/history", "GET"),
+        ("/api/skills", "GET"),
+        ("/api/research/active", "GET"),
+        ("/api/research/library", "GET"),
+        ("/api/export", "GET"),
+        ("/api/operator/checks", "GET"),
+    }
+
+    missing = sorted(expected - registered)
+    assert missing == []
+
+
 def test_app_timeout_middleware_and_static_headers(monkeypatch, tmp_path):
     app_module = _fresh_app(monkeypatch)
 
