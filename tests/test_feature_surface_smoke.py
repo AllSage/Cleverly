@@ -97,3 +97,15 @@ def test_active_frontend_has_no_old_brand_tokens():
             leftovers.append(f"{path.relative_to(ROOT)}:{text.count(chr(10), 0, match.start()) + 1}:{match.group(0)}")
 
     assert leftovers == []
+
+
+def test_frontend_avoids_removed_or_unregistered_feature_api_calls():
+    app_js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
+    sessions_js = (ROOT / "static" / "js" / "sessions.js").read_text(encoding="utf-8")
+
+    assert "/api/ai/name" not in app_js
+    assert "rename-ai-modal" not in app_js
+    assert "/api/session/${sid}/restore" not in sessions_js
+    assert "/api/session/${s.id}/restore" not in sessions_js
+    assert "/api/session/${sid}/unarchive" in sessions_js
+    assert "/api/session/${s.id}/unarchive" in sessions_js

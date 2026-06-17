@@ -516,7 +516,6 @@ function initializeEventListeners() {
         'cookbook-modal': null,
         'training-lab-modal': null,
         'rename-session-modal': null,
-        'rename-ai-modal': null,
         'custom-preset-modal': null,
         'memory-modal': null,
       };
@@ -1493,61 +1492,6 @@ function initializeEventListeners() {
     .catch(() => {});
 
   // (Logout handler moved to sidebar user bar above)
-
-  // Rename AI modal
-  const renameAiOption = el('rename-ai-option');
-  const renameAiModal = el('rename-ai-modal');
-  const closeRenameAi = el('close-rename-ai');
-  const cancelRenameAi = el('cancel-rename-ai');
-  const saveAiName = el('save-ai-name');
-  const aiNameInput = el('ai-name-input');
-  
-  if (renameAiOption) {
-    renameAiOption.addEventListener('click', () => {
-      const currentName = aiNameInput.value;
-      renameAiModal.classList.remove('hidden');
-    });
-  }
-  
-  if (closeRenameAi) {
-    closeRenameAi.addEventListener('click', () => {
-      renameAiModal.classList.add('hidden');
-    });
-  }
-  
-  if (cancelRenameAi) {
-    cancelRenameAi.addEventListener('click', () => {
-      renameAiModal.classList.add('hidden');
-    });
-  }
-  
-  if (saveAiName) {
-    saveAiName.addEventListener('click', async () => {
-      const newName = aiNameInput.value.trim();
-      
-      if (!newName) {
-        uiModule.showError('Please enter a name for the AI');
-        return;
-      }
-      
-      try {
-        const response = await fetch(`${API_BASE}/api/ai/name`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ name: newName })
-        });
-        
-        const result = await response.json();
-        if (result.success) {
-          uiModule.showToast(`AI renamed to ${newName}`);
-          renameAiModal.classList.add('hidden');
-          aiNameInput.value = '';
-        }
-      } catch (e) {
-        uiModule.showError('Failed to rename AI: ' + e.message);
-      }
-    });
-  }
 
   // Memory management
   const memoryModal = el('memory-modal');
