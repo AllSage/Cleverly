@@ -57,8 +57,8 @@ window.addEventListener('pageshow', clearFreshComposerRestore);
           el.style.display = 'none';
         });
       };
-      // Document editor — overflow menu button + the docs panel rail/tool button.
-      hideOn('#overflow-doc-btn, #tool-doc-btn', privs.can_use_documents);
+      // Document editor — overflow menu button + active-doc chat indicator.
+      hideOn('#overflow-doc-btn, #doc-indicator-btn', privs.can_use_documents);
       // Research — sidebar tool + the in-input deep-research toggle.
       hideOn('#tool-research-btn, #research-toggle-btn', privs.can_use_research);
       // Memory & skills (rail/tool button only — UI/API entry).

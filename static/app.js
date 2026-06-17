@@ -641,8 +641,8 @@ function initializeEventListeners() {
     // Reset active tool indicators, but don't touch research state here.
     if (typeof updatePlusDot === 'function') updatePlusDot();
     // Reset agent mode to Chat
-    const modeToggle = el('agent-mode-toggle');
-    if (modeToggle && modeToggle.checked) { modeToggle.checked = false; modeToggle.dispatchEvent(new Event('change')); }
+    const chatModeBtn = el('mode-chat-btn');
+    if (chatModeBtn && !chatModeBtn.classList.contains('active')) chatModeBtn.click();
     // Clear character/persona
     if (presetsModule && presetsModule.deactivateCharacter) presetsModule.deactivateCharacter();
   }
@@ -673,18 +673,13 @@ function initializeEventListeners() {
     document.dispatchEvent(new CustomEvent('overflow-state-change'));
   }
 
-  /** Sync Group Chat indicator button + overflow. */
+  /** Sync Group Chat indicator button. */
   function _syncGroupIndicator(active) {
     const btn = el('group-toggle-btn');
-    const overflow = el('overflow-group-btn');
     const chk = el('group-toggle');
     if (btn) {
       btn.style.display = active ? '' : 'none';
       btn.classList.toggle('active', active);
-    }
-    if (overflow) {
-      overflow.classList.toggle('active', active);
-      overflow.style.display = active ? 'none' : '';
     }
     if (chk) chk.checked = active;
     // Hide/show model picker
@@ -1163,13 +1158,15 @@ function initializeEventListeners() {
         // Hide agent mode toggle
         if (!p.can_use_agent) {
           const modeToggle = document.getElementById('mode-toggle');
-          if (modeToggle) modeToggle.closest('.chat-input-toggle')?.style.setProperty('display', 'none');
+          if (modeToggle) modeToggle.style.display = 'none';
+          const chatBtn = document.getElementById('mode-chat-btn');
+          if (chatBtn && !chatBtn.classList.contains('active')) chatBtn.click();
         }
         // Hide bash toggle
         if (!p.can_use_bash) {
           const bashToggle = document.getElementById('bash-toggle');
-          if (bashToggle) bashToggle.closest('.chat-input-toggle')?.style.setProperty('display', 'none');
-          const bashBtn = document.getElementById('tool-bash-btn');
+          if (bashToggle) bashToggle.checked = false;
+          const bashBtn = document.getElementById('bash-toggle-btn');
           if (bashBtn) bashBtn.style.display = 'none';
         }
         // Hide document button
@@ -1183,11 +1180,6 @@ function initializeEventListeners() {
         if (!p.can_use_research) {
           const resBtn = document.getElementById('research-toggle-btn');
           if (resBtn) resBtn.style.display = 'none';
-        }
-        // Hide image generation options
-        if (!p.can_generate_images) {
-          const imgBtn = document.getElementById('tool-image-btn');
-          if (imgBtn) imgBtn.style.display = 'none';
         }
       }
     })
@@ -2189,42 +2181,6 @@ function initializeEventListeners() {
   if (ragIndicatorBtn) {
     ragIndicatorBtn.addEventListener('click', () => {
       _syncRagIndicator(false);
-    });
-  }
-
-  // ── Overflow Group Chat toggle ──
-  const overflowGroupBtn = el('overflow-group-btn');
-  if (overflowGroupBtn) {
-    overflowGroupBtn.addEventListener('click', async () => {
-      const chk = el('group-toggle');
-      const turningOn = chk ? !chk.checked : false;
-      if (turningOn) {
-        const picked = await groupModule.showModelPicker();
-        if (!picked || picked.length < 2) return;
-        groupModule.setActive(true);  // Set early so updateModelPicker sees it
-        _syncGroupIndicator(true);
-        _startFreshChat();
-        // Clear any leftover splash screens
-        const _chatBox = document.getElementById('chat-history');
-        if (_chatBox) {
-          _chatBox.querySelectorAll('.tool-splash').forEach(s => s.remove());
-          // Also hide welcome screen
-          if (chatModule && chatModule.hideWelcomeScreen) chatModule.hideWelcomeScreen();
-        }
-        // Start group — create participant sessions immediately
-        const sid = sessionModule.getCurrentSessionId() || 'group-' + Date.now();
-        await groupModule.startGroup(picked, sid);
-        // Re-hide picker after everything settles
-        const _mpw = el('model-picker-wrap');
-        if (_mpw) _mpw.style.display = 'none';
-        uiModule.showToast(`Group chat ready — ${picked.length} models`);
-      } else {
-        _syncGroupIndicator(false);
-        groupModule.stopGroup();
-        // Restore model picker
-        const _mpWrap2 = el('model-picker-wrap');
-        if (_mpWrap2) _mpWrap2.style.display = '';
-      }
     });
   }
 

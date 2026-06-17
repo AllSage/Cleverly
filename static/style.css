@@ -26215,8 +26215,7 @@ button .spinner-whirlpool {
 .msg-group .role {
   font-weight: 600;
 }
-#group-toggle-btn.active,
-.overflow-menu-item#overflow-group-btn.active {
+#group-toggle-btn.active {
   color: var(--red);
   background: color-mix(in srgb, var(--red) 12%, transparent);
 }

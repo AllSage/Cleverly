@@ -201,3 +201,31 @@ def test_ui_control_panel_launchers_use_current_feature_entry_points():
     assert 'data-memory-tab="' in chat_stream_js
     assert "user-bar-settings" in chat_stream_js
     assert "settings.js" in chat_stream_js
+
+
+def test_chat_bar_uses_current_controls_for_docs_group_and_privileges():
+    _, _, soup = _frontend_sources()
+    checked = {
+        "static/app.js": (ROOT / "static" / "app.js").read_text(encoding="utf-8"),
+        "static/js/init.js": (ROOT / "static" / "js" / "init.js").read_text(encoding="utf-8"),
+        "static/style.css": (ROOT / "static" / "style.css").read_text(encoding="utf-8"),
+    }
+    stale_ids = {
+        "agent-mode-toggle",
+        "overflow-group-btn",
+        "tool-bash-btn",
+        "tool-doc-btn",
+        "tool-image-btn",
+    }
+
+    assert soup.find(id="doc-indicator-btn") is not None
+
+    leftovers = [
+        f"{path}:{stale_id}"
+        for path, text in checked.items()
+        for stale_id in stale_ids
+        if stale_id in text
+    ]
+    assert leftovers == []
+    assert "bash-toggle-btn" in checked["static/app.js"]
+    assert "mode-chat-btn" in checked["static/app.js"]
