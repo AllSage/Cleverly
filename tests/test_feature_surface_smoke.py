@@ -13,6 +13,30 @@ def _frontend_sources() -> tuple[str, str, BeautifulSoup]:
     return html, app_js, BeautifulSoup(html, "html.parser")
 
 
+def test_static_html_references_only_existing_local_assets():
+    missing_assets = []
+    external_assets = []
+
+    for html_path in sorted((ROOT / "static").glob("*.html")):
+        soup = BeautifulSoup(html_path.read_text(encoding="utf-8", errors="ignore"), "html.parser")
+        for tag_name, attr_name in (("script", "src"), ("link", "href"), ("img", "src"), ("source", "src")):
+            for tag in soup.find_all(tag_name):
+                value = tag.get(attr_name)
+                if not value:
+                    continue
+                if value.startswith(("http://", "https://", "//")):
+                    external_assets.append(f"{html_path.relative_to(ROOT)}:{tag_name}[{attr_name}]={value}")
+                    continue
+                if not value.startswith("/static/"):
+                    continue
+                asset_path = ROOT / value.lstrip("/").split("?", 1)[0].split("#", 1)[0]
+                if not asset_path.exists():
+                    missing_assets.append(f"{html_path.relative_to(ROOT)}:{tag_name}[{attr_name}]={value}")
+
+    assert external_assets == []
+    assert missing_assets == []
+
+
 def test_visible_feature_launchers_are_wired():
     _, app_js, soup = _frontend_sources()
     ids = {tag["id"] for tag in soup.find_all(id=True)}
