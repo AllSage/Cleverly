@@ -1067,6 +1067,8 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     index_html = Path("static/index.html").read_text(encoding="utf-8")
     compare_selector = Path("static/js/compare/selector.js").read_text(encoding="utf-8")
+    research_panel = Path("static/js/research/panel.js").read_text(encoding="utf-8")
+    document_library = Path("static/js/documentLibrary.js").read_text(encoding="utf-8")
     chat_js = Path("static/js/chat.js").read_text(encoding="utf-8")
     inbox_js = Path("static/js/emailInbox.js").read_text(encoding="utf-8")
     settings_js = Path("static/js/settings.js").read_text(encoding="utf-8")
@@ -1097,6 +1099,10 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     assert "networkNotificationsEnabled" in settings_js
     assert "_features.web_search !== false" in compare_selector
     assert "_features.deep_research !== false" in compare_selector
+    assert "featureReady.then(_startJobsIfEnabled)" in research_panel
+    assert "window._cleverlyFeatures.deep_research !== false" in research_panel
+    assert "modal.querySelector('[data-doclib-tab=\"research\"]')?.remove()" in document_library
+    assert "Deep Research is disabled in offline mode." in document_library
 
 
 def test_response_complete_notifications_are_browser_local_opt_in():

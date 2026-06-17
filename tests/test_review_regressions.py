@@ -44,6 +44,9 @@ class _FakeQuery:
     def first(self):
         return self.rows[0] if self.rows else None
 
+    def all(self):
+        return list(self.rows)
+
 
 class _FakeDb:
     def __init__(self, rows):
@@ -215,6 +218,34 @@ def test_default_chat_uses_owned_endpoint_as_regular_user_last_resort(monkeypatc
         "endpoint_url": "http://localhost:11434/chat/completions",
         "model": "owned-model",
     }
+
+
+def test_models_allows_auth_disabled_direct_loopback_only(monkeypatch):
+    _install_model_route_import_stubs(monkeypatch)
+    import routes.model_routes as model_routes
+
+    router = model_routes.setup_model_routes(model_discovery=None)
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if getattr(route, "path", "") == "/api/models"
+    )
+    auth = SimpleNamespace(is_configured=True, is_admin=lambda user: False)
+    request = SimpleNamespace(
+        state=SimpleNamespace(current_user=None),
+        app=SimpleNamespace(state=SimpleNamespace(auth_manager=auth)),
+        client=SimpleNamespace(host="127.0.0.1"),
+        headers={},
+    )
+
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+
+    assert endpoint(request) == {"hosts": [], "items": []}
+
+    request.headers = {"x-forwarded-for": "198.51.100.20"}
+    with pytest.raises(Exception) as denied:
+        endpoint(request)
+    assert getattr(denied.value, "status_code", None) == 401
 
 
 def test_preset_manager_persists_inject_fields(tmp_path):

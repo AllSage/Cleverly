@@ -18,7 +18,7 @@ from src.llm_core import _detect_provider, ANTHROPIC_MODELS
 from src.offline_policy import is_local_model_url
 from src.settings import load_settings as _load_settings, save_settings as _save_settings, offline_mode
 from src.endpoint_resolver import normalize_base as _normalize_base, build_chat_url
-from src.auth_helpers import owner_filter
+from src.auth_helpers import owner_filter, require_user
 
 logger = logging.getLogger(__name__)
 
@@ -624,23 +624,10 @@ def setup_model_routes(model_discovery):
     def api_models(request: Request, refresh: bool = False):
         """Get available models — per-user (caller sees only their endpoints +
         legacy/shared null-owner rows). Cached per-user for 30s."""
-        # Require auth; "" is the unconfigured single-user mode, treated as
-        # "see everything" by _fetch_models.
-        try:
-            from src.auth_helpers import get_current_user as _gcu
-            owner = _gcu(request) or ""
-        except Exception:
-            owner = ""
-        # Reject anonymous in configured deployments — no leaking the model
-        # list to unauthenticated callers.
-        try:
-            auth_mgr = getattr(request.app.state, "auth_manager", None)
-            if not owner and auth_mgr is not None and getattr(auth_mgr, "is_configured", False):
-                raise HTTPException(401, "Not authenticated")
-        except HTTPException:
-            raise
-        except Exception:
-            pass
+        # require_user rejects anonymous configured callers. "" is the
+        # unconfigured/auth-disabled local mode, treated as "see everything"
+        # by _fetch_models.
+        owner = require_user(request) or ""
         # Admins see every endpoint (they manage the global pool); regular
         # users get the owner-scoped view.
         _is_admin = False

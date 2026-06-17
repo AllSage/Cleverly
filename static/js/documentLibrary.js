@@ -36,6 +36,10 @@ export function initLibrary(config) {
   _syncDocIndicator = config.syncDocIndicator;
 }
 
+function _deepResearchEnabled() {
+  return !window._cleverlyFeatures || window._cleverlyFeatures.deep_research !== false;
+}
+
 // ── Library state ──
 let _libraryOpen = false;
 // Track which tabs have already played their domino-in cascade so we only
@@ -1670,6 +1674,11 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     `;
     document.body.appendChild(modal);
 
+    if (!_deepResearchEnabled()) {
+      modal.querySelector('[data-doclib-tab="research"]')?.remove();
+      modal.querySelector('[data-doclib-panel="research"]')?.remove();
+    }
+
     // Make modal draggable (same logic as other modals)
     {
       const content = modal.querySelector('.modal-content');
@@ -2236,7 +2245,9 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       Promise.all([
         fetch(API_BASE + '/api/sessions/archived?limit=100&sort=recent', { credentials: 'same-origin' }).then(r => r.json()).catch(() => ({})),
         fetch(API_BASE + '/api/documents/library?archived=true&limit=50', { credentials: 'same-origin' }).then(r => r.json()).catch(() => ({})),
-        fetch('/api/research/library?archived=true', { credentials: 'same-origin' }).then(r => r.json()).catch(() => ({})),
+        _deepResearchEnabled()
+          ? fetch('/api/research/library?archived=true', { credentials: 'same-origin' }).then(r => r.json()).catch(() => ({}))
+          : Promise.resolve({ research: [] }),
       ]).then(([s, d, r]) => {
         // These are all archived by definition — flag them so the expanded
         // chat preview hides its (redundant) "Archive" button.
@@ -2583,6 +2594,11 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       const grid = document.getElementById('doclib-research-grid');
       const stats = document.getElementById('doclib-research-stats');
       if (!grid) return;
+      if (!_deepResearchEnabled()) {
+        if (stats) stats.textContent = '';
+        grid.innerHTML = '<div class="doclib-empty">Deep Research is disabled in offline mode.</div>';
+        return;
+      }
       // Show our whirlpool spinner instead of the plain "Loading..." text.
       grid.innerHTML = '';
       try {

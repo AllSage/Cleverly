@@ -45,6 +45,14 @@ let _settingsCollapsed = false;
 const _SETTINGS_KEY = 'cleverly-research-settings';
 const _COLLAPSE_KEY = 'cleverly-research-settings-collapsed';
 
+function _deepResearchEnabled() {
+  return !window._cleverlyFeatures || window._cleverlyFeatures.deep_research !== false;
+}
+
+function _startJobsIfEnabled() {
+  if (_deepResearchEnabled()) jobs.init(_apiBase);
+}
+
 try { _settingsCollapsed = localStorage.getItem(_COLLAPSE_KEY) === '1'; } catch {}
 
 function _saveSettingsToStorage() {
@@ -192,9 +200,14 @@ export function init(apiBase, markdownMod, sessionMod) {
   _apiBase = apiBase;
   _markdownModule = markdownMod;
   _sessionModule = sessionMod;
-  jobs.init(apiBase);
   jobs.setRenderCallback(_renderJobs);
   jobs.onComplete(() => { if (!_open) _showBadge(); });
+  const featureReady = window._initFeaturesReady;
+  if (featureReady && typeof featureReady.then === 'function') {
+    featureReady.then(_startJobsIfEnabled).catch(_startJobsIfEnabled);
+  } else {
+    _startJobsIfEnabled();
+  }
 }
 
 export function isOpen() { return _open; }
