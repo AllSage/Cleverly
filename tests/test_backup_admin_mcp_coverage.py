@@ -92,7 +92,16 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
     saved_prefs = []
     monkeypatch.setattr(backup_routes, "require_admin", lambda request: None)
     monkeypatch.setattr(backup_routes, "get_current_user", lambda request: request.state.current_user)
-    monkeypatch.setattr(backup_routes, "load_settings", lambda: {"offline": True})
+    monkeypatch.setattr(
+        backup_routes,
+        "load_settings",
+        lambda: {
+            "offline": True,
+            "smtp_password": "smtp-secret",
+            "email_account": {"host": "imap.local", "smtp_password": "nested-secret"},
+            "providers": [{"name": "local", "api_key": "provider-secret"}],
+        },
+    )
     monkeypatch.setattr(backup_routes, "load_features", lambda: {"email": False})
     monkeypatch.setattr(backup_routes, "save_settings", lambda settings: saved_settings.append(settings))
     monkeypatch.setattr(backup_routes, "save_features", lambda features: saved_features.append(features))
@@ -156,6 +165,9 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
     exported_payload = json.loads(exported.body)
     assert exported_payload["exported_by"] == "alice"
     assert exported_payload["memories"][0]["owner"] == "alice"
+    assert exported_payload["settings"]["smtp_password"] == ""
+    assert exported_payload["settings"]["email_account"]["smtp_password"] == ""
+    assert exported_payload["settings"]["providers"][0]["api_key"] == ""
     assert exported.headers["content-disposition"].startswith("attachment; filename=cleverly_backup_")
 
     with pytest.raises(HTTPException) as invalid_json:
@@ -178,7 +190,12 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
                     "memories": [{"id": "new", "text": "New memory"}, {"id": "dup", "text": "existing"}, "bad"],
                     "skills": [{"id": "skill2", "title": "New Skill"}, {"id": "known", "title": "Known"}],
                     "presets": {"custom": {"name": "Imported"}, "list": [{"id": "x"}]},
-                    "settings": {"offline": False},
+                    "settings": {
+                        "offline": False,
+                        "smtp_password": "",
+                        "email_account": {"host": "imap2.local", "smtp_password": ""},
+                        "providers": [{"name": "local2", "api_key": ""}],
+                    },
                     "features": {"email": True},
                     "preferences": {"font": "mono"},
                 },
@@ -192,6 +209,9 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
     assert skills.saved[-1]["owner"] == "alice"
     assert presets.saved["custom"]["name"] == "Imported"
     assert saved_settings[-1]["offline"] is False
+    assert saved_settings[-1]["smtp_password"] == "smtp-secret"
+    assert saved_settings[-1]["email_account"] == {"host": "imap2.local", "smtp_password": "nested-secret"}
+    assert saved_settings[-1]["providers"] == [{"name": "local2", "api_key": "provider-secret"}]
     assert saved_features[-1]["email"] is True
     assert saved_prefs[-1] == ("alice", {"theme": "dark", "font": "mono"})
 
@@ -220,6 +240,10 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
     )
     encrypted_bundle = json.loads(encrypted_export.body)
     assert encrypted_bundle["format"] == "cleverly.encrypted-backup.v1"
+    encrypted_payload = json.loads(backup_routes.Fernet(fast_key).decrypt(encrypted_bundle["token"].encode("ascii")).decode("utf-8"))
+    assert encrypted_payload["settings"]["smtp_password"] == "smtp-secret"
+    assert encrypted_payload["settings"]["email_account"]["smtp_password"] == "nested-secret"
+    assert encrypted_payload["settings"]["providers"][0]["api_key"] == "provider-secret"
 
     dry_run = asyncio.run(
         _endpoint(router, "/api/backup/encrypted/import", "POST")(

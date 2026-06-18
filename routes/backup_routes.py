@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from core.middleware import require_admin
 from src.auth_helpers import get_current_user
 from src.settings import load_features, load_settings, save_features, save_settings
+from src.settings_scrub import is_secret_key, scrub_settings
 
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
@@ -63,11 +64,46 @@ def _summarize_backup_payload(payload: dict) -> dict:
     }
 
 
+def _strip_blank_secret_values(value):
+    if isinstance(value, dict):
+        cleaned = {}
+        for key, item in value.items():
+            if is_secret_key(str(key)) and isinstance(item, str) and item == "":
+                continue
+            cleaned[key] = _strip_blank_secret_values(item)
+        return cleaned
+    if isinstance(value, list):
+        return [_strip_blank_secret_values(item) for item in value]
+    return value
+
+
+def _merge_import_settings(current: dict, incoming: dict) -> dict:
+    def merge(existing, value):
+        value = _strip_blank_secret_values(value)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            merged = dict(existing)
+            for key, item in value.items():
+                merged[key] = merge(merged.get(key), item)
+            return merged
+        if isinstance(existing, list) and isinstance(value, list):
+            merged = list(existing)
+            for index, item in enumerate(value):
+                if index < len(merged):
+                    merged[index] = merge(merged[index], item)
+                else:
+                    merged.append(item)
+            return merged
+        return value
+
+    return merge(current or {}, incoming or {})
+
+
 def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRouter:
     router = APIRouter(tags=["backup"])
 
-    def _build_export_payload(user: str | None) -> dict:
+    def _build_export_payload(user: str | None, *, include_secrets: bool = False) -> dict:
         from routes.prefs_routes import _load_for_user
+        settings = load_settings()
 
         return {
             "version": 1,
@@ -76,7 +112,7 @@ def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRo
             "memories": memory_manager.load(owner=user),
             "presets": preset_manager.get_all(),
             "skills": skills_manager.load(owner=user),
-            "settings": load_settings(),
+            "settings": settings if include_secrets else scrub_settings(settings),
             "features": load_features(),
             "preferences": _load_for_user(user),
         }
@@ -134,8 +170,7 @@ def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRo
 
         if "settings" in body and isinstance(body["settings"], dict):
             current = load_settings()
-            current.update(body["settings"])
-            save_settings(current)
+            save_settings(_merge_import_settings(current, body["settings"]))
             imported.append("settings")
 
         if "features" in body and isinstance(body["features"], dict):
@@ -193,7 +228,7 @@ def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRo
         user = get_current_user(request)
         salt = os.urandom(16)
         key = _derive_backup_key(body.password, salt)
-        payload = _build_export_payload(user)
+        payload = _build_export_payload(user, include_secrets=True)
         token = Fernet(key).encrypt(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
         encrypted = {
             "format": "cleverly.encrypted-backup.v1",
