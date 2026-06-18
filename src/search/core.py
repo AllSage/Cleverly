@@ -39,9 +39,20 @@ from .content import (
     extract_quotes,
     extract_statistics,
 )
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
+
+
+def _web_search_disabled_message() -> str | None:
+    if offline_mode():
+        return "Web search is disabled in offline mode."
+    try:
+        if (load_features() or {}).get("web_search") is False:
+            return "Web search is disabled by feature settings."
+    except Exception:
+        return "Web search is disabled by feature settings."
+    return None
 
 # ========= CONFIG =========
 SEARCH_CONFIG: Dict[str, Any] = {
@@ -240,9 +251,9 @@ def comprehensive_web_search(
     logger.info(f"Starting comprehensive search for: {query}")
     if time_filter:
         logger.info(f"Applying time filter: {time_filter}")
-    if offline_mode():
-        logger.info("Search is disabled because offline mode is enabled")
-        msg = "Web search is disabled in offline mode."
+    msg = _web_search_disabled_message()
+    if msg:
+        logger.info("Search is disabled by offline mode or feature settings")
         return (msg, []) if return_sources else msg
 
     settings = _get_search_settings()

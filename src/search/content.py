@@ -22,9 +22,20 @@ from .cache import (
     generate_cache_key,
     cleanup_cache,
 )
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
+
+
+def _web_fetch_disabled_message() -> str | None:
+    if offline_mode():
+        return "Web fetch is disabled in offline mode"
+    try:
+        if (load_features() or {}).get("web_fetch") is False:
+            return "Web fetch is disabled by feature settings"
+    except Exception:
+        return "Web fetch is disabled by feature settings"
+    return None
 
 _PRIVATE_NETWORKS = (
     ipaddress.ip_network("0.0.0.0/8"),
@@ -234,9 +245,10 @@ def fetch_webpage_content(url: str, timeout: int = 5, retry_attempt: int = 0) ->
             cache_file.unlink(missing_ok=True)
             content_cache_index.pop(cache_key, None)
 
-    if offline_mode():
-        logger.info(f"Webpage fetch blocked by offline mode: {url}")
-        return _empty_result(url, "Web fetch is disabled in offline mode")
+    disabled_message = _web_fetch_disabled_message()
+    if disabled_message:
+        logger.info(f"Webpage fetch blocked by offline mode or feature settings: {url}")
+        return _empty_result(url, disabled_message)
 
     # Fetch
     try:

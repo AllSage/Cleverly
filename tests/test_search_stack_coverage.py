@@ -512,9 +512,25 @@ def test_search_core_and_content_block_network_in_offline_mode(prefix, tmp_path,
     content = _import(prefix, "content")
 
     monkeypatch.setattr(core, "offline_mode", lambda: True)
+    monkeypatch.setattr(core, "load_features", lambda: {"web_search": True})
     monkeypatch.setattr(core, "_call_provider", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
     assert core.comprehensive_web_search("local only", return_sources=True) == (
         "Web search is disabled in offline mode.",
+        [],
+    )
+    monkeypatch.setattr(core, "offline_mode", lambda: False)
+    monkeypatch.setattr(core, "load_features", lambda: {"web_search": False})
+    assert core.comprehensive_web_search("feature off", return_sources=True) == (
+        "Web search is disabled by feature settings.",
+        [],
+    )
+    monkeypatch.setattr(
+        core,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    assert core.comprehensive_web_search("settings fail", return_sources=True) == (
+        "Web search is disabled by feature settings.",
         [],
     )
 
@@ -522,6 +538,7 @@ def test_search_core_and_content_block_network_in_offline_mode(prefix, tmp_path,
     monkeypatch.setattr(content, "content_cache_index", {})
     monkeypatch.setattr(content, "cleanup_cache", lambda *args, **kwargs: None)
     monkeypatch.setattr(content, "offline_mode", lambda: True)
+    monkeypatch.setattr(content, "load_features", lambda: {"web_fetch": True})
     monkeypatch.setattr(content, "_get_public_url", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
 
     cached_url = "https://example.com/cached"
@@ -538,6 +555,20 @@ def test_search_core_and_content_block_network_in_offline_mode(prefix, tmp_path,
     blocked = content.fetch_webpage_content("https://example.com/miss")
     assert blocked["success"] is False
     assert blocked["error"] == "Web fetch is disabled in offline mode"
+
+    monkeypatch.setattr(content, "offline_mode", lambda: False)
+    monkeypatch.setattr(content, "load_features", lambda: {"web_fetch": False})
+    blocked_feature = content.fetch_webpage_content("https://example.com/miss-feature")
+    assert blocked_feature["success"] is False
+    assert blocked_feature["error"] == "Web fetch is disabled by feature settings"
+    monkeypatch.setattr(
+        content,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    blocked_failure = content.fetch_webpage_content("https://example.com/miss-failure")
+    assert blocked_failure["success"] is False
+    assert blocked_failure["error"] == "Web fetch is disabled by feature settings"
 
 
 @pytest.mark.parametrize("prefix", SEARCH_MODULE_PREFIXES)

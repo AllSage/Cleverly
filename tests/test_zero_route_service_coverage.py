@@ -86,6 +86,7 @@ def test_search_routes_request_formats_provider_listing_and_errors(monkeypatch):
     monkeypatch.setattr(search_routes, "_get_provider_key", lambda provider: "secret" if provider == "keyed" else "")
     monkeypatch.setattr(search_routes, "_get_search_instance", lambda: None)
     monkeypatch.setattr(search_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(search_routes, "load_features", lambda: {"web_search": True})
     monkeypatch.setattr(search_routes.time, "time", lambda: 100.0)
 
     router = search_routes.setup_search_routes(config=None)
@@ -119,6 +120,19 @@ def test_search_routes_request_formats_provider_listing_and_errors(monkeypatch):
     blocked_query = asyncio.run(_endpoint(router, "/api/search/query")(RequestLike(json_body={"query": "x", "provider": "duck"})))
     assert blocked_query == {"results": [], "provider": "duck", "error": "Web search is disabled in offline mode"}
     monkeypatch.setattr(search_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(search_routes, "load_features", lambda: {"web_search": False})
+    feature_blocked = asyncio.run(_endpoint(router, "/api/search")(RequestLike(json_body={"query": "x"})))
+    assert feature_blocked == {"context": "", "sources": [], "error": "Web search is disabled by feature settings"}
+    feature_blocked_query = asyncio.run(_endpoint(router, "/api/search/query")(RequestLike(json_body={"query": "x", "provider": "duck"})))
+    assert feature_blocked_query == {"results": [], "provider": "duck", "error": "Web search is disabled by feature settings"}
+    monkeypatch.setattr(
+        search_routes,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    failed_feature_blocked = asyncio.run(_endpoint(router, "/api/search")(RequestLike(json_body={"query": "x"})))
+    assert failed_feature_blocked == {"context": "", "sources": [], "error": "Web search is disabled by feature settings"}
+    monkeypatch.setattr(search_routes, "load_features", lambda: {"web_search": True})
 
     assert asyncio.run(_endpoint(router, "/api/search/query")(RequestLike(json_body={"provider": "duck"}))) == {
         "results": [],
