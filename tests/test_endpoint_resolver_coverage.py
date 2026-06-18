@@ -223,6 +223,52 @@ def test_resolve_endpoint_uses_default_for_unset_utility(monkeypatch):
     assert db.closed is True
 
 
+def test_resolve_endpoint_skips_remote_when_offline_or_feature_disabled(monkeypatch):
+    install_settings(monkeypatch, {"default_endpoint_id": "ep1", "default_model": "remote-model"})
+    install_db(monkeypatch, FakeEndpoint(base_url="https://api.openai.test/v1", models=["remote-model"]))
+    monkeypatch.setattr(resolver, "offline_mode", lambda: True)
+    monkeypatch.setattr(resolver, "load_features", lambda: {"external_model_endpoints": True})
+    monkeypatch.setattr(
+        resolver,
+        "build_chat_url",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("blocked endpoints should not be resolved")),
+    )
+
+    assert resolver.resolve_endpoint("default", "http://fallback", "fallback", {"H": "1"}) == (
+        "http://fallback",
+        "fallback",
+        {"H": "1"},
+    )
+
+    monkeypatch.setattr(resolver, "offline_mode", lambda: False)
+    monkeypatch.setattr(resolver, "load_features", lambda: {"external_model_endpoints": False})
+    assert resolver.resolve_endpoint("default", "http://fallback", "fallback", {"H": "1"}) == (
+        "http://fallback",
+        "fallback",
+        {"H": "1"},
+    )
+
+    monkeypatch.setattr(resolver, "load_features", lambda: (_ for _ in ()).throw(RuntimeError("settings down")))
+    assert resolver.resolve_endpoint("default", "http://fallback", "fallback", {"H": "1"}) == (
+        "http://fallback",
+        "fallback",
+        {"H": "1"},
+    )
+
+
+def test_resolve_endpoint_allows_local_endpoint_when_offline(monkeypatch):
+    install_settings(monkeypatch, {"default_endpoint_id": "ep1", "default_model": "local-model"})
+    install_db(monkeypatch, FakeEndpoint(base_url="http://ollama:11434/v1", api_key="", models=["local-model"]))
+    monkeypatch.setattr(resolver, "offline_mode", lambda: True)
+    monkeypatch.setattr(resolver, "load_features", lambda: {"external_model_endpoints": False})
+
+    assert resolver.resolve_endpoint("default") == (
+        "http://ollama:11434/v1/chat/completions",
+        "local-model",
+        {},
+    )
+
+
 def test_resolve_endpoint_falls_back_to_utility_then_default(monkeypatch):
     install_settings(
         monkeypatch,
@@ -335,6 +381,14 @@ def test_resolve_endpoint_by_id_variants(monkeypatch):
 
     install_db(monkeypatch, FakeEndpoint(), raises=True)
     assert resolver.resolve_endpoint_by_id("ep1") is None
+
+
+def test_resolve_endpoint_by_id_skips_remote_when_feature_disabled(monkeypatch):
+    install_db(monkeypatch, FakeEndpoint(base_url="https://api.openai.test/v1", models=["remote-model"]))
+    monkeypatch.setattr(resolver, "offline_mode", lambda: False)
+    monkeypatch.setattr(resolver, "load_features", lambda: {"external_model_endpoints": False})
+
+    assert resolver.resolve_endpoint_by_id("ep1", "remote-model") is None
 
 
 def test_fallback_candidate_helpers(monkeypatch):

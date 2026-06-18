@@ -13,7 +13,8 @@ from urllib.parse import urlparse, urlunparse
 
 from src.database import SessionLocal, ModelEndpoint
 from src.llm_core import _detect_provider
-from src.settings import offline_mode
+from src.offline_policy import is_local_model_url
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,18 @@ def _first_chat_model(models) -> Optional[str]:
         if not any(p in str(m).lower() for p in _NON_CHAT_MODEL):
             return m
     return (models[0] if models else None)
+
+
+def _external_endpoint_allowed(base_url: str) -> bool:
+    if is_local_model_url(base_url):
+        return True
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("external_model_endpoints") is not False
+    except Exception as exc:
+        logger.warning("Endpoint resolver feature check failed; blocking remote endpoint: %s", exc)
+        return False
 
 
 # Cache for Tailscale hostname → IP resolution
@@ -237,6 +250,8 @@ def resolve_endpoint(
             return fallback_url, fallback_model, fallback_headers
 
         base = normalize_base(ep.base_url)
+        if not _external_endpoint_allowed(base):
+            return fallback_url, fallback_model, fallback_headers
         chat_url = build_chat_url(base)
         headers = build_headers(ep.api_key, base)
 
@@ -281,6 +296,8 @@ def resolve_endpoint_by_id(
         if not ep:
             return None
         base = normalize_base(ep.base_url)
+        if not _external_endpoint_allowed(base):
+            return None
         chat_url = build_chat_url(base)
         headers = build_headers(ep.api_key, base)
         m = (model or "").strip()
