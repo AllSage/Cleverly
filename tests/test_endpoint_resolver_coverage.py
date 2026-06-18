@@ -296,6 +296,21 @@ def test_resolve_endpoint_by_id_variants(monkeypatch):
         {"Authorization": "Bearer key"},
     )
 
+    import src.auth_helpers as auth_helpers
+
+    owner_calls = []
+
+    def owner_filter(query, model, owner):
+        owner_calls.append((model, owner))
+        return query
+
+    monkeypatch.setattr(auth_helpers, "owner_filter", owner_filter)
+    assert resolver.resolve_endpoint_by_id("ep1", owner="alice")[1] == "chat-model"
+    assert owner_calls[-1] == (FakeEndpoint, "alice")
+
+    monkeypatch.setattr(auth_helpers, "owner_filter", lambda query, model, owner: FakeQuery(None))
+    assert resolver.resolve_endpoint_by_id("ep1", owner="alice") is None
+
     install_db(monkeypatch, FakeEndpoint(models="{bad"))
     assert resolver.resolve_endpoint_by_id("ep1") is None
 
@@ -320,18 +335,18 @@ def test_fallback_candidate_helpers(monkeypatch):
     monkeypatch.setattr(
         resolver,
         "resolve_endpoint_by_id",
-        lambda endpoint_id, model=None: (f"http://{endpoint_id}", model, {}) if endpoint_id != "missing" else None,
+        lambda endpoint_id, model=None, owner=None: (f"http://{endpoint_id}:{owner or 'none'}", model, {}) if endpoint_id != "missing" else None,
     )
 
-    assert resolver.resolve_chat_fallback_candidates() == [("http://a", "m-a", {})]
-    assert resolver.resolve_utility_fallback_candidates(owner="alice") == [("http://a", "m-a", {})]
-    assert resolver.resolve_vision_fallback_candidates() == [("http://v", "m-v", {})]
+    assert resolver.resolve_chat_fallback_candidates() == [("http://a:none", "m-a", {})]
+    assert resolver.resolve_utility_fallback_candidates(owner="alice") == [("http://a:alice", "m-a", {})]
+    assert resolver.resolve_vision_fallback_candidates() == [("http://v:none", "m-v", {})]
 
     install_settings(
         monkeypatch,
         {"utility_endpoint_id": "u-primary", "utility_model_fallbacks": [{"endpoint_id": "u", "model": "m-u"}]},
     )
-    assert resolver.resolve_utility_fallback_candidates() == [("http://u", "m-u", {})]
+    assert resolver.resolve_utility_fallback_candidates() == [("http://u:none", "m-u", {})]
 
 
 def test_fallback_candidates_return_empty_when_settings_fail(monkeypatch):

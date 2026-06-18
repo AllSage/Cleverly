@@ -254,7 +254,7 @@ def resolve_endpoint(
 
 
 def resolve_endpoint_by_id(
-    ep_id: str, model: Optional[str] = None
+    ep_id: str, model: Optional[str] = None, owner: Optional[str] = None
 ) -> Optional[Tuple[str, str, Dict]]:
     """Resolve a specific endpoint id (+ optional model) to (chat_url, model, headers).
 
@@ -268,7 +268,12 @@ def resolve_endpoint_by_id(
         ep = db.query(ModelEndpoint).filter(
             ModelEndpoint.id == ep_id,
             ModelEndpoint.is_enabled == True,
-        ).first()
+        )
+        if owner:
+            from src.auth_helpers import owner_filter
+            ep = owner_filter(ep, ModelEndpoint, owner).first()
+        else:
+            ep = ep.first()
         if not ep:
             return None
         base = normalize_base(ep.base_url)
@@ -330,7 +335,7 @@ def _resolve_fallback_candidates(setting_key: str, owner: Optional[str] = None) 
     for entry in chain:
         if not isinstance(entry, dict):
             continue
-        resolved = resolve_endpoint_by_id(entry.get("endpoint_id", ""), entry.get("model", ""))
+        resolved = resolve_endpoint_by_id(entry.get("endpoint_id", ""), entry.get("model", ""), owner=owner)
         if resolved:
             out.append(resolved)
     return out
