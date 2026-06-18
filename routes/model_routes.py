@@ -28,6 +28,9 @@ def _offline_endpoint_allowed(base_url: str) -> bool:
     return is_local_model_url(base_url)
 
 
+_OFFLINE_EXTERNAL_PROBE_ERROR = "External endpoint probes are disabled in offline mode"
+
+
 def _anthropic_api_root(base: str) -> str:
     """Return Anthropic's API root without duplicating /v1."""
     base = (base or "").strip().rstrip("/")
@@ -729,6 +732,13 @@ def setup_model_routes(model_discovery):
                 "provider": provider,
                 "category": _classify_endpoint(base),
             }
+            if offline_mode() and not _offline_endpoint_allowed(base):
+                entry["latency_ms"] = None
+                entry["status"] = "offline"
+                entry["error"] = _OFFLINE_EXTERNAL_PROBE_ERROR
+                entry["model_count"] = 0
+                results.append(entry)
+                continue
             if provider == "anthropic":
                 # Anthropic has no /models endpoint; just check connectivity
                 try:
@@ -805,6 +815,14 @@ def setup_model_routes(model_discovery):
                         continue
 
                 base = _normalize_base(ep_data["base_url"])
+                if offline_mode() and not _offline_endpoint_allowed(base):
+                    results.append({
+                        "model": model_id,
+                        "endpoint_id": ep_id,
+                        "status": "fail",
+                        "error": _OFFLINE_EXTERNAL_PROBE_ERROR,
+                    })
+                    continue
                 _with_tools = item.get("with_tools", False)
                 result = _probe_single_model(base, ep_data.get("api_key"), model_id, timeout=8, with_tools=_with_tools)
                 result["model"] = model_id
@@ -847,6 +865,9 @@ def setup_model_routes(model_discovery):
             ok_count = 0
             for ep in ep_data:
                 base = _normalize_base(ep["base_url"])
+                if offline_mode() and not _offline_endpoint_allowed(base):
+                    yield f"data: {json.dumps({'type': 'probe_start', 'endpoint': ep['name'], 'model_count': 0, 'error': _OFFLINE_EXTERNAL_PROBE_ERROR})}\n\n"
+                    continue
                 all_models = _probe_endpoint(base, ep.get("api_key"))
                 # Update cached_models in DB
                 if all_models:
@@ -935,9 +956,12 @@ def setup_model_routes(model_discovery):
                 status = "online" if all_models else "offline"
                 ping = None
                 if not all_models and r.is_enabled:
-                    ping = _ping_endpoint(r.base_url, r.api_key, timeout=1.0)
-                    if ping.get("reachable"):
-                        status = "empty"
+                    if offline_mode() and not _offline_endpoint_allowed(r.base_url):
+                        ping = {"reachable": False, "error": _OFFLINE_EXTERNAL_PROBE_ERROR}
+                    else:
+                        ping = _ping_endpoint(r.base_url, r.api_key, timeout=1.0)
+                        if ping.get("reachable"):
+                            status = "empty"
                 results.append({
                     "id": r.id,
                     "name": r.name,
@@ -1120,6 +1144,8 @@ def setup_model_routes(model_discovery):
             db.close()
 
         base = _normalize_base(ep_data["base_url"])
+        if offline_mode() and not _offline_endpoint_allowed(base):
+            raise HTTPException(403, _OFFLINE_EXTERNAL_PROBE_ERROR)
         all_models = _probe_endpoint(base, ep_data["api_key"])
         chat_models = [m for m in all_models if _is_chat_model(m)]
         skipped = len(all_models) - len(chat_models)
@@ -1170,8 +1196,12 @@ def setup_model_routes(model_discovery):
                     hidden = set(json.loads(ep.hidden_models))
                 except Exception:
                     pass
-            # Try live probe, fall back to cached
-            all_models = _probe_endpoint(ep.base_url, ep.api_key, timeout=3)
+            # Try live probe, fall back to cached. Offline mode must not
+            # contact external endpoints; cached metadata is still safe to show.
+            if offline_mode() and not _offline_endpoint_allowed(ep.base_url):
+                all_models = []
+            else:
+                all_models = _probe_endpoint(ep.base_url, ep.api_key, timeout=3)
             if all_models:
                 ep.cached_models = json.dumps(all_models)
                 db.commit()

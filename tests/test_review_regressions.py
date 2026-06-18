@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import HTTPException
 
 from src.preset_manager import PresetManager
 
@@ -24,6 +25,7 @@ class _FakeModelEndpoint:
     id = _FakeColumn("id")
     is_enabled = _FakeColumn("is_enabled")
     owner = _FakeColumn("owner")
+    created_at = _FakeColumn("created_at")
 
 
 class _FakeDbSession:
@@ -46,6 +48,9 @@ class _FakeQuery:
 
     def all(self):
         return list(self.rows)
+
+    def order_by(self, *_args):
+        return self
 
 
 class _FakeDb:
@@ -246,6 +251,73 @@ def test_models_allows_auth_disabled_direct_loopback_only(monkeypatch):
     with pytest.raises(Exception) as denied:
         endpoint(request)
     assert getattr(denied.value, "status_code", None) == 401
+
+
+def test_offline_mode_blocks_external_model_probe_network_calls(monkeypatch):
+    _install_model_route_import_stubs(monkeypatch)
+    import routes.model_routes as model_routes
+
+    external_ep = SimpleNamespace(
+        id="cloud",
+        name="Cloud",
+        base_url="https://api.openai.com/v1",
+        api_key="secret",
+        is_enabled=True,
+        cached_models='["cached-model"]',
+        hidden_models=None,
+        model_type="llm",
+        supports_tools=None,
+    )
+
+    monkeypatch.setattr(model_routes, "SessionLocal", lambda: _FakeDb([external_ep]))
+    monkeypatch.setattr(model_routes, "offline_mode", lambda: True)
+
+    def fail_network(*_args, **_kwargs):
+        raise AssertionError("external network should not be touched in offline mode")
+
+    monkeypatch.setattr(model_routes.httpx, "get", fail_network)
+    monkeypatch.setattr(model_routes, "_probe_single_model", fail_network)
+    monkeypatch.setattr(model_routes, "_probe_endpoint", fail_network)
+    monkeypatch.setattr(model_routes, "_ping_endpoint", fail_network)
+
+    router = model_routes.setup_model_routes(model_discovery=None)
+    endpoints = {
+        (getattr(route, "path", ""), next(iter(getattr(route, "methods", {"GET"})))): route.endpoint
+        for route in router.routes
+    }
+    request = SimpleNamespace()
+
+    ping = endpoints[("/api/ping", "GET")](request)
+    assert ping["endpoints"][0]["status"] == "offline"
+    assert ping["endpoints"][0]["error"] == model_routes._OFFLINE_EXTERNAL_PROBE_ERROR
+
+    listed_endpoints = endpoints[("/api/model-endpoints", "GET")](request)
+    assert listed_endpoints[0]["status"] == "online"
+    assert listed_endpoints[0]["ping_error"] is None
+
+    external_ep.cached_models = None
+    listed_uncached = endpoints[("/api/model-endpoints", "GET")](request)
+    assert listed_uncached[0]["status"] == "offline"
+    assert listed_uncached[0]["ping_error"] == model_routes._OFFLINE_EXTERNAL_PROBE_ERROR
+    external_ep.cached_models = '["cached-model"]'
+
+    selected = endpoints[("/api/probe-selected", "POST")](
+        request,
+        {"models": [{"endpoint_id": "cloud", "model": "gpt-4o"}]},
+    )
+    assert selected["results"] == [{
+        "model": "gpt-4o",
+        "endpoint_id": "cloud",
+        "status": "fail",
+        "error": model_routes._OFFLINE_EXTERNAL_PROBE_ERROR,
+    }]
+
+    with pytest.raises(HTTPException) as blocked_probe:
+        endpoints[("/api/model-endpoints/{ep_id}/probe", "GET")]("cloud", request)
+    assert blocked_probe.value.status_code == 403
+
+    listed_models = endpoints[("/api/model-endpoints/{ep_id}/models", "GET")]("cloud", request)
+    assert listed_models == [{"id": "cached-model", "display": "cached-model", "is_hidden": False}]
 
 
 def test_preset_manager_persists_inject_fields(tmp_path):
