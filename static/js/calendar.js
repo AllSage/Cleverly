@@ -176,11 +176,18 @@ let _calendarsError = null;
 let _caldavSyncedOnce = false;
 async function _networkIntegrationsEnabled() {
   try {
-    const features = await Promise.resolve(window._initFeaturesReady || window._cleverlyFeatures || {});
-    return !features || features.network_integrations !== false;
+    if (window._initFeaturesReady) {
+      const features = await Promise.resolve(window._initFeaturesReady);
+      return !!features && features.network_integrations !== false;
+    }
+    if (window._cleverlyFeatures) return window._cleverlyFeatures.network_integrations !== false;
+    return false;
   } catch (e) {
-    return true;
+    return false;
   }
+}
+function _networkIntegrationsVisible() {
+  return !!window._cleverlyFeatures && window._cleverlyFeatures.network_integrations !== false;
 }
 async function _fetchCalendars() {
   _calendarsError = null;
@@ -208,6 +215,10 @@ async function _fetchCalendars() {
 // no-op silently if CalDAV isn't configured.
 async function _syncCaldav(interactive) {
   try {
+    if (!await _networkIntegrationsEnabled()) {
+      const disabled = { errors: ['CalDAV sync is disabled in offline mode.'] };
+      return interactive ? disabled : undefined;
+    }
     const res = await fetch(`${API_BASE}/api/calendar/sync`, {
       method: 'POST', credentials: 'same-origin',
     });
@@ -716,6 +727,7 @@ function _renderEmpty() {
   const body = document.getElementById('cal-body');
   if (!body) return;
   const hasError = !!_calendarsError;
+  const networkIntegrations = _networkIntegrationsVisible();
   body.innerHTML = `
     <div class="cal-empty-state">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.3">
@@ -725,7 +737,7 @@ function _renderEmpty() {
         <line x1="3" y1="10" x2="21" y2="10"/>
       </svg>
       <div class="cal-empty-title">${hasError ? 'Calendar unavailable' : 'No calendars yet'}</div>
-      <div class="cal-empty-msg">${hasError ? _e(_calendarsError) : 'Create a local calendar, import an .ics file, or sync via CalDAV.'}</div>
+      <div class="cal-empty-msg">${hasError ? _e(_calendarsError) : (networkIntegrations ? 'Create a local calendar, import an .ics file, or sync via CalDAV.' : 'Create a local calendar or import an .ics file.')}</div>
       ${hasError ? `
         <button class="cal-btn cal-btn-primary" id="cal-goto-settings">Open Settings</button>
       ` : `
@@ -733,7 +745,7 @@ function _renderEmpty() {
           <button class="cal-btn cal-btn-primary" id="cal-empty-new">New calendar</button>
           <button class="cal-btn" id="cal-empty-import">Import .ics</button>
         </div>
-        <div style="margin-top:10px;font-size:11px;opacity:0.55;">Or <a href="#" id="cal-empty-caldav" style="color:var(--accent, var(--red));text-decoration:none;font-weight:600;">set up CalDAV sync</a>.</div>
+        ${networkIntegrations ? '<div style="margin-top:10px;font-size:11px;opacity:0.55;">Or <a href="#" id="cal-empty-caldav" style="color:var(--accent, var(--red));text-decoration:none;font-weight:600;">set up CalDAV sync</a>.</div>' : ''}
       `}
     </div>`;
   document.getElementById('cal-goto-settings')?.addEventListener('click', () => {
@@ -808,7 +820,7 @@ function _headerHTML() {
         ).join('')}
       </div>
       <button class="cal-nav" id="cal-settings" title="Calendar settings" style="position:relative;top:-3px;"><svg width="13" height="13" style="position:relative;top:2px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
-      <button class="cal-nav${window._calSyncing ? ' cal-syncing' : ''}${window._calSyncDone ? ' cal-sync-done' : ''}" id="cal-sync" title="Refresh from database" style="position:relative;top:-3px;">${window._calSyncDone ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>'}</button>
+      ${_networkIntegrationsVisible() ? `<button class="cal-nav${window._calSyncing ? ' cal-syncing' : ''}${window._calSyncDone ? ' cal-sync-done' : ''}" id="cal-sync" title="Refresh from database" style="position:relative;top:-3px;">${window._calSyncDone ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>'}</button>` : ''}
       ${_filtersToggleHTML()}
       <button class="cal-add-btn cal-add-btn-text" id="cal-add" title="New event"><span class="cal-add-plus">+</span><span class="cal-add-label">New</span></button>
     </div>
@@ -2365,6 +2377,7 @@ async function _showCalSettings() {
 
   const cals = _calendars;
   const COLORS = ['#5b8abf','#4caf50','#ff9800','#e91e63','#9c27b0','#00bcd4','#795548','#607d8b','#f44336','#7c4dff'];
+  const networkIntegrations = _networkIntegrationsVisible();
 
   const overlay = document.createElement('div');
   overlay.id = 'cal-settings-panel';
@@ -2418,7 +2431,7 @@ async function _showCalSettings() {
           </div>
           <div style="font-size:10px;opacity:0.4;margin-top:4px;">Download a calendar as .ics for backup or to import into another app.</div>
         </div>
-        <div style="border-top:1px solid var(--border);padding-top:12px;">
+        <div data-calendar-network-sync="1" style="${networkIntegrations ? 'border-top:1px solid var(--border);padding-top:12px;' : 'display:none;'}">
           <div style="font-size:11px;opacity:0.5;margin-bottom:6px;">Sync</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
             <button class="memory-toolbar-btn" id="cal-settings-sync-now" style="cursor:pointer;">

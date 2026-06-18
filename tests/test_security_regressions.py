@@ -1105,8 +1105,14 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     assert "modal.querySelector('[data-doclib-tab=\"research\"]')?.remove()" in document_library
     assert "Deep Research is disabled in offline mode." in document_library
     assert "async function _networkIntegrationsEnabled()" in calendar_js
-    assert "window._initFeaturesReady || window._cleverlyFeatures || {}" in calendar_js
+    assert "function _networkIntegrationsVisible()" in calendar_js
+    assert "const features = await Promise.resolve(window._initFeaturesReady)" in calendar_js
+    assert "if (window._cleverlyFeatures) return window._cleverlyFeatures.network_integrations !== false" in calendar_js
     assert "if (!_caldavSyncedOnce && _open && await _networkIntegrationsEnabled())" in calendar_js
+    assert "CalDAV sync is disabled in offline mode." in calendar_js
+    assert "data-calendar-network-sync=\"1\"" in calendar_js
+    assert "networkIntegrations ? '<div style=\"margin-top:10px" in calendar_js
+    assert "${_networkIntegrationsVisible() ? `<button class=\"cal-nav" in calendar_js
 
 
 def test_response_complete_notifications_are_browser_local_opt_in():
