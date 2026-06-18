@@ -530,6 +530,7 @@ def test_embedding_routes_models_download_delete_and_endpoint(monkeypatch, tmp_p
     httpx = types.ModuleType("httpx")
     httpx.post = lambda url, json=None, timeout=None: Response()
     monkeypatch.setitem(sys.modules, "httpx", httpx)
+    monkeypatch.setattr(embedding_routes, "load_features", lambda: {"external_model_endpoints": True})
     rag_singleton = types.ModuleType("src.rag_singleton")
     rag_singleton.rag_instance = "cached"
     rag_singleton._last_attempt = 10

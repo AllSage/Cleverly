@@ -22,9 +22,10 @@ EMBED_ENV_KEYS = [
 
 
 @pytest.fixture(autouse=True)
-def restore_embedding_state():
+def restore_embedding_state(monkeypatch):
     original = {key: os.environ.get(key) for key in EMBED_ENV_KEYS}
     original_down = emb._http_embed_down
+    monkeypatch.setattr(emb, "load_features", lambda: {"external_model_endpoints": True})
     yield
     for key, value in original.items():
         if value is None:
@@ -284,6 +285,37 @@ def test_get_embedding_client_http_failure_falls_back_and_latches(monkeypatch):
     monkeypatch.setattr(emb, "_load_persisted_endpoint", lambda: {})
     monkeypatch.setattr(emb, "EmbeddingClient", lambda: BadHttpClient())
     monkeypatch.setattr(emb, "FastEmbedClient", GoodFastEmbed)
+
+    client = emb.get_embedding_client()
+
+    assert isinstance(client, GoodFastEmbed)
+    assert client.probed is True
+    assert emb._http_embed_down is True
+
+
+def test_get_embedding_client_skips_remote_endpoint_when_feature_disabled(monkeypatch):
+    class BlockedHttpClient:
+        url = "https://remote.example/v1/embeddings"
+        model = "remote"
+
+        def get_sentence_embedding_dimension(self):
+            raise AssertionError("network")
+
+    class GoodFastEmbed:
+        model = "fast"
+
+        def __init__(self):
+            self.probed = False
+
+        def get_sentence_embedding_dimension(self):
+            self.probed = True
+            return 2
+
+    monkeypatch.setattr(emb, "_load_persisted_endpoint", lambda: {"url": "https://remote.example/v1/embeddings"})
+    monkeypatch.setattr(emb, "EmbeddingClient", lambda: BlockedHttpClient())
+    monkeypatch.setattr(emb, "FastEmbedClient", GoodFastEmbed)
+    monkeypatch.setattr(emb, "is_local_model_url", lambda url: False)
+    monkeypatch.setattr(emb, "load_features", lambda: {"external_model_endpoints": False})
 
     client = emb.get_embedding_client()
 

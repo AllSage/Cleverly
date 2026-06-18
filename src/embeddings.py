@@ -28,6 +28,8 @@ import logging
 import numpy as np
 import httpx
 from typing import List, Optional
+from src.offline_policy import is_local_model_url
+from src.settings import load_features
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +219,16 @@ def reset_http_embed_state():
     _http_embed_down = False
 
 
+def _external_embedding_endpoint_allowed(url: str) -> bool:
+    if is_local_model_url(url):
+        return True
+    try:
+        return (load_features() or {}).get("external_model_endpoints") is not False
+    except Exception as exc:
+        logger.warning("Embedding endpoint feature check failed; blocking remote endpoint: %s", exc)
+        return False
+
+
 def get_embedding_client():
     """Factory: try HTTP API first, fall back to local fastembed."""
     global _http_embed_down
@@ -247,6 +259,8 @@ def get_embedding_client():
     elif not _http_embed_down:
         try:
             client = EmbeddingClient()
+            if not _external_embedding_endpoint_allowed(client.url):
+                raise RuntimeError("External embedding endpoints are disabled")
             client.get_sentence_embedding_dimension()  # health check
             logger.info(f"Using HTTP embedding API: {client.url} model={client.model}")
             return client

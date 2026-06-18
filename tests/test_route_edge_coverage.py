@@ -157,10 +157,16 @@ def test_embedding_routes_remaining_error_reset_and_cache_paths(monkeypatch, tmp
     assert empty_url.value.status_code == 400
     monkeypatch.setattr(embedding_routes, "offline_mode", lambda: True)
     monkeypatch.setattr(embedding_routes, "is_local_model_url", lambda _url: False)
+    monkeypatch.setattr(embedding_routes, "load_features", lambda: {"external_model_endpoints": True})
     with pytest.raises(HTTPException) as offline_endpoint:
         _endpoint(router, "/api/embeddings/endpoint", "POST")("https://remote.example/embed")
     assert offline_endpoint.value.status_code == 403
     monkeypatch.setattr(embedding_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(embedding_routes, "load_features", lambda: {"external_model_endpoints": False})
+    with pytest.raises(HTTPException) as feature_disabled_endpoint:
+        _endpoint(router, "/api/embeddings/endpoint", "POST")("https://remote.example/embed")
+    assert feature_disabled_endpoint.value.status_code == 403
+    monkeypatch.setattr(embedding_routes, "load_features", lambda: {"external_model_endpoints": True})
 
     httpx_failed = types.ModuleType("httpx")
     httpx_failed.post = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("down"))

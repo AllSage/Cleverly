@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Form, Depends
 from core.constants import BASE_DIR
 from core.middleware import require_admin
 from src.offline_policy import is_local_model_url
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +97,18 @@ def _load_custom_endpoint() -> dict:
 def _save_custom_endpoint(data: dict):
     Path(_ENDPOINT_FILE).parent.mkdir(parents=True, exist_ok=True)
     Path(_ENDPOINT_FILE).write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _external_embedding_endpoint_allowed(url: str) -> bool:
+    if is_local_model_url(url):
+        return True
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("external_model_endpoints") is not False
+    except Exception as exc:
+        logger.warning("Embedding endpoint feature check failed; blocking remote endpoint: %s", exc)
+        return False
 
 
 def setup_embedding_routes():
@@ -246,8 +258,8 @@ def setup_embedding_routes():
         url = url.strip()
         if not url:
             raise HTTPException(400, "URL is required")
-        if offline_mode() and not is_local_model_url(url):
-            raise HTTPException(403, "External embedding endpoints are disabled in offline mode")
+        if not _external_embedding_endpoint_allowed(url):
+            raise HTTPException(403, "External embedding endpoints are disabled")
 
         # Quick health check
         try:
