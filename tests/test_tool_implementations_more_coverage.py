@@ -278,7 +278,16 @@ def test_manage_endpoints_mcp_webhooks_and_tokens(monkeypatch):
         token_prefix = Column()
 
     endpoint = ModelEndpoint(id="ep1", name="Local", base_url="http://localhost", is_enabled=False)
-    server = McpServer(id="srv1", name="Files", transport="stdio", is_enabled=True)
+    server = McpServer(
+        id="srv1",
+        name="Files",
+        transport="stdio",
+        command="python",
+        args='["-m","fileserver"]',
+        env='{"ACCOUNT":"demo"}',
+        url=None,
+        is_enabled=True,
+    )
     hook = Webhook(id="wh1", name="Hook", url="http://localhost/hook", events="chat.completed", is_active=True)
     token = ApiToken(id="tok1", name="Token", token_prefix="abcdef12", is_active=True)
     db = FakeDB({ModelEndpoint: [endpoint], McpServer: [server], Webhook: [hook], ApiToken: [token]})
@@ -322,7 +331,19 @@ def test_manage_endpoints_mcp_webhooks_and_tokens(monkeypatch):
     assert manager.connected
     assert "Deleted MCP server" in asyncio.run(tools.do_manage_mcp('{"action":"delete","server_id":"srv1"}'))["response"]
     assert "Reconnected" in asyncio.run(tools.do_manage_mcp('{"action":"reconnect","server_id":"srv1"}'))["response"]
+    assert manager.connected[-1][1] == {
+        "server_id": "srv1",
+        "name": "Files",
+        "transport": "stdio",
+        "command": "python",
+        "args": ["-m", "fileserver"],
+        "env": {"ACCOUNT": "demo"},
+        "url": None,
+    }
+    assert "enabled" in asyncio.run(tools.do_manage_mcp('{"action":"enable","server_id":"srv1"}'))["response"]
+    assert manager.connected[-1][1]["server_id"] == "srv1"
     assert "disabled" in asyncio.run(tools.do_manage_mcp('{"action":"disable","server_id":"srv1"}'))["response"]
+    assert manager.disconnected[-1] == "srv1"
     assert asyncio.run(tools.do_manage_mcp('{"action":"list_tools"}'))["tools"][0]["name"] == "read_file"
     assert asyncio.run(tools.do_manage_mcp('{"action":"bogus"}'))["exit_code"] == 1
     monkeypatch.setattr(tools, "get_mcp_manager", lambda: None)
@@ -339,6 +360,11 @@ def test_manage_endpoints_mcp_webhooks_and_tokens(monkeypatch):
     assert "disabled" in asyncio.run(tools.do_manage_webhooks('{"action":"disable","webhook_id":"wh1"}'))["response"]
 
     monkeypatch.setattr(tools, "offline_mode", lambda: True)
+    assert asyncio.run(tools.do_manage_mcp('{"action":"list"}'))["servers"] == []
+    assert asyncio.run(tools.do_manage_mcp('{"action":"list_tools"}'))["tools"] == []
+    assert asyncio.run(tools.do_manage_mcp('{"action":"add","name":"Blocked","command":"python"}'))["exit_code"] == 1
+    assert asyncio.run(tools.do_manage_mcp('{"action":"reconnect","server_id":"srv1"}'))["exit_code"] == 1
+    assert asyncio.run(tools.do_manage_mcp('{"action":"enable","server_id":"srv1"}'))["exit_code"] == 1
     assert asyncio.run(tools.do_manage_webhooks('{"action":"list"}'))["webhooks"] == []
     assert asyncio.run(tools.do_manage_webhooks('{"action":"add","url":"https://example.test/hook"}'))["exit_code"] == 1
     assert "External model endpoints are disabled" in asyncio.run(

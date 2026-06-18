@@ -1102,6 +1102,14 @@ async def do_manage_mcp(content: str, owner: Optional[str] = None) -> Dict:
         return {"error": "Invalid JSON arguments", "exit_code": 1}
 
     action = args.get("action", "list")
+    mcp_enabled = _feature_enabled("mcp")
+    if not mcp_enabled:
+        if action == "list":
+            return {"response": "MCP is disabled in offline mode", "servers": [], "exit_code": 0}
+        if action == "list_tools":
+            return {"response": "MCP is disabled in offline mode", "tools": [], "exit_code": 0}
+        if action in ("add", "enable", "reconnect"):
+            return {"error": "MCP servers are disabled in offline mode", "exit_code": 1}
 
     if action == "list":
         mcp = get_mcp_manager()
@@ -1193,7 +1201,17 @@ async def do_manage_mcp(content: str, owner: Optional[str] = None) -> Dict:
             try:
                 srv = db2.query(McpServer).filter(McpServer.id == sid).first()
                 if srv:
-                    await mcp.connect_server(sid)
+                    cmd_args = json.loads(srv.args) if srv.args else []
+                    env = json.loads(srv.env) if srv.env else {}
+                    await mcp.connect_server(
+                        server_id=sid,
+                        name=srv.name,
+                        transport=srv.transport,
+                        command=srv.command,
+                        args=cmd_args,
+                        env=env,
+                        url=srv.url,
+                    )
                     st = mcp.get_server_status(sid)
                     return {"response": f"Reconnected '{srv.name}' ({st.get('tool_count', 0)} tools)", "exit_code": 0}
                 return {"error": f"Server {sid} not found", "exit_code": 1}
@@ -1212,6 +1230,22 @@ async def do_manage_mcp(content: str, owner: Optional[str] = None) -> Dict:
                 return {"error": f"Server {sid} not found", "exit_code": 1}
             srv.is_enabled = (action == "enable")
             db.commit()
+            mcp = get_mcp_manager()
+            if mcp:
+                if action == "enable":
+                    cmd_args = json.loads(srv.args) if srv.args else []
+                    env = json.loads(srv.env) if srv.env else {}
+                    await mcp.connect_server(
+                        server_id=sid,
+                        name=srv.name,
+                        transport=srv.transport,
+                        command=srv.command,
+                        args=cmd_args,
+                        env=env,
+                        url=srv.url,
+                    )
+                else:
+                    await mcp.disconnect_server(sid)
             return {"response": f"MCP server '{srv.name}' {action}d", "exit_code": 0}
         finally:
             db.close()
