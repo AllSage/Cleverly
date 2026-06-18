@@ -2613,7 +2613,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         const data = await res.json();
         _researchItems = data.research || data || [];
       } catch (e) {
-        grid.innerHTML = `<div class="hwfit-loading">Failed to load: ${e.message}</div>`;
+        grid.innerHTML = `<div class="hwfit-loading">Failed to load: ${_esc(e.message || e)}</div>`;
         return;
       }
       _renderResearchGrid();

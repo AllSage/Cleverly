@@ -3,6 +3,7 @@ import importlib
 import json
 import sys
 import types
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -568,7 +569,7 @@ async def test_mcp_manager_connect_transports_reconnect_and_prompt_edges(monkeyp
     monkeypatch.setattr(reconnect_mgr, "connect_server", reconnect_connect_server)
     assert await reconnect_mgr._reconnect_builtin("builtin_browser") is True
     assert reconnect_args[0]["name"] == "Browser"
-    assert reconnect_args[0]["env"]["PYTHONPATH"].endswith("cleverly")
+    assert reconnect_args[0]["env"]["PYTHONPATH"] == str(Path(mcp_manager.__file__).resolve().parent.parent)
 
     async def reconnect_connect_raises(**_kwargs):
         raise RuntimeError("connect bad")

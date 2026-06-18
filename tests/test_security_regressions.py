@@ -1164,6 +1164,13 @@ def test_chat_compaction_errors_escape_exception_text():
     assert "Compaction failed: ' + err.message" not in renderer_js
 
 
+def test_document_library_research_errors_escape_exception_text():
+    document_library_js = Path("static/js/documentLibrary.js").read_text(encoding="utf-8")
+
+    assert "Failed to load: ${_esc(e.message || e)}" in document_library_js
+    assert "Failed to load: ${e.message}" not in document_library_js
+
+
 def test_training_lab_is_local_only_and_wired_to_ui():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     index_html = Path("static/index.html").read_text(encoding="utf-8")
