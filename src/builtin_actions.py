@@ -90,7 +90,7 @@ async def action_consolidate_memory(owner: str, **kwargs) -> Tuple[str, bool]:
         if _owner_clean:
             def _belongs_to_owner(mem: dict) -> bool:
                 mem_owner = (mem.get("owner") or "").strip()
-                return mem_owner == _owner_clean or not mem_owner
+                return mem_owner == _owner_clean
         else:
             def _belongs_to_owner(mem: dict) -> bool:
                 return True
