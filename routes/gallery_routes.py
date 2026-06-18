@@ -1340,6 +1340,8 @@ def setup_gallery_routes() -> APIRouter:
         # Decode source image (RGB; Real-ESRGAN doesn't preserve alpha).
         img_bytes = base64.b64decode(image_b64)
         src = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        if offline_mode():
+            raise HTTPException(403, "AI denoise requires remote model weights and is disabled in offline mode")
         try:
             from realesrgan import RealESRGANer
         except ImportError:
@@ -1389,6 +1391,8 @@ def setup_gallery_routes() -> APIRouter:
             raise HTTPException(500, f"Server missing dependency: {e}")
         img_bytes = base64.b64decode(image_b64)
         src = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        if offline_mode():
+            raise HTTPException(403, "Local AI upscale requires remote model weights and is disabled in offline mode")
         try:
             from basicsr.archs.rrdbnet_arch import RRDBNet
             from realesrgan import RealESRGANer
@@ -1468,6 +1472,9 @@ def setup_gallery_routes() -> APIRouter:
         else:
             crop = img
 
+        if offline_mode():
+            raise HTTPException(403, "Background removal requires model weights and is disabled in offline mode")
+
         try:
             from rembg import remove
             cut = remove(crop)
@@ -1522,6 +1529,21 @@ def setup_gallery_routes() -> APIRouter:
 
         img_bytes = base64.b64decode(image_b64)
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+
+        def _pil_enhance():
+            enhanced = img.filter(ImageFilter.MedianFilter(size=3))
+            enhanced = enhanced.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
+            enhanced = ImageEnhance.Contrast(enhanced).enhance(1.15)
+            enhanced = ImageEnhance.Color(enhanced).enhance(1.1)
+            enhanced = ImageEnhance.Brightness(enhanced).enhance(1.05)
+
+            buf = io.BytesIO()
+            enhanced.save(buf, format="PNG")
+            return {"image": base64.b64encode(buf.getvalue()).decode(), "method": "pil"}
+
+        if offline_mode():
+            logger.info("Offline mode: using PIL face enhancement fallback")
+            return _pil_enhance()
 
         # Try GFPGAN first (AI face restoration)
         try:

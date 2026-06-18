@@ -514,6 +514,29 @@ def test_gallery_offline_endpoint_guards(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_gallery_offline_blocks_image_model_weight_downloads(gallery_env, monkeypatch):
+    import routes.gallery_routes as routes
+
+    monkeypatch.setattr(routes, "offline_mode", lambda: True)
+    image = base64.b64encode(_png_bytes()).decode()
+
+    for path in [
+        "/api/image/denoise",
+        "/api/image/upscale-local",
+        "/api/image/remove-bg",
+    ]:
+        endpoint = _endpoint(gallery_env.router, path, "POST")
+        with pytest.raises(HTTPException) as exc:
+            await endpoint(RequestLike(body={"image": image}))
+        assert exc.value.status_code == 403
+
+    enhance = _endpoint(gallery_env.router, "/api/image/enhance-face", "POST")
+    result = await enhance(RequestLike(body={"image": image}))
+    assert result["method"] == "pil"
+    assert base64.b64decode(result["image"])
+
+
+@pytest.mark.asyncio
 async def test_gallery_upload_replace_rename_rotate_and_helpers(gallery_env):
     import routes.gallery_helpers as helpers
 
