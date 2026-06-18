@@ -285,23 +285,33 @@ def test_note_routes_crud_toggles_reorder_and_reminder(monkeypatch):
         def __init__(self, db):
             self.db = db
             self.id_filter = None
+            self.owner_filter = None
 
         def filter(self, *conditions):
             for condition in conditions:
                 if isinstance(condition, Expr) and condition.name == "id":
                     self.id_filter = condition.value
+                if isinstance(condition, Expr) and condition.name == "owner":
+                    self.owner_filter = condition.value
             return self
 
         def order_by(self, *_args):
             return self
 
         def all(self):
-            return list(self.db.notes.values())
+            notes = list(self.db.notes.values())
+            if self.owner_filter is not None:
+                notes = [note for note in notes if note.owner == self.owner_filter]
+            return notes
 
         def first(self):
             if self.id_filter is not None:
-                return self.db.notes.get(self.id_filter)
-            return next(iter(self.db.notes.values()), None)
+                note = self.db.notes.get(self.id_filter)
+                if note is not None and self.owner_filter is not None and note.owner != self.owner_filter:
+                    return None
+                return note
+            notes = self.all()
+            return notes[0] if notes else None
 
     class DB:
         def __init__(self):
@@ -312,7 +322,8 @@ def test_note_routes_crud_toggles_reorder_and_reminder(monkeypatch):
                     content="Body",
                     items=json.dumps([{"text": "one", "done": False}]),
                     ai_classification=json.dumps({"kind": "todo"}),
-                )
+                ),
+                "bob-note": Note(id="bob-note", owner="bob", title="Private", content="Other"),
             }
             self.added = []
             self.deleted = []
@@ -419,6 +430,14 @@ def test_note_routes_crud_toggles_reorder_and_reminder(monkeypatch):
     with pytest.raises(HTTPException) as missing_note_id:
         asyncio.run(_endpoint(router, "/api/notes/fire-reminder", "POST")(RequestLike("alice", {})))
     assert missing_note_id.value.status_code == 400
+    with pytest.raises(HTTPException) as cross_owner_note:
+        asyncio.run(
+            _endpoint(router, "/api/notes/fire-reminder", "POST")(
+                RequestLike("alice", {"note_id": "bob-note", "title": " T ", "body": " B "})
+            )
+        )
+    assert cross_owner_note.value.status_code == 404
+    assert reminders == []
     assert asyncio.run(
         _endpoint(router, "/api/notes/fire-reminder", "POST")(
             RequestLike("alice", {"note_id": "n1", "title": " T ", "body": " B "})

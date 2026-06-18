@@ -700,7 +700,8 @@ def setup_note_routes(task_scheduler=None):
         """
         # Gate against anonymous callers — LLM synthesis can burn tokens.
         from src.auth_helpers import get_current_user as _gcu
-        if not _gcu(request):
+        user = _gcu(request)
+        if not user:
             raise HTTPException(401, "Not authenticated")
         body = await request.json()
         note_id = body.get("note_id")
@@ -709,11 +710,21 @@ def setup_note_routes(task_scheduler=None):
         if not note_id:
             raise HTTPException(400, "note_id required")
 
+        db = SessionLocal()
+        try:
+            note = db.query(Note).filter(Note.id == note_id, Note.owner == user).first()
+            if not note:
+                raise HTTPException(404, "Note not found")
+            title = title or (note.title or "").strip()
+            note_body = note_body or (note.content or "").strip()
+        finally:
+            db.close()
+
         # Delegate to the module-level helper so background tasks can reuse
         # the same dispatch without an HTTP roundtrip + auth cookie.
         return await dispatch_reminder(
             title=title, note_body=note_body, note_id=note_id,
-            owner=_gcu(request) or "",
+            owner=user,
             queue_browser=False,
         )
 
