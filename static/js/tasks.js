@@ -19,6 +19,21 @@ let _clockInterval = null;
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+function _featureEnabled(key) {
+  if (window._cleverlyFeatures) return window._cleverlyFeatures[key] !== false;
+  return false;
+}
+
+function _taskModeAllowed(taskType, existing = null) {
+  if (taskType !== 'research') return true;
+  return _featureEnabled('deep_research') || existing?.task_type === 'research';
+}
+
+function _triggerModeAllowed(triggerType, existing = null) {
+  if (triggerType !== 'webhook') return true;
+  return _featureEnabled('webhooks') || existing?.trigger_type === 'webhook';
+}
+
 // ---- API ----
 
 async function _fetchTasks() {
@@ -918,6 +933,10 @@ const _TASK_PRESETS = [
   { label: 'Webhook triggered',     desc: 'Trigger via external HTTP call',               taskType: 'llm',      triggerType: 'webhook' },
 ];
 
+function _presetAllowed(p) {
+  return _taskModeAllowed(p.taskType) && _triggerModeAllowed(p.triggerType);
+}
+
 // Icon for each preset, keyed off task/trigger type (24x24 stroke SVG).
 function _presetIcon(p) {
   const wrap = (inner) => `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4;flex-shrink:0;">${inner}</svg>`;
@@ -942,7 +961,8 @@ function _showPresetPicker() {
     + '<button class="memory-toolbar-btn active" id="task-ai-btn" title="Draft a task with AI" style="white-space:nowrap;height:28px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;margin-right:3px;"><path d="M12 0L14.59 8.41L23 12L14.59 15.59L12 24L9.41 15.59L1 12L9.41 8.41Z"/></svg>Draft with AI</button>'
     + '</div>';
   html += '<div class="memory-list" style="max-height:none;flex:1;gap:0px;margin-top:2px;padding-right:8px;">';
-  _TASK_PRESETS.forEach((p, i) => {
+  const presets = _TASK_PRESETS.filter(_presetAllowed);
+  presets.forEach((p, i) => {
     html += `<button class="memory-item task-card" data-idx="${i}" style="cursor:pointer;text-align:left;width:100%;font-family:inherit;">
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:6px;">${_presetIcon(p)}<span class="memory-item-title" style="flex:1;position:relative;top:0px;">${p.label}</span></div>
@@ -956,7 +976,7 @@ function _showPresetPicker() {
 
   body.querySelectorAll('.memory-item[data-idx]').forEach(card => {
     card.addEventListener('click', () => {
-      const p = _TASK_PRESETS[parseInt(card.dataset.idx, 10)];
+      const p = presets[parseInt(card.dataset.idx, 10)];
       _showForm(null, p.taskType, p.triggerType);
     });
   });
@@ -979,8 +999,16 @@ function _showForm(existing, initTaskType, initTriggerType) {
   const body = modal.querySelector('.modal-body');
   if (!body) return;
 
-  const curTaskType = existing?.task_type || initTaskType || 'llm';
-  const curTriggerType = existing?.trigger_type || initTriggerType || 'schedule';
+  const requestedTaskType = existing?.task_type || initTaskType || 'llm';
+  const requestedTriggerType = existing?.trigger_type || initTriggerType || 'schedule';
+  const curTaskType = _taskModeAllowed(requestedTaskType, existing) ? requestedTaskType : 'llm';
+  const curTriggerType = _triggerModeAllowed(requestedTriggerType, existing) ? requestedTriggerType : 'schedule';
+  const researchTypeButton = _taskModeAllowed('research', existing)
+    ? `<button class="task-toggle-btn ${curTaskType === 'research' ? 'active' : ''}" data-val="research" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Research</button>`
+    : '';
+  const webhookTriggerButton = _triggerModeAllowed('webhook', existing)
+    ? `<button class="task-toggle-btn ${curTriggerType === 'webhook' ? 'active' : ''}" data-val="webhook" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Webhook</button>`
+    : '';
 
   body.innerHTML = `
     <div class="admin-card" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
@@ -995,7 +1023,7 @@ function _showForm(existing, initTaskType, initTriggerType) {
       <label class="task-form-label">Type</label>
       <div class="task-form-toggle" id="task-form-type-toggle">
         <button class="task-toggle-btn ${curTaskType === 'llm' ? 'active' : ''}" data-val="llm" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>Prompt</button>
-        <button class="task-toggle-btn ${curTaskType === 'research' ? 'active' : ''}" data-val="research" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Research</button>
+        ${researchTypeButton}
         <button class="task-toggle-btn ${curTaskType === 'action' ? 'active' : ''}" data-val="action" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>Action</button>
       </div>
 
@@ -1005,7 +1033,7 @@ function _showForm(existing, initTaskType, initTriggerType) {
       <div class="task-form-toggle" id="task-form-trigger-toggle">
         <button class="task-toggle-btn ${curTriggerType === 'schedule' ? 'active' : ''}" data-val="schedule" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Schedule</button>
         <button class="task-toggle-btn ${curTriggerType === 'event' ? 'active' : ''}" data-val="event" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>Event</button>
-        <button class="task-toggle-btn ${curTriggerType === 'webhook' ? 'active' : ''}" data-val="webhook" style="position:relative;top:-4px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:4px;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>Webhook</button>
+        ${webhookTriggerButton}
       </div>
 
       <div id="task-form-trigger-opts"></div>

@@ -9,6 +9,8 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Tuple
 
+from src.task_feature_guards import task_feature_disabled_reason
+
 logger = logging.getLogger(__name__)
 
 
@@ -601,6 +603,15 @@ class TaskScheduler:
                 db.commit()
 
             task_type = task.task_type or "llm"
+            disabled_reason = task_feature_disabled_reason({
+                "task_type": task_type,
+                "action": getattr(task, "action", "") or "",
+                "trigger_type": getattr(task, "trigger_type", "schedule") or "schedule",
+                "trigger_event": getattr(task, "trigger_event", "") or "",
+                "output_target": getattr(task, "output_target", "session") or "session",
+            })
+            if disabled_reason:
+                raise RuntimeError(disabled_reason)
 
             from src.builtin_actions import TaskDeferred, TaskNoop
 
@@ -1311,7 +1322,16 @@ class TaskScheduler:
         """
         from core.database import Session as DbSession, ChatMessage, CrewMember
 
-        output = task.output_target or "session"
+        output = getattr(task, "output_target", "session") or "session"
+        disabled_reason = task_feature_disabled_reason({
+            "task_type": getattr(task, "task_type", "llm") or "llm",
+            "action": getattr(task, "action", "") or "",
+            "trigger_type": getattr(task, "trigger_type", "schedule") or "schedule",
+            "trigger_event": getattr(task, "trigger_event", "") or "",
+            "output_target": output,
+        })
+        if disabled_reason:
+            raise RuntimeError(disabled_reason)
         if output.startswith("mcp__"):
             await self._deliver_via_mcp(output, task, result)
             return

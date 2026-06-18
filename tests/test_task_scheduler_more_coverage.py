@@ -390,6 +390,21 @@ async def test_delivery_email_mcp_and_agent_loop(monkeypatch):
     fake_llm.llm_call_async_with_fallback = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no summary"))
     assert "tool said ok" in await scheduler._run_agent_loop("http://llm", "model", task, "session")
 
+    monkeypatch.setattr(ts, "task_feature_disabled_reason", lambda values: "blocked output" if values.get("output_target") == "email" else None)
+    stale_task = SimpleNamespace(
+        id="stale",
+        name="Stale",
+        owner="alice",
+        prompt="prompt",
+        task_type="llm",
+        action="",
+        trigger_type="schedule",
+        trigger_event="",
+        output_target="email",
+    )
+    with pytest.raises(RuntimeError, match="blocked output"):
+        await scheduler._deliver_task_result(stale_task, "body", SimpleNamespace())
+
 
 def test_known_owners_chain_cycle_and_defaults(monkeypatch):
     import src.task_scheduler as ts

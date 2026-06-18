@@ -13,6 +13,14 @@ from pydantic import BaseModel
 from core.database import SessionLocal, ScheduledTask, TaskRun
 from src.auth_helpers import get_current_user
 from src.task_scheduler import compute_next_run, HOUSEKEEPING_DEFAULTS
+from src.task_feature_guards import (
+    action_allowed,
+    event_allowed,
+    feature_enabled,
+    feature_flags,
+    is_email_output_target,
+    task_feature_disabled_reason,
+)
 from routes.prefs_routes import _load_for_user, _save_for_user
 
 logger = logging.getLogger(__name__)
@@ -135,6 +143,31 @@ def _run_research_id(task: ScheduledTask) -> str:
     if (task.task_type or "llm") == "research" and task.session_id:
         return task.session_id
     return ""
+
+
+def _task_request_values(req) -> dict:
+    return {
+        "task_type": getattr(req, "task_type", None) or "llm",
+        "action": getattr(req, "action", None) or "",
+        "trigger_type": getattr(req, "trigger_type", None) or "schedule",
+        "trigger_event": getattr(req, "trigger_event", None) or "",
+        "output_target": getattr(req, "output_target", None) or "session",
+    }
+
+
+def _effective_task_values(task: ScheduledTask, req: TaskUpdate) -> dict:
+    values = {
+        "task_type": task.task_type or "llm",
+        "action": task.action or "",
+        "trigger_type": task.trigger_type or "schedule",
+        "trigger_event": task.trigger_event or "",
+        "output_target": task.output_target or "session",
+    }
+    for key in tuple(values.keys()):
+        value = getattr(req, key, None)
+        if value is not None:
+            values[key] = value
+    return values
 
 
 def _resolve_run_endpoint(db, task: ScheduledTask, run: TaskRun) -> str:
@@ -330,6 +363,9 @@ def setup_task_routes(task_scheduler) -> APIRouter:
         # arbitrary commands.
         if req.task_type == "action" and req.action in _ADMIN_ONLY_ACTIONS and not _is_admin(user):
             raise HTTPException(403, f"Action '{req.action}' requires admin privileges")
+        disabled_reason = task_feature_disabled_reason(_task_request_values(req), feature_flags())
+        if disabled_reason:
+            raise HTTPException(403, disabled_reason)
         if req.trigger_type == "schedule" and not req.schedule:
             raise HTTPException(400, "Schedule is required for schedule-triggered tasks")
         if req.trigger_type == "schedule" and req.schedule == "cron" and not req.cron_expression:
@@ -524,6 +560,13 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 raise HTTPException(404, "Task not found")
             if user and task.owner != user:
                 raise HTTPException(403, "Access denied")
+
+            effective = _effective_task_values(task, req)
+            if effective["task_type"] == "action" and effective["action"] in _ADMIN_ONLY_ACTIONS and not _is_admin(user):
+                raise HTTPException(403, f"Action '{effective['action']}' requires admin privileges")
+            disabled_reason = task_feature_disabled_reason(effective, feature_flags())
+            if disabled_reason:
+                raise HTTPException(403, disabled_reason)
 
             if req.name is not None:
                 task.name = req.name
@@ -811,11 +854,13 @@ def setup_task_routes(task_scheduler) -> APIRouter:
     async def list_output_targets(request: Request):
         """List available output targets — only delivery/send tools, not all MCP tools."""
         _owner(request)
+        features = feature_flags()
         targets = [
             {"value": "session", "label": "Session", "description": "Save result to a chat session"},
             {"value": "notification", "label": "Notification", "description": "Push a browser notification with the result (also saved to the session for history)"},
-            {"value": "email", "label": "Email me", "description": "Send result through your configured SMTP account"},
         ]
+        if feature_enabled(features, "email"):
+            targets.append({"value": "email", "label": "Email me", "description": "Send result through your configured SMTP account"})
         # Only include tools whose NAME clearly indicates an outbound delivery
         # action — match by verb in the tool name, not by any mention of "email"
         # in the description (which falsely picked up search_email, list_email,
@@ -826,12 +871,20 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             "search", "list", "get", "find", "read", "fetch", "view",
             "tag", "label", "move", "archive", "delete", "mark", "schedule",
         )
+        if not feature_enabled(features, "mcp"):
+            return {"targets": targets}
         try:
             from src.agent_tools import get_mcp_manager
             mcp = get_mcp_manager()
             if mcp:
                 for tool in mcp.get_all_tools():
                     name_lower = tool.get("name", "").lower()
+                    server_lower = tool.get("server_name", "").lower()
+                    qualified_lower = tool.get("qualified_name", "").lower()
+                    if not feature_enabled(features, "email") and (
+                        "email" in name_lower or "mail" in server_lower or "mail" in qualified_lower
+                    ):
+                        continue
                     if any(x in name_lower for x in _NON_DELIVERY):
                         continue
                     if not any(v in name_lower for v in _DELIVERY_VERBS):
@@ -849,18 +902,20 @@ def setup_task_routes(task_scheduler) -> APIRouter:
     async def list_actions(request: Request):
         """List available built-in actions."""
         user = _owner(request)
+        features = feature_flags()
         from src.builtin_actions import BUILTIN_ACTION_INFO
         return {"actions": [
             {"name": name, "description": desc}
             for name, desc in BUILTIN_ACTION_INFO.items()
-            if name not in _ADMIN_ONLY_ACTIONS or _is_admin(user)
+            if (name not in _ADMIN_ONLY_ACTIONS or _is_admin(user)) and action_allowed(name, features)
         ]}
 
     @router.get("/meta/events")
     async def list_events(request: Request):
         """List available event triggers."""
         _owner(request)
-        return {"events": [
+        features = feature_flags()
+        events = [
             {"name": "session_created", "description": "Fires when a new chat session is created"},
             {"name": "message_sent", "description": "Fires when a user sends a message"},
             {"name": "document_created", "description": "Fires when a document is created"},
@@ -868,10 +923,13 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             {"name": "research_completed", "description": "Fires when a research report completes"},
             {"name": "email_received", "description": "Fires when new inbox mail is observed"},
             {"name": "skill_added", "description": "Fires when a new skill is created"},
-        ]}
+        ]
+        return {"events": [event for event in events if event_allowed(event["name"], features)]}
 
     @router.post("/{task_id}/webhook/{token}")
     async def webhook_trigger(task_id: str, token: str):
+        if not feature_enabled(feature_flags(), "webhooks"):
+            raise HTTPException(403, "Webhook tasks are disabled in offline mode.")
         """Unauthenticated endpoint — the token IS the auth."""
         db = SessionLocal()
         try:
@@ -892,6 +950,8 @@ def setup_task_routes(task_scheduler) -> APIRouter:
     @router.post("/{task_id}/webhook-regenerate")
     async def regenerate_webhook(request: Request, task_id: str):
         user = _owner(request)
+        if not feature_enabled(feature_flags(), "webhooks"):
+            raise HTTPException(403, "Webhook tasks are disabled in offline mode.")
         db = SessionLocal()
         try:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
@@ -927,13 +987,27 @@ def setup_task_routes(task_scheduler) -> APIRouter:
         # Give the model the current date/time + weekday so relative phrasing
         # ("tomorrow", "every Monday", "in an hour") resolves correctly.
         ctx = now.strftime("%Y-%m-%d %H:%M (%A)")
+        features = feature_flags()
+        research_enabled = feature_enabled(features, "deep_research")
+        email_enabled = feature_enabled(features, "email")
+        task_type_schema = '"llm" | "research"' if research_enabled else '"llm"'
+        task_type_rule = (
+            '"research" if it asks to research/investigate/find out; else "llm"'
+            if research_enabled else
+            'always "llm"; deep research tasks are disabled'
+        )
+        output_schema = '"session" | "notification"'
+        output_rule = "use notification only when the user asks for a browser notification"
+        if email_enabled:
+            output_schema = '"session" | "email" | "notification"'
+            output_rule = "use email when the user asks to email the result"
         sys = (
             "You convert a user's description of a recurring or one-off task into "
             "STRICT JSON for a task scheduler. The current local date/time is "
             f"{ctx}. Output ONLY a JSON object, no prose, no markdown fences.\n\n"
             "Schema (omit fields you can't infer):\n"
             "{\n"
-            '  "task_type": "llm" | "research",  // "research" if it asks to research/investigate/find out; else "llm"\n'
+            f'  "task_type": {task_type_schema},  // {task_type_rule}\n'
             '  "name": "short 3-6 word title",\n'
             '  "prompt": "the instruction the AI should run on schedule (or the research question)",\n'
             '  "schedule": "daily" | "weekly" | "monthly" | "once" | "cron",\n'
@@ -941,7 +1015,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             '  "scheduled_day": 0,               // weekly: 0=Mon..6=Sun; monthly: 1..31\n'
             '  "scheduled_date": "YYYY-MM-DDTHH:MM",  // only for "once"\n'
             '  "cron_expression": "m h dom mon dow",  // only if schedule is "cron"\n'
-            '  "output_target": "session" | "email" | "notification"  // use email when the user asks to email the result\n'
+            f'  "output_target": {output_schema}  // {output_rule}\n'
             "}\n\n"
             "Rules: default schedule to 'daily' if a time is given without a frequency. "
             "Default scheduled_time to '09:00' if none is stated. For 'every weekday' "
@@ -971,7 +1045,8 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 raise ValueError("not an object")
             # Whitelist + light validation so the frontend gets clean fields.
             out: Dict[str, Any] = {}
-            if draft.get("task_type") in ("llm", "research"):
+            allowed_task_types = ("llm", "research") if research_enabled else ("llm",)
+            if draft.get("task_type") in allowed_task_types:
                 out["task_type"] = draft["task_type"]
             else:
                 out["task_type"] = "llm"
@@ -987,8 +1062,13 @@ def setup_task_routes(task_scheduler) -> APIRouter:
                 out["scheduled_time"] = st.strip()
             if isinstance(draft.get("scheduled_day"), int):
                 out["scheduled_day"] = draft["scheduled_day"]
-            if draft.get("output_target") in ("session", "email", "notification"):
+            allowed_outputs = {"session", "notification"}
+            if email_enabled:
+                allowed_outputs.add("email")
+            if draft.get("output_target") in allowed_outputs:
                 out["output_target"] = draft["output_target"]
+            elif is_email_output_target(draft.get("output_target")):
+                out["output_target"] = "session"
             out["trigger_type"] = "schedule"
             if not out.get("prompt"):
                 return {"success": False, "message": "Could not extract a task instruction"}

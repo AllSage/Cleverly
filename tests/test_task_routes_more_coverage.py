@@ -255,6 +255,11 @@ def _install_task_route_fakes(monkeypatch, task_routes, db):
     monkeypatch.setattr(task_routes, "TaskRun", FakeTaskRun)
     monkeypatch.setattr(task_routes, "get_current_user", lambda request: request.state.current_user)
     monkeypatch.setattr(task_routes, "compute_next_run", lambda *args, **kwargs: datetime(2026, 1, 2, 9, 0))
+    monkeypatch.setattr(
+        task_routes,
+        "feature_flags",
+        lambda: {"deep_research": True, "email": True, "webhooks": True, "mcp": True},
+    )
 
     saved_prefs = []
     prefs = {"tasks_opened": False, "tasks_enabled": False}
@@ -264,6 +269,8 @@ def _install_task_route_fakes(monkeypatch, task_routes, db):
     fake_builtin = types.ModuleType("src.builtin_actions")
     fake_builtin.BUILTIN_ACTION_INFO = {
         "tidy_sessions": "Tidy Sessions",
+        "summarize_emails": "Summarize Emails",
+        "tidy_research": "Tidy Research",
         "run_local": "Run Local",
         "send_digest": "Send Digest",
     }
@@ -524,3 +531,91 @@ def test_task_activity_metadata_notifications_and_parse(monkeypatch):
     fake_endpoint.resolve_endpoint = lambda kind: ("", "", {})
     no_model = asyncio.run(_endpoint(router, "/api/tasks/parse", "POST")(RequestLike(body={"description": "daily task"})))
     assert no_model["success"] is False
+
+
+def test_task_routes_hide_and_deny_disabled_online_features(monkeypatch):
+    import routes.task_routes as task_routes
+
+    db = FakeDB()
+    db.tasks["existing"] = FakeScheduledTask(id="existing", owner="alice")
+    db.tasks["hook"] = FakeScheduledTask(
+        id="hook",
+        owner="alice",
+        trigger_type="webhook",
+        webhook_token="webhook-token",
+        status="active",
+    )
+    scheduler = Scheduler()
+    _install_task_route_fakes(monkeypatch, task_routes, db)
+    monkeypatch.setattr(
+        task_routes,
+        "feature_flags",
+        lambda: {"deep_research": False, "email": False, "webhooks": False, "mcp": False},
+    )
+
+    fake_agent_tools = types.ModuleType("src.agent_tools")
+    fake_agent_tools.get_mcp_manager = lambda: SimpleNamespace(
+        get_all_tools=lambda: [
+            {"qualified_name": "mcp__mail__send", "server_name": "Mail", "name": "send_email", "description": "Send"},
+        ]
+    )
+    monkeypatch.setitem(sys.modules, "src.agent_tools", fake_agent_tools)
+
+    fake_endpoint = types.ModuleType("src.endpoint_resolver")
+    fake_endpoint.resolve_endpoint = lambda kind: ("http://llm", "model", {})
+    monkeypatch.setitem(sys.modules, "src.endpoint_resolver", fake_endpoint)
+    fake_llm = types.ModuleType("src.llm_core")
+    fake_llm.llm_call_async = lambda **kwargs: asyncio.sleep(
+        0,
+        result='{"task_type":"research","name":"AI News","prompt":"Research AI news","schedule":"daily","output_target":"email"}',
+    )
+    monkeypatch.setitem(sys.modules, "src.llm_core", fake_llm)
+
+    router = task_routes.setup_task_routes(scheduler)
+    request = RequestLike()
+
+    targets = asyncio.run(_endpoint(router, "/api/tasks/meta/output-targets")(request))["targets"]
+    assert {item["value"] for item in targets} == {"session", "notification"}
+
+    actions = {item["name"] for item in asyncio.run(_endpoint(router, "/api/tasks/meta/actions")(request))["actions"]}
+    assert "tidy_sessions" in actions
+    assert "summarize_emails" not in actions
+    assert "tidy_research" not in actions
+
+    events = {item["name"] for item in asyncio.run(_endpoint(router, "/api/tasks/meta/events")(request))["events"]}
+    assert "memory_added" in events
+    assert "email_received" not in events
+    assert "research_completed" not in events
+
+    create = _endpoint(router, "/api/tasks", "POST")
+    disabled_creates = [
+        task_routes.TaskCreate(task_type="research", prompt="Find news", schedule="daily"),
+        task_routes.TaskCreate(prompt="Ping", trigger_type="webhook", schedule=None),
+        task_routes.TaskCreate(prompt="Ping", schedule="daily", output_target="email"),
+        task_routes.TaskCreate(task_type="action", action="summarize_emails", schedule="daily"),
+    ]
+    for req in disabled_creates:
+        with pytest.raises(HTTPException) as exc:
+            asyncio.run(create(request, req))
+        assert exc.value.status_code == 403
+
+    update = _endpoint(router, "/api/tasks/{task_id}", "PUT")
+    with pytest.raises(HTTPException) as disabled_update:
+        asyncio.run(update(request, "existing", task_routes.TaskUpdate(task_type="research")))
+    assert disabled_update.value.status_code == 403
+
+    with pytest.raises(HTTPException) as disabled_hook:
+        asyncio.run(_endpoint(router, "/api/tasks/{task_id}/webhook/{token}", "POST")("hook", "webhook-token"))
+    assert disabled_hook.value.status_code == 403
+    with pytest.raises(HTTPException) as disabled_regen:
+        asyncio.run(_endpoint(router, "/api/tasks/{task_id}/webhook-regenerate", "POST")(request, "hook"))
+    assert disabled_regen.value.status_code == 403
+
+    parsed = asyncio.run(
+        _endpoint(router, "/api/tasks/parse", "POST")(
+            RequestLike(body={"description": "Every day research AI news and email me"})
+        )
+    )
+    assert parsed["success"] is True
+    assert parsed["draft"]["task_type"] == "llm"
+    assert parsed["draft"]["output_target"] == "session"

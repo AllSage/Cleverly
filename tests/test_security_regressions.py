@@ -1070,6 +1070,7 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     research_panel = Path("static/js/research/panel.js").read_text(encoding="utf-8")
     document_library = Path("static/js/documentLibrary.js").read_text(encoding="utf-8")
     calendar_js = Path("static/js/calendar.js").read_text(encoding="utf-8")
+    tasks_js = Path("static/js/tasks.js").read_text(encoding="utf-8")
     chat_js = Path("static/js/chat.js").read_text(encoding="utf-8")
     inbox_js = Path("static/js/emailInbox.js").read_text(encoding="utf-8")
     settings_js = Path("static/js/settings.js").read_text(encoding="utf-8")
@@ -1113,6 +1114,12 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     assert "data-calendar-network-sync=\"1\"" in calendar_js
     assert "networkIntegrations ? '<div style=\"margin-top:10px" in calendar_js
     assert "${_networkIntegrationsVisible() ? `<button class=\"cal-nav" in calendar_js
+    assert "function _featureEnabled(key)" in tasks_js
+    assert "return _taskModeAllowed(p.taskType) && _triggerModeAllowed(p.triggerType)" in tasks_js
+    assert "window._cleverlyFeatures[key] !== false" in tasks_js
+    assert "_featureEnabled('deep_research')" in tasks_js
+    assert "_featureEnabled('webhooks')" in tasks_js
+    assert "_TASK_PRESETS.filter(_presetAllowed)" in tasks_js
 
 
 def test_response_complete_notifications_are_browser_local_opt_in():
