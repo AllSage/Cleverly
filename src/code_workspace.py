@@ -143,7 +143,7 @@ def _require_workspace(workspace_id: str, *, owner: str = "", root: str | Path |
     meta = index.get(workspace_id)
     if not meta:
         raise CodeWorkspaceError("Workspace not found")
-    if owner and meta.get("owner") and meta.get("owner") != owner:
+    if owner and meta.get("owner") != owner:
         raise CodeWorkspaceError("Workspace belongs to another user")
     path = _workspace_dir(base, workspace_id)
     if not path.exists():
@@ -395,7 +395,7 @@ def list_workspaces(*, owner: str = "", root: str | Path | None = None) -> list[
     base = workspace_root(root)
     items = []
     for meta in _load_index(base).values():
-        if owner and meta.get("owner") and meta.get("owner") != owner:
+        if owner and meta.get("owner") != owner:
             continue
         items.append(dict(meta))
     return sorted(items, key=lambda x: x.get("updated_at", 0), reverse=True)
@@ -530,7 +530,7 @@ def _touch_workspace(workspace_id: str, *, owner: str = "", root: str | Path | N
     meta = index.get(workspace_id)
     if not meta:
         return
-    if owner and meta.get("owner") and meta.get("owner") != owner:
+    if owner and meta.get("owner") != owner:
         raise CodeWorkspaceError("Workspace belongs to another user")
     meta["updated_at"] = time.time()
     _save_index(base, index)
@@ -547,7 +547,7 @@ def delete_workspace(workspace_id: str, *, owner: str = "", root: str | Path | N
     meta = index.get(workspace_id)
     if not meta:
         return {"deleted": False}
-    if owner and meta.get("owner") and meta.get("owner") != owner:
+    if owner and meta.get("owner") != owner:
         raise CodeWorkspaceError("Workspace belongs to another user")
     path = _workspace_dir(base, workspace_id)
     if path.exists():

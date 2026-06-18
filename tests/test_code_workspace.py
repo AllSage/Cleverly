@@ -38,6 +38,22 @@ def test_code_workspace_round_trip_file_operations(tmp_path):
     assert {"name": "src", "path": "src", "type": "dir", "size": (tmp_path / meta["id"] / "src").stat().st_size} in tree["entries"]
 
 
+def test_code_workspace_authenticated_owner_cannot_access_ownerless_workspace(tmp_path):
+    legacy = cw.create_workspace("Legacy Repo", owner="", root=tmp_path)
+    alice = cw.create_workspace("Alice Repo", owner="alice", root=tmp_path)
+    cw.write_file(legacy["id"], "secret.txt", "legacy secret\n", owner="", root=tmp_path)
+
+    visible = {item["id"] for item in cw.list_workspaces(owner="alice", root=tmp_path)}
+    assert visible == {alice["id"]}
+
+    with pytest.raises(cw.CodeWorkspaceError, match="another user"):
+        cw.read_file(legacy["id"], "secret.txt", owner="alice", root=tmp_path)
+    with pytest.raises(cw.CodeWorkspaceError, match="another user"):
+        cw.delete_workspace(legacy["id"], owner="alice", root=tmp_path)
+
+    assert cw.read_file(legacy["id"], "secret.txt", owner="", root=tmp_path)["content"] == "legacy secret\n"
+
+
 @pytest.mark.parametrize("bad_path", [
     "../outside.txt",
     "/absolute.txt",
