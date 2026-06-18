@@ -94,10 +94,13 @@ async def register_builtin_servers(mcp_manager):
     if MCP_DISABLED:
         logger.info("Built-in MCP servers disabled via CLEVERLY_DISABLE_MCP")
         return
+    features = load_features()
+    if offline_mode() or features.get("mcp") is False:
+        logger.info("Built-in MCP servers disabled by offline mode or feature settings")
+        return
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     python = sys.executable
-    features = load_features()
 
     async def _connect_python_server(server_id: str, script_path: str, name: str):
         try:
