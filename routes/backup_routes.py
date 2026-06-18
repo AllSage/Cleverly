@@ -4,6 +4,7 @@ import base64
 import json
 import logging
 import os
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -122,38 +123,63 @@ def setup_backup_routes(memory_manager, preset_manager, skills_manager) -> APIRo
 
         if "memories" in body and isinstance(body["memories"], list):
             existing = memory_manager.load_all()
-            existing_texts = {e.get("text", "").strip().lower() for e in existing}
+            existing_ids = {e.get("id") for e in existing if e.get("id")}
+            if user:
+                existing_texts = {
+                    e.get("text", "").strip().lower()
+                    for e in existing
+                    if e.get("owner") == user
+                }
+            else:
+                existing_texts = {e.get("text", "").strip().lower() for e in existing}
             added = 0
             for mem in body["memories"]:
                 if not isinstance(mem, dict) or not mem.get("text"):
                     continue
-                if mem["text"].strip().lower() in existing_texts:
+                mem_new = dict(mem)
+                if user:
+                    mem_new["owner"] = user
+                if mem_new.get("id") in existing_ids:
+                    mem_new["id"] = str(uuid.uuid4())
+                text_key = mem_new["text"].strip().lower()
+                if text_key in existing_texts:
                     continue
-                if user and not mem.get("owner"):
-                    mem["owner"] = user
-                existing.append(mem)
-                existing_texts.add(mem["text"].strip().lower())
+                existing.append(mem_new)
+                if mem_new.get("id"):
+                    existing_ids.add(mem_new.get("id"))
+                existing_texts.add(text_key)
                 added += 1
             memory_manager.save(existing)
             imported.append(f"{added} memories")
 
         if "skills" in body and isinstance(body["skills"], list):
             existing = skills_manager.load_all()
-            existing_ids = {s.get("id") for s in existing}
-            existing_titles = {s.get("title", "").strip().lower() for s in existing}
+            existing_ids_all = {s.get("id") for s in existing if s.get("id")}
+            if user:
+                existing_for_user = [s for s in existing if s.get("owner") == user]
+            else:
+                existing_for_user = existing
+            existing_ids = {s.get("id") for s in existing_for_user}
+            existing_titles = {s.get("title", "").strip().lower() for s in existing_for_user}
             added = 0
             for skill in body["skills"]:
                 if not isinstance(skill, dict) or not skill.get("title"):
                     continue
-                if skill.get("id") in existing_ids:
+                skill_new = dict(skill)
+                if user:
+                    skill_new["owner"] = user
+                if skill_new.get("id") in existing_ids_all:
+                    skill_new["id"] = str(uuid.uuid4())
+                if skill_new.get("id") in existing_ids:
                     continue
-                if skill["title"].strip().lower() in existing_titles:
+                title_key = skill_new["title"].strip().lower()
+                if title_key in existing_titles:
                     continue
-                if user and not skill.get("owner"):
-                    skill["owner"] = user
-                existing.append(skill)
-                existing_ids.add(skill.get("id"))
-                existing_titles.add(skill["title"].strip().lower())
+                existing.append(skill_new)
+                if skill_new.get("id"):
+                    existing_ids.add(skill_new.get("id"))
+                    existing_ids_all.add(skill_new.get("id"))
+                existing_titles.add(title_key)
                 added += 1
             skills_manager.save(existing)
             imported.append(f"{added} skills")

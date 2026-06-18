@@ -119,7 +119,10 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
             return [{"id": "m1", "text": "Remember this", "owner": owner}]
 
         def load_all(self):
-            return [{"id": "old", "text": "existing"}]
+            return [
+                {"id": "old", "text": "existing", "owner": "alice"},
+                {"id": "bob-old", "text": "bob existing", "owner": "bob"},
+            ]
 
         def save(self, memories):
             self.saved = memories
@@ -142,7 +145,10 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
             return [{"id": "s1", "title": "Skill", "owner": owner}]
 
         def load_all(self):
-            return [{"id": "known", "title": "Known"}]
+            return [
+                {"id": "known", "title": "Known", "owner": "alice"},
+                {"id": "bob-skill", "title": "Bob Skill", "owner": "bob"},
+            ]
 
         def save(self, skills):
             self.saved = skills
@@ -214,6 +220,38 @@ def test_backup_routes_export_import_encrypted_and_validation(monkeypatch):
     assert saved_settings[-1]["providers"] == [{"name": "local2", "api_key": "provider-secret"}]
     assert saved_features[-1]["email"] is True
     assert saved_prefs[-1] == ("alice", {"theme": "dark", "font": "mono"})
+
+    imported_cross_owner = asyncio.run(
+        _endpoint(router, "/api/import", "POST")(
+            RequestLike(
+                body={
+                    "memories": [
+                        {"id": "bob-import", "text": "Bob carried text", "owner": "bob"},
+                        {"id": "bob-text-dupe", "text": "bob existing", "owner": "bob"},
+                    ],
+                    "skills": [
+                        {"id": "bob-import-skill", "title": "Bob Imported Skill", "owner": "bob"},
+                        {"id": "bob-skill", "title": "Bob Skill", "owner": "bob"},
+                    ],
+                },
+                user="alice",
+            )
+        )
+    )
+    assert imported_cross_owner["ok"] is True
+    assert "2 memories" in imported_cross_owner["imported"]
+    assert "2 skills" in imported_cross_owner["imported"]
+    imported_memories = [m for m in memory.saved if m.get("id") in {"bob-import", "bob-text-dupe"}]
+    imported_skills = [s for s in skills.saved if s.get("id") in {"bob-import-skill", "bob-skill"}]
+    assert {m["owner"] for m in imported_memories} == {"alice"}
+    assert any(s.get("id") == "bob-import-skill" and s.get("owner") == "alice" for s in imported_skills)
+    assert any(s.get("id") == "bob-skill" and s.get("owner") == "bob" for s in imported_skills)
+    copied_bob_skill = [
+        s for s in skills.saved
+        if s.get("title") == "Bob Skill" and s.get("owner") == "alice"
+    ]
+    assert len(copied_bob_skill) == 1
+    assert copied_bob_skill[0]["id"] != "bob-skill"
 
     skipped_skills = asyncio.run(
         _endpoint(router, "/api/import", "POST")(
