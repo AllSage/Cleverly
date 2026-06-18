@@ -478,7 +478,10 @@ def setup_document_routes(session_manager, upload_handler=None) -> APIRouter:
             import re
             import zipfile
             from fastapi import Response
-            docs = db.query(Document).filter(Document.id.in_(ids)).all()
+            docs = db.query(Document).filter(
+                Document.id.in_(ids),
+                Document.is_active == True,
+            ).all()
             buf = io.BytesIO()
             used = set()
             wrote = 0

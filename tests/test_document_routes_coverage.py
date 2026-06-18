@@ -509,12 +509,14 @@ def test_document_crud_version_archive_export_and_tidy_paths(document_routes_env
 
     zip_response = asyncio.run(
         _endpoint(router, "/api/documents/export-zip", "POST")(
-            RequestLike(body={"ids": ["doc1", "doc2", "missing"]})
+            RequestLike(body={"ids": ["doc1", "doc2", "inactive", "missing"]})
         )
     )
     assert isinstance(zip_response, Response)
     with zipfile.ZipFile(BytesIO(zip_response.body)) as zf:
-        assert zf.namelist()
+        names = zf.namelist()
+        assert names
+        assert not any("Dead" in name for name in names)
 
     tidy = asyncio.run(_endpoint(router, "/api/documents/tidy", "POST")(request))
     assert tidy["deleted"] >= 1
