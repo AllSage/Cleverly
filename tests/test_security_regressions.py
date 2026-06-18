@@ -1150,6 +1150,13 @@ def test_response_complete_notifications_are_browser_local_opt_in():
     assert "webhook" not in response_fn.lower()
 
 
+def test_skill_test_errors_escape_exception_text():
+    skills_js = Path("static/js/skills.js").read_text(encoding="utf-8")
+
+    assert "Test failed: ' + esc(e.message || e)" in skills_js
+    assert "Test failed: ' + (e.message || e)" not in skills_js
+
+
 def test_training_lab_is_local_only_and_wired_to_ui():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     index_html = Path("static/index.html").read_text(encoding="utf-8")

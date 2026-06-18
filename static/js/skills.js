@@ -1142,8 +1142,8 @@ async function _testSkill(card, name, force = false) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, endpoint_url }),
       });
-      if (!res.ok) { logEl.innerHTML = '<div class="skill-test-err">Test failed: HTTP ' + res.status + '</div>'; return; }
-    } catch (e) { logEl.innerHTML = '<div class="skill-test-err">Test failed: ' + (e.message || e) + '</div>'; return; }
+      if (!res.ok) { logEl.innerHTML = '<div class="skill-test-err">Test failed: HTTP ' + esc(res.status) + '</div>'; return; }
+    } catch (e) { logEl.innerHTML = '<div class="skill-test-err">Test failed: ' + esc(e.message || e) + '</div>'; return; }
     job = await _fetchTestStatus(name);
   }
 
