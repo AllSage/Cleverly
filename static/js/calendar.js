@@ -174,6 +174,14 @@ let _calendarsError = null;
 // every list/render path calls _fetchCalendars, but we only want to
 // hit the remote server lazily on the first user open.
 let _caldavSyncedOnce = false;
+async function _networkIntegrationsEnabled() {
+  try {
+    const features = await Promise.resolve(window._initFeaturesReady || window._cleverlyFeatures || {});
+    return !features || features.network_integrations !== false;
+  } catch (e) {
+    return true;
+  }
+}
 async function _fetchCalendars() {
   _calendarsError = null;
   try {
@@ -189,7 +197,7 @@ async function _fetchCalendars() {
   // First open: fire a background CalDAV pull. We don't await — the
   // initial render uses whatever's already cached locally, and the
   // sync's writes show up on the next paint after it resolves.
-  if (!_caldavSyncedOnce) {
+  if (!_caldavSyncedOnce && _open && await _networkIntegrationsEnabled()) {
     _caldavSyncedOnce = true;
     _syncCaldav(false);
   }

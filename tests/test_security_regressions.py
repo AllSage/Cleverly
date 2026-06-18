@@ -1069,6 +1069,7 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     compare_selector = Path("static/js/compare/selector.js").read_text(encoding="utf-8")
     research_panel = Path("static/js/research/panel.js").read_text(encoding="utf-8")
     document_library = Path("static/js/documentLibrary.js").read_text(encoding="utf-8")
+    calendar_js = Path("static/js/calendar.js").read_text(encoding="utf-8")
     chat_js = Path("static/js/chat.js").read_text(encoding="utf-8")
     inbox_js = Path("static/js/emailInbox.js").read_text(encoding="utf-8")
     settings_js = Path("static/js/settings.js").read_text(encoding="utf-8")
@@ -1103,6 +1104,9 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     assert "window._cleverlyFeatures.deep_research !== false" in research_panel
     assert "modal.querySelector('[data-doclib-tab=\"research\"]')?.remove()" in document_library
     assert "Deep Research is disabled in offline mode." in document_library
+    assert "async function _networkIntegrationsEnabled()" in calendar_js
+    assert "window._initFeaturesReady || window._cleverlyFeatures || {}" in calendar_js
+    assert "if (!_caldavSyncedOnce && _open && await _networkIntegrationsEnabled())" in calendar_js
 
 
 def test_response_complete_notifications_are_browser_local_opt_in():
