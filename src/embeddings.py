@@ -29,7 +29,7 @@ import numpy as np
 import httpx
 from typing import List, Optional
 from src.offline_policy import is_local_model_url
-from src.settings import load_features
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +222,8 @@ def reset_http_embed_state():
 def _external_embedding_endpoint_allowed(url: str) -> bool:
     if is_local_model_url(url):
         return True
+    if offline_mode():
+        return False
     try:
         return (load_features() or {}).get("external_model_endpoints") is not False
     except Exception as exc:
@@ -232,7 +234,7 @@ def _external_embedding_endpoint_allowed(url: str) -> bool:
 def get_embedding_client():
     """Factory: try HTTP API first, fall back to local fastembed."""
     global _http_embed_down
-    offline = _truthy(os.getenv("CLEVERLY_OFFLINE"))
+    offline = _truthy(os.getenv("CLEVERLY_OFFLINE")) or offline_mode()
     offline_embeddings = _truthy(os.getenv("CLEVERLY_OFFLINE_EMBEDDINGS"))
 
     if offline and not offline_embeddings:

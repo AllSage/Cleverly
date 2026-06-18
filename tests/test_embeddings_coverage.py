@@ -26,6 +26,7 @@ def restore_embedding_state(monkeypatch):
     original = {key: os.environ.get(key) for key in EMBED_ENV_KEYS}
     original_down = emb._http_embed_down
     monkeypatch.setattr(emb, "load_features", lambda: {"external_model_endpoints": True})
+    monkeypatch.setattr(emb, "offline_mode", lambda: False)
     yield
     for key, value in original.items():
         if value is None:
@@ -246,6 +247,14 @@ def test_get_embedding_client_offline_disabled(monkeypatch):
     assert emb.get_embedding_client() is None
 
 
+def test_get_embedding_client_settings_offline_disabled(monkeypatch):
+    monkeypatch.delenv("CLEVERLY_OFFLINE", raising=False)
+    monkeypatch.delenv("CLEVERLY_OFFLINE_EMBEDDINGS", raising=False)
+    monkeypatch.setattr(emb, "offline_mode", lambda: True)
+
+    assert emb.get_embedding_client() is None
+
+
 def test_get_embedding_client_http_success_with_persisted_endpoint(monkeypatch):
     class GoodHttpClient:
         def __init__(self):
@@ -321,7 +330,42 @@ def test_get_embedding_client_skips_remote_endpoint_when_feature_disabled(monkey
 
     assert isinstance(client, GoodFastEmbed)
     assert client.probed is True
+    assert emb._external_embedding_endpoint_allowed("https://remote.example/v1/embeddings") is False
     assert emb._http_embed_down is True
+
+
+def test_get_embedding_client_skips_remote_endpoint_when_settings_offline(monkeypatch):
+    class BlockedHttpClient:
+        url = "https://remote.example/v1/embeddings"
+        model = "remote"
+
+        def get_sentence_embedding_dimension(self):
+            raise AssertionError("network")
+
+    class GoodFastEmbed:
+        model = "fast"
+
+        def __init__(self):
+            self.probed = False
+
+        def get_sentence_embedding_dimension(self):
+            self.probed = True
+            return 2
+
+    monkeypatch.setenv("CLEVERLY_OFFLINE_EMBEDDINGS", "1")
+    monkeypatch.setattr(emb, "_load_persisted_endpoint", lambda: {"url": "https://remote.example/v1/embeddings"})
+    monkeypatch.setattr(emb, "EmbeddingClient", lambda: BlockedHttpClient())
+    monkeypatch.setattr(emb, "FastEmbedClient", GoodFastEmbed)
+    monkeypatch.setattr(emb, "is_local_model_url", lambda url: False)
+    monkeypatch.setattr(emb, "offline_mode", lambda: True)
+    monkeypatch.setattr(emb, "load_features", lambda: {"external_model_endpoints": True})
+
+    client = emb.get_embedding_client()
+
+    assert isinstance(client, GoodFastEmbed)
+    assert client.probed is True
+    assert emb._external_embedding_endpoint_allowed("https://remote.example/v1/embeddings") is False
+    assert emb._http_embed_down is False
 
 
 def test_get_embedding_client_offline_embeddings_skip_http_and_fastembed_errors(monkeypatch):
