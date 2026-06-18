@@ -308,6 +308,18 @@ def test_startup_ollama_probe_blocks_external_url_offline(monkeypatch):
     from src import startup_endpoints
 
     monkeypatch.setattr(startup_endpoints, "offline_mode", lambda: True)
+    monkeypatch.setattr(startup_endpoints, "load_features", lambda: {"external_model_endpoints": True})
+    monkeypatch.setattr(startup_endpoints, "is_local_model_url", lambda url: "localhost" in url)
+    monkeypatch.setattr(startup_endpoints.httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+
+    assert startup_endpoints._ollama_models("https://ollama.example:11434") == []
+
+
+def test_startup_ollama_probe_blocks_external_url_feature_disabled(monkeypatch):
+    from src import startup_endpoints
+
+    monkeypatch.setattr(startup_endpoints, "offline_mode", lambda: False)
+    monkeypatch.setattr(startup_endpoints, "load_features", lambda: {"external_model_endpoints": False})
     monkeypatch.setattr(startup_endpoints, "is_local_model_url", lambda url: "localhost" in url)
     monkeypatch.setattr(startup_endpoints.httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
 
