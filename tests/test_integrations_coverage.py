@@ -128,6 +128,12 @@ async def test_execute_api_call_validation_and_auth(monkeypatch):
         "exit_code": 1,
     }
     monkeypatch.setattr(integrations, "offline_mode", lambda: False)
+    monkeypatch.setattr(integrations, "load_features", lambda: {"network_integrations": False})
+    assert await integrations.execute_api_call("min", "GET", "/v1/me") == {
+        "error": "Network integrations are disabled in offline mode",
+        "exit_code": 1,
+    }
+    monkeypatch.setattr(integrations, "load_features", lambda: {"network_integrations": True})
 
     assert (await integrations.execute_api_call("missing", "GET", "/x"))["exit_code"] == 1
     assert "disabled" in (await integrations.execute_api_call("disabled", "GET", "/x"))["error"]
@@ -168,6 +174,8 @@ async def test_execute_api_call_validation_and_auth(monkeypatch):
 @pytest.mark.asyncio
 async def test_execute_api_call_response_and_exception_branches(monkeypatch):
     long_text = "x" * 12001
+    monkeypatch.setattr(integrations, "offline_mode", lambda: False)
+    monkeypatch.setattr(integrations, "load_features", lambda: {"network_integrations": True})
     monkeypatch.setattr(
         integrations,
         "load_integrations",
@@ -213,6 +221,9 @@ def test_find_strip_prompt_and_migration(monkeypatch, tmp_path):
     monkeypatch.setattr(integrations, "offline_mode", lambda: True)
     assert integrations.get_integrations_prompt() == ""
     monkeypatch.setattr(integrations, "offline_mode", lambda: False)
+    monkeypatch.setattr(integrations, "load_features", lambda: {"network_integrations": False})
+    assert integrations.get_integrations_prompt() == ""
+    monkeypatch.setattr(integrations, "load_features", lambda: {"network_integrations": True})
     prompt = integrations.get_integrations_prompt()
     assert "Named" in prompt and "Useful API" in prompt and "Off" not in prompt
     monkeypatch.setattr(integrations, "load_integrations", lambda: [])

@@ -596,6 +596,18 @@ def test_vault_routes_config_login_unlock_lock_logout_and_helpers(monkeypatch, t
     assert offline_save.value.status_code == 403
 
     monkeypatch.setattr(vault_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(vault_routes, "load_features", lambda: {"vault": False})
+    assert asyncio.run(_endpoint(router, "/api/vault/config")(request)) == {
+        "server_url": "",
+        "email": "",
+        "unlocked": False,
+        "unlocked_at": "",
+        "bw_installed": False,
+    }
+    with pytest.raises(HTTPException) as disabled_save:
+        asyncio.run(_endpoint(router, "/api/vault/config", "POST")(vault_routes.VaultConfig(server_url="http://v", email="e"), request))
+    assert disabled_save.value.status_code == 403
+    monkeypatch.setattr(vault_routes, "load_features", lambda: {"vault": True})
     vault_routes._save_config({"server_url": "http://old", "email": "old", "session": "s", "unlocked_at": "then"})
     config = asyncio.run(_endpoint(router, "/api/vault/config")(request))
     assert config["unlocked"] is True

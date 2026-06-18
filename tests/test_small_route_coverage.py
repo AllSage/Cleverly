@@ -485,6 +485,7 @@ def test_diagnostics_routes_success_and_error_paths(monkeypatch):
     monkeypatch.setattr(diagnostics_routes, "require_admin", lambda request: None)
     monkeypatch.setattr(diagnostics_routes, "extract_youtube_id", lambda url: "vid" if "watch" in url else None)
     monkeypatch.setattr(diagnostics_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(diagnostics_routes, "load_features", lambda: {"web_fetch": True})
 
     async def transcript(url, video_id):
         return {"success": True, "transcript": "t" * 600}
@@ -512,6 +513,11 @@ def test_diagnostics_routes_success_and_error_paths(monkeypatch):
         "error": "YouTube diagnostics are disabled in offline mode"
     }
     monkeypatch.setattr(diagnostics_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(diagnostics_routes, "load_features", lambda: {"web_fetch": False})
+    assert asyncio.run(_endpoint(router, "/api/test/youtube")(request, url="https://youtube.com/watch?v=vid")) == {
+        "error": "YouTube diagnostics are disabled in offline mode"
+    }
+    monkeypatch.setattr(diagnostics_routes, "load_features", lambda: {"web_fetch": True})
     assert asyncio.run(_endpoint(router, "/api/test/youtube")(request, url="bad")) == {"error": "Invalid YouTube URL"}
 
     async def transcript_fail(url, video_id):

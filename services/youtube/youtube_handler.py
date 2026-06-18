@@ -12,7 +12,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,19 @@ Keep it conversational and concise. Do NOT web search for this video — use onl
 # Will be set at startup by init_youtube()
 YouTubeTranscriptApi = None
 YOUTUBE_AVAILABLE = False
+
+
+def _feature_enabled(key: str) -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get(key) is not False
+    except Exception:
+        return False
+
+
+def _web_fetch_allowed() -> bool:
+    return _feature_enabled("web_fetch")
 
 
 def _find_ytdlp() -> str:
@@ -93,7 +106,7 @@ async def extract_transcript_async(
     Returns:
         Dict with success/error/transcript keys
     """
-    if offline_mode():
+    if not _web_fetch_allowed():
         return {"success": False, "error": "YouTube transcript fetching is disabled in offline mode", "transcript": None}
 
     if not YOUTUBE_AVAILABLE or YouTubeTranscriptApi is None:
@@ -191,7 +204,7 @@ async def fetch_youtube_comments(
 
     Returns dict with 'success', 'comments' list, 'error'.
     """
-    if offline_mode():
+    if not _web_fetch_allowed():
         return {"success": False, "error": "YouTube comment fetching is disabled in offline mode", "comments": []}
 
     try:

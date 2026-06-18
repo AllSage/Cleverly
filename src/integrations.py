@@ -10,11 +10,24 @@ import httpx
 from core.atomic_io import atomic_write_json
 from core.platform_compat import safe_chmod
 from src.secret_storage import decrypt, encrypt, is_encrypted
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 log = logging.getLogger(__name__)
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "integrations.json")
+
+
+def _feature_enabled(key: str) -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get(key) is not False
+    except Exception:
+        return False
+
+
+def _network_integrations_allowed() -> bool:
+    return _feature_enabled("network_integrations")
 
 # ---------------------------------------------------------------------------
 # Presets
@@ -305,7 +318,7 @@ async def execute_api_call(
     extra_headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Execute an HTTP request against a registered integration."""
-    if offline_mode():
+    if not _network_integrations_allowed():
         return {"error": "Network integrations are disabled in offline mode", "exit_code": 1}
 
     integration = _find_integration(integration_id)
@@ -433,7 +446,7 @@ def get_integrations_prompt() -> str:
 
     Returns empty string if no integrations are enabled.
     """
-    if offline_mode():
+    if not _network_integrations_allowed():
         return ""
     integrations = load_integrations()
     enabled = [i for i in integrations if i.get("enabled", True)]

@@ -17,11 +17,24 @@ from pydantic import BaseModel
 
 from core.middleware import require_admin
 from core.platform_compat import IS_WINDOWS, safe_chmod, which_tool
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
 VAULT_FILE = Path("data/vault.json")
+
+
+def _feature_enabled(key: str) -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get(key) is not False
+    except Exception:
+        return False
+
+
+def _vault_enabled() -> bool:
+    return _feature_enabled("vault")
 
 
 def _find_bw() -> str:
@@ -122,7 +135,7 @@ def setup_vault_routes():
     async def get_config(request: Request):
         """Return vault config (no sensitive fields)."""
         require_admin(request)
-        if offline_mode():
+        if not _vault_enabled():
             return {"server_url": "", "email": "", "unlocked": False, "unlocked_at": "", "bw_installed": False}
         cfg = _load_config()
         return {
@@ -137,7 +150,7 @@ def setup_vault_routes():
     async def save_config(req: VaultConfig, request: Request):
         """Save vault URL + email. Runs 'bw config server' to point at Vaultwarden."""
         require_admin(request)
-        if offline_mode():
+        if not _vault_enabled():
             raise HTTPException(403, "Vault integration is disabled in offline mode")
         cfg = _load_config()
         cfg["server_url"] = req.server_url.strip().rstrip("/")
@@ -155,7 +168,7 @@ def setup_vault_routes():
     async def login(req: VaultLoginRequest, request: Request):
         """Log in to Vaultwarden (required once per account)."""
         require_admin(request)
-        if offline_mode():
+        if not _vault_enabled():
             raise HTTPException(403, "Vault integration is disabled in offline mode")
         cfg = _load_config()
         # Update email
@@ -182,7 +195,7 @@ def setup_vault_routes():
     async def unlock(req: VaultUnlockRequest, request: Request):
         """Unlock the vault and save the session key."""
         require_admin(request)
-        if offline_mode():
+        if not _vault_enabled():
             raise HTTPException(403, "Vault integration is disabled in offline mode")
         stdout, stderr, rc = await _run_bw(
             ["unlock", req.master_password, "--raw"],
@@ -202,7 +215,7 @@ def setup_vault_routes():
     async def lock(request: Request):
         """Lock the vault (clear session from config)."""
         require_admin(request)
-        offline = offline_mode()
+        vault_enabled = _vault_enabled()
         cfg = _load_config()
         cfg.pop("session", None)
         cfg.pop("unlocked_at", None)
@@ -210,7 +223,7 @@ def setup_vault_routes():
         # Also tell bw to lock when the Vault integration is enabled. In
         # offline/sealed mode, keep this route local-only so it can clear
         # Cleverly's stored session without launching external tooling.
-        if not offline:
+        if vault_enabled:
             await _run_bw(["lock"])
         return {"ok": True, "message": "Vault locked"}
 
@@ -218,8 +231,8 @@ def setup_vault_routes():
     async def logout(request: Request):
         """Log out of the Bitwarden CLI completely."""
         require_admin(request)
-        offline = offline_mode()
-        if not offline:
+        vault_enabled = _vault_enabled()
+        if vault_enabled:
             await _run_bw(["logout"])
         cfg = _load_config()
         cfg.pop("session", None)

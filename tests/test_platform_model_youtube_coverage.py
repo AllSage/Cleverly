@@ -444,6 +444,20 @@ async def test_youtube_transcript_and_comments(monkeypatch, module_name):
         "comments": [],
     }
     monkeypatch.setattr(yt, "offline_mode", lambda: False)
+    monkeypatch.setattr(yt, "load_features", lambda: {"web_fetch": False})
+    disabled_transcript = await yt.extract_transcript_async("url", "vid")
+    assert disabled_transcript == {
+        "success": False,
+        "error": "YouTube transcript fetching is disabled in offline mode",
+        "transcript": None,
+    }
+    disabled_comments = await yt.fetch_youtube_comments("vid")
+    assert disabled_comments == {
+        "success": False,
+        "error": "YouTube comment fetching is disabled in offline mode",
+        "comments": [],
+    }
+    monkeypatch.setattr(yt, "load_features", lambda: {"web_fetch": True})
 
     yt.YOUTUBE_AVAILABLE = False
     yt.YouTubeTranscriptApi = None
