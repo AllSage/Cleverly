@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import httpx
 
 from src.offline_policy import is_local_model_url
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,18 @@ def _is_local_endpoint(url: str) -> bool:
         host = urlparse(url).hostname or ""
         return host in _LOCAL_HOSTS or host.startswith(_PRIVATE_PREFIXES)
     except Exception:
+        return False
+
+
+def _external_endpoint_allowed(url: str) -> bool:
+    if is_local_model_url(url):
+        return True
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("external_model_endpoints") is not False
+    except Exception as exc:
+        logger.warning("Model context feature check failed; blocking remote endpoint: %s", exc)
         return False
 
 # ---------------------------------------------------------------------------
@@ -201,7 +213,7 @@ def _query_context_length(endpoint_url: str, model: str) -> int:
     """Query the model API for context length."""
     known = _lookup_known(model)
     api_ctx = None
-    if offline_mode() and not is_local_model_url(endpoint_url):
+    if not _external_endpoint_allowed(endpoint_url):
         return known or DEFAULT_CONTEXT
 
     # Try llama.cpp /slots endpoint first — reports actual serving context

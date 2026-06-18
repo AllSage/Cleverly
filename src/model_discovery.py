@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 
 from src.offline_policy import is_local_model_url
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,18 @@ logger = logging.getLogger(__name__)
 _hosts_cache: List[str] = []
 _hosts_cache_time: float = 0
 _HOSTS_CACHE_TTL = 60  # seconds
+
+
+def _external_endpoint_allowed(base_url: str) -> bool:
+    if is_local_model_url(base_url):
+        return True
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("external_model_endpoints") is not False
+    except Exception as exc:
+        logger.warning("Model discovery feature check failed; blocking remote endpoint: %s", exc)
+        return False
 
 
 def discover_tailscale_hosts() -> List[str]:
@@ -126,7 +138,7 @@ class ModelDiscovery:
     def _check_port(self, host: str, port: int) -> Optional[Dict[str, Any]]:
         """Check a single host:port for models."""
         base = f"http://{host}:{port}/v1"
-        if offline_mode() and not is_local_model_url(base):
+        if not _external_endpoint_allowed(base):
             return None
         try:
             r = httpx.get(f"{base}/models", timeout=3)
@@ -182,7 +194,7 @@ class ModelDiscovery:
         items = discovery["items"]
         providers = [{"provider": "vllm", "hosts": discovery["hosts"], "items": items}]
 
-        if self.openai_api_key and not offline_mode():
+        if self.openai_api_key and _external_endpoint_allowed("https://api.openai.com/v1/chat/completions"):
             openai_models = [
                 "gpt-5.2-codex", "gpt-4o-mini", "gpt-image-1.5",
                 "gpt-4o", "gpt-5.2", "gpt-5.2-pro",

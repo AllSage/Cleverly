@@ -74,6 +74,7 @@ def test_model_discovery_hosts_ports_providers_and_http(monkeypatch):
     import src.model_discovery as md
 
     discovery = md.ModelDiscovery("127.0.0.1", openai_api_key="sk-test")
+    monkeypatch.setattr(md, "load_features", lambda: {"external_model_endpoints": True})
 
     monkeypatch.setenv("LLM_HOSTS", "10.0.0.2, 10.0.0.2, 10.0.0.3")
     assert discovery._get_hosts() == ["127.0.0.1", "10.0.0.2", "10.0.0.2", "10.0.0.3", "host.docker.internal"]
@@ -155,6 +156,16 @@ def test_model_discovery_hosts_ports_providers_and_http(monkeypatch):
     offline_providers = offline_discovery.get_providers()["providers"]
     assert len(offline_providers) == 1
     assert offline_providers[0]["provider"] == "vllm"
+
+    monkeypatch.setattr(md, "offline_mode", lambda: False)
+    monkeypatch.setattr(md, "load_features", lambda: {"external_model_endpoints": False})
+    monkeypatch.setattr(md, "is_local_model_url", lambda url: "localhost" in url)
+    monkeypatch.setattr(md.httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+    feature_disabled = md.ModelDiscovery("localhost", openai_api_key="sk-test")
+    monkeypatch.setattr(feature_disabled, "discover_models", lambda: {"hosts": ["localhost"], "items": []})
+    assert feature_disabled._check_port("api.example.com", 8000) is None
+    disabled_providers = feature_disabled.get_providers()["providers"]
+    assert disabled_providers == [{"provider": "vllm", "hosts": ["localhost"], "items": []}]
 
 
 def test_platform_compat_posix_and_windows_branches(monkeypatch, tmp_path):

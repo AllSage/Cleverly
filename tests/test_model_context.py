@@ -6,6 +6,11 @@ import src.model_context as model_context
 from src.model_context import _is_local_endpoint, estimate_tokens, _lookup_known
 
 
+@pytest.fixture(autouse=True)
+def _default_external_endpoint_feature(monkeypatch):
+    monkeypatch.setattr(model_context, "load_features", lambda: {"external_model_endpoints": True})
+
+
 class TestIsLocalEndpoint:
     def test_localhost(self):
         assert _is_local_endpoint("http://localhost:5000/v1/chat/completions") is True
@@ -252,6 +257,15 @@ class TestQueryContextLength:
 
     def test_offline_mode_blocks_external_context_probe(self, monkeypatch):
         monkeypatch.setattr(model_context, "offline_mode", lambda: True)
+        monkeypatch.setattr(model_context, "is_local_model_url", lambda url: "localhost" in url)
+        monkeypatch.setattr(model_context.httpx, "get", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("network")))
+
+        assert model_context._query_context_length("https://api.test/v1/chat/completions", "gpt-4o") == 128000
+        assert model_context._query_context_length("https://api.test/v1/chat/completions", "unknown-model") == model_context.DEFAULT_CONTEXT
+
+    def test_feature_flag_blocks_external_context_probe(self, monkeypatch):
+        monkeypatch.setattr(model_context, "offline_mode", lambda: False)
+        monkeypatch.setattr(model_context, "load_features", lambda: {"external_model_endpoints": False})
         monkeypatch.setattr(model_context, "is_local_model_url", lambda url: "localhost" in url)
         monkeypatch.setattr(model_context.httpx, "get", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("network")))
 
