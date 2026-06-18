@@ -118,6 +118,7 @@ def _install_core_database(monkeypatch, rows, *, raise_on_query=False):
 def test_smtp_message_tls_modes_and_fallback(monkeypatch):
     helpers = _helpers()
     sent = []
+    monkeypatch.setattr(helpers, "offline_mode", lambda: False)
 
     class FakeSMTP:
         def __init__(self, host, port, timeout=30):
@@ -157,6 +158,34 @@ def test_smtp_message_tls_modes_and_fallback(monkeypatch):
     cfg["smtp_port"] = 465
     helpers._send_smtp_message(cfg, "me@example.com", ["you@example.com"], b"body")
     assert sent[0] == ("open", "plain", "smtp.local", 587, 30)
+
+
+def test_email_socket_helpers_block_offline_before_network(monkeypatch):
+    helpers = _helpers()
+
+    class BlockedSMTP:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("offline SMTP should not open a socket")
+
+    class BlockedIMAP:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("offline IMAP should not open a socket")
+
+    monkeypatch.setattr(helpers, "offline_mode", lambda: True)
+    monkeypatch.setattr(helpers.smtplib, "SMTP", BlockedSMTP)
+    monkeypatch.setattr(helpers.smtplib, "SMTP_SSL", BlockedSMTP)
+    monkeypatch.setattr(helpers.imaplib, "IMAP4", BlockedIMAP)
+    monkeypatch.setattr(helpers.imaplib, "IMAP4_SSL", BlockedIMAP)
+
+    with pytest.raises(RuntimeError, match="Email sending is disabled in offline mode"):
+        helpers._send_smtp_message(
+            {"smtp_host": "smtp.example.test", "smtp_port": 465},
+            "me@example.com",
+            ["you@example.com"],
+            "body",
+        )
+    with pytest.raises(RuntimeError, match="Email polling is disabled in offline mode"):
+        helpers._imap_connect("acct", owner="alice")
 
 
 def test_text_reply_style_and_auth(monkeypatch):
@@ -280,6 +309,7 @@ def test_attachments_and_message_extractors(monkeypatch, tmp_path):
 
 def test_imap_connect_context_folders_and_move(monkeypatch):
     helpers = _helpers()
+    monkeypatch.setattr(helpers, "offline_mode", lambda: False)
     monkeypatch.setattr(helpers, "_get_email_config", lambda account_id=None, owner="": {
         "imap_host": "imap.local",
         "imap_port": 143,
