@@ -426,6 +426,10 @@ def test_stt_service_dispatch_local_api_stats_and_singleton(monkeypatch, tmp_pat
     assert service._transcribe_api(b"audio", "remote", "whisper") is None
     assert post_calls[-1][0] == "http://endpoint/audio/transcriptions"
     monkeypatch.setattr(stt_module, "offline_mode", lambda: False)
+    monkeypatch.setattr(stt_module, "load_features", lambda: {"external_model_endpoints": False})
+    assert service._transcribe_api(b"audio", "remote", "whisper") is None
+    assert post_calls[-1][0] == "http://endpoint/audio/transcriptions"
+    monkeypatch.setattr(stt_module, "load_features", lambda: {"external_model_endpoints": True})
 
     db_missing = DB(None)
     fake_database.SessionLocal = lambda: db_missing
@@ -567,6 +571,10 @@ def test_tts_service_cache_dispatch_stats_kokoro_and_singleton(monkeypatch, tmp_
     assert service._synthesize_api("hello", "remote", "tts-1", "alloy") is None
     assert post_calls[-1][0] == "http://endpoint/audio/speech"
     monkeypatch.setattr(tts_module, "offline_mode", lambda: False)
+    monkeypatch.setattr(tts_module, "load_features", lambda: {"external_model_endpoints": False})
+    assert service._synthesize_api("hello", "remote", "tts-1", "alloy") is None
+    assert post_calls[-1][0] == "http://endpoint/audio/speech"
+    monkeypatch.setattr(tts_module, "load_features", lambda: {"external_model_endpoints": True})
 
     fake_database.SessionLocal = lambda: DB(None)
     assert service._synthesize_api("hello", "missing", "tts-1", "alloy") is None

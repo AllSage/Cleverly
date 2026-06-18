@@ -43,6 +43,7 @@ def test_tts_load_settings_lazy_kokoro_and_unknown_provider(monkeypatch, tmp_pat
 def test_tts_api_adds_authorization_header(monkeypatch, tmp_path):
     service = tts_service.TTSService(cache_dir=str(tmp_path / "tts"))
     monkeypatch.setattr(tts_service, "offline_mode", lambda: False)
+    monkeypatch.setattr(tts_service, "load_features", lambda: {"external_model_endpoints": True})
 
     class Endpoint:
         base_url = "http://voice.example/"

@@ -10,9 +10,21 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 from src.offline_policy import is_local_model_url
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
+
+
+def _external_endpoint_allowed(base_url: str) -> bool:
+    if is_local_model_url(base_url):
+        return True
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("external_model_endpoints") is not False
+    except Exception as exc:
+        logger.warning("TTS external endpoint feature check failed; disabling remote endpoint: %s", exc)
+        return False
 
 
 class TTSService:
@@ -105,8 +117,8 @@ class TTSService:
         finally:
             db.close()
 
-        if offline_mode() and not is_local_model_url(base_url):
-            logger.error("Blocked API TTS endpoint in offline mode: %s", base_url)
+        if not _external_endpoint_allowed(base_url):
+            logger.error("Blocked API TTS external endpoint: %s", base_url)
             return None
 
         url = base_url + "/audio/speech"
