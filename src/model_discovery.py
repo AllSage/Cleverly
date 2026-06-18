@@ -22,6 +22,10 @@ _HOSTS_CACHE_TTL = 60  # seconds
 def _external_endpoint_allowed(base_url: str) -> bool:
     if is_local_model_url(base_url):
         return True
+    return _external_model_discovery_allowed()
+
+
+def _external_model_discovery_allowed() -> bool:
     if offline_mode():
         return False
     try:
@@ -35,7 +39,7 @@ def discover_tailscale_hosts() -> List[str]:
     """Discover online Tailscale peers, returning their IPv4 addresses."""
     global _hosts_cache, _hosts_cache_time
 
-    if offline_mode():
+    if not _external_model_discovery_allowed():
         return []
 
     now = time.time()

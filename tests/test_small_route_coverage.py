@@ -100,6 +100,7 @@ def test_emoji_routes_invalid_cached_fetch_and_failure(monkeypatch, tmp_path):
     cache_dir = tmp_path / "emoji"
     monkeypatch.setattr(emoji_routes, "_CACHE_DIR", cache_dir)
     monkeypatch.setattr(emoji_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(emoji_routes, "load_features", lambda: {"network_integrations": True})
     router = emoji_routes.setup_emoji_routes()
     emoji_svg = _endpoint(router, "/api/emoji/{code}.svg")
 
@@ -126,6 +127,19 @@ def test_emoji_routes_invalid_cached_fetch_and_failure(monkeypatch, tmp_path):
     assert offline_uncached.body == emoji_routes._BLANK_SVG
 
     monkeypatch.setattr(emoji_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(emoji_routes, "load_features", lambda: {"network_integrations": False})
+    disabled_uncached = asyncio.run(emoji_svg("1f600"))
+    assert disabled_uncached.body == emoji_routes._BLANK_SVG
+
+    monkeypatch.setattr(
+        emoji_routes,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    failed_feature_uncached = asyncio.run(emoji_svg("1f600"))
+    assert failed_feature_uncached.body == emoji_routes._BLANK_SVG
+
+    monkeypatch.setattr(emoji_routes, "load_features", lambda: {"network_integrations": True})
 
     class GoodResponse:
         status_code = 200

@@ -70,6 +70,42 @@ def test_model_discovery_tailscale_skips_command_offline(monkeypatch):
     assert md.discover_tailscale_hosts() == []
 
 
+def test_model_discovery_tailscale_skips_command_when_external_endpoints_disabled(monkeypatch):
+    import src.model_discovery as md
+
+    md._hosts_cache = ["100.64.0.9"]
+    md._hosts_cache_time = 9999999999
+    monkeypatch.setattr(md, "offline_mode", lambda: False)
+    monkeypatch.setattr(md, "load_features", lambda: {"external_model_endpoints": False})
+    monkeypatch.setattr(
+        md.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("disabled discovery should not invoke tailscale")),
+    )
+
+    assert md.discover_tailscale_hosts() == []
+
+
+def test_model_discovery_tailscale_skips_command_when_feature_check_fails(monkeypatch):
+    import src.model_discovery as md
+
+    md._hosts_cache = ["100.64.0.9"]
+    md._hosts_cache_time = 9999999999
+    monkeypatch.setattr(md, "offline_mode", lambda: False)
+    monkeypatch.setattr(
+        md,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    monkeypatch.setattr(
+        md.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("failed feature check should not invoke tailscale")),
+    )
+
+    assert md.discover_tailscale_hosts() == []
+
+
 def test_model_discovery_hosts_ports_providers_and_http(monkeypatch):
     import src.model_discovery as md
 

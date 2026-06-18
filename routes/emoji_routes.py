@@ -18,7 +18,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter
 from fastapi.responses import FileResponse, Response
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,15 @@ _SVG_HEADERS = {"Cache-Control": "public, max-age=31536000, immutable"}
 # request can still pick up the real glyph once the CDN is reachable.
 _BLANK_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>'
 _BLANK_HEADERS = {"Cache-Control": "no-store"}
+
+
+def _emoji_cdn_allowed() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("network_integrations") is not False
+    except Exception:
+        return False
 
 
 def setup_emoji_routes() -> APIRouter:
@@ -52,7 +61,7 @@ def setup_emoji_routes() -> APIRouter:
         fp = _CACHE_DIR / f"{code}.svg"
         if fp.exists():
             return FileResponse(fp, media_type="image/svg+xml", headers=_SVG_HEADERS)
-        if offline_mode():
+        if not _emoji_cdn_allowed():
             return _blank()
 
         # First time we've seen this emoji — fetch the OpenMoji black SVG + cache

@@ -639,6 +639,8 @@ def test_hwfit_routes_manual_overrides_model_errors_and_image_models(monkeypatch
     monkeypatch.setattr(fit, "rank_models", lambda system, **kwargs: [{"system": system, "kwargs": kwargs}])
     original_rank_image_models = image_models.rank_image_models
     monkeypatch.setattr(image_models, "rank_image_models", lambda system, **kwargs: [{"system": system, "kwargs": kwargs}])
+    monkeypatch.setattr(hwfit_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(hwfit_routes, "load_features", lambda: {"network_integrations": True})
 
     router = hwfit_routes.setup_hwfit_routes()
     assert _endpoint(router, "/api/hwfit/system")(host="box", fresh=True)["gpu_count"] == 2
