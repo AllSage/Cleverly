@@ -1,6 +1,7 @@
 """Calendar routes — local SQLite-backed calendar CRUD."""
 
 import logging
+import re
 import uuid
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Tuple
@@ -80,6 +81,24 @@ def _resolve_base_uid(uid: str) -> str:
     if not base:
         raise ValueError("malformed compound UID: missing base before ::")
     return base
+
+
+def _ics_escape_text(value) -> str:
+    text = str(value or "")
+    text = text.replace("\\", "\\\\")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\n", "\\n")
+    text = text.replace(";", "\\;").replace(",", "\\,")
+    return text
+
+
+def _ics_safe_filename(name: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name or "calendar")).strip("._")
+    return (safe[:100] or "calendar") + ".ics"
+
+
+def _ics_sanitize_structured(value) -> str:
+    return str(value or "").replace("\r", "").replace("\n", "")
 
 # ── Pydantic models ──
 
@@ -1041,12 +1060,12 @@ def setup_calendar_routes() -> APIRouter:
                 "BEGIN:VCALENDAR",
                 "VERSION:2.0",
                 "PRODID:-//Cleverly//Calendar//EN",
-                f"X-WR-CALNAME:{cal.name}",
+                f"X-WR-CALNAME:{_ics_escape_text(cal.name)}",
             ]
             for ev in events:
                 lines.append("BEGIN:VEVENT")
-                lines.append(f"UID:{ev.uid}")
-                lines.append(f"SUMMARY:{ev.summary or ''}")
+                lines.append(f"UID:{_ics_escape_text(ev.uid)}")
+                lines.append(f"SUMMARY:{_ics_escape_text(ev.summary)}")
                 if ev.all_day:
                     lines.append(f"DTSTART;VALUE=DATE:{ev.dtstart.strftime('%Y%m%d')}")
                     lines.append(f"DTEND;VALUE=DATE:{ev.dtend.strftime('%Y%m%d')}")
@@ -1054,21 +1073,19 @@ def setup_calendar_routes() -> APIRouter:
                     lines.append(f"DTSTART:{ev.dtstart.strftime('%Y%m%dT%H%M%S')}")
                     lines.append(f"DTEND:{ev.dtend.strftime('%Y%m%dT%H%M%S')}")
                 if ev.description:
-                    desc = ev.description.replace(chr(10), '\\n')
-                    lines.append(f"DESCRIPTION:{desc}")
+                    lines.append(f"DESCRIPTION:{_ics_escape_text(ev.description)}")
                 if ev.location:
-                    lines.append(f"LOCATION:{ev.location}")
+                    lines.append(f"LOCATION:{_ics_escape_text(ev.location)}")
                 if ev.rrule:
-                    lines.append(f"RRULE:{ev.rrule}")
+                    lines.append(f"RRULE:{_ics_sanitize_structured(ev.rrule)}")
                 lines.append("END:VEVENT")
             lines.append("END:VCALENDAR")
 
             ics_data = "\r\n".join(lines)
-            safe_name = cal.name.replace(" ", "_").replace("/", "_")
             return Response(
                 content=ics_data,
                 media_type="text/calendar",
-                headers={"Content-Disposition": f'attachment; filename="{safe_name}.ics"'},
+                headers={"Content-Disposition": f'attachment; filename="{_ics_safe_filename(cal.name)}"'},
             )
         except HTTPException:
             raise

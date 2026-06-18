@@ -274,6 +274,7 @@ def test_calendar_routes_config_calendar_and_event_crud(monkeypatch):
     create_event = _endpoint(router, "/api/calendar/events", "POST")
     update_event = _endpoint(router, "/api/calendar/events/{uid}", "PUT")
     delete_event = _endpoint(router, "/api/calendar/events/{uid}", "DELETE")
+    export_ics = _endpoint(router, "/api/calendar/export/{cal_id}", "GET")
 
     assert asyncio.run(get_config(RequestLike()))["local"] is True
     assert asyncio.run(save_config(RequestLike({"url": ""}))) == {"ok": True, "cleared": True}
@@ -311,6 +312,25 @@ def test_calendar_routes_config_calendar_and_event_crud(monkeypatch):
     assert event.summary == "Updated"
     assert event.is_utc is False
     assert event.color is None
+
+    calendar.name = "Home/Work\r\nX-Bad: yes"
+    event.uid = "ev-1\r\nATTENDEE:bad"
+    event.summary = "Board, review; Q3\nLOCATION:Injected"
+    event.description = "Line 1\nLine 2; with, chars\\trail"
+    event.location = "HQ\nSTATUS:CANCELLED"
+    event.rrule = "FREQ=DAILY\nX-BAD:YES"
+    exported = asyncio.run(export_ics(RequestLike(), "cal-1"))
+    ics = exported.body.decode()
+    assert 'filename="Home_Work_X-Bad_yes.ics"' in exported.headers["content-disposition"]
+    assert "X-WR-CALNAME:Home/Work\\nX-Bad: yes" in ics
+    assert "UID:ev-1\\nATTENDEE:bad" in ics
+    assert "SUMMARY:Board\\, review\\; Q3\\nLOCATION:Injected" in ics
+    assert "DESCRIPTION:Line 1\\nLine 2\\; with\\, chars\\\\trail" in ics
+    assert "LOCATION:HQ\\nSTATUS:CANCELLED" in ics
+    assert "RRULE:FREQ=DAILYX-BAD:YES" in ics
+    assert "\r\nATTENDEE:bad" not in ics
+    assert "\r\nSTATUS:CANCELLED" not in ics
+    event.uid = "ev-1"
 
     assert asyncio.run(delete_event(RequestLike(), "ev-1")) == {"ok": True}
     assert event in db.deleted
