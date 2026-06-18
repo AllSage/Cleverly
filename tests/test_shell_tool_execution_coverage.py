@@ -129,6 +129,40 @@ async def test_shell_execute_reports_spawn_errors(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_shell_service_blocks_network_commands_when_feature_disabled(monkeypatch):
+    import services.shell.service as shell_service
+    from services.shell.service import ShellService
+
+    async def fail_spawn(*args, **kwargs):
+        raise AssertionError("network shell command should not spawn")
+
+    monkeypatch.setattr(shell_service, "offline_mode", lambda: False)
+    monkeypatch.setattr(shell_service, "load_features", lambda: {"network_integrations": False})
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", fail_spawn)
+
+    result = await ShellService().execute("git fetch origin")
+
+    assert result.stdout == ""
+    assert result.stderr == "Network shell commands are disabled in offline mode"
+    assert result.exit_code == 1
+
+    events = [event async for event in ShellService().stream("curl https://example.com")]
+    assert events == [
+        {"stream": "stderr", "data": "Network shell commands are disabled in offline mode"},
+        {"exit_code": 1},
+    ]
+
+    monkeypatch.setattr(
+        shell_service,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    failed_closed = await ShellService().execute("git pull")
+    assert failed_closed.exit_code == 1
+    assert failed_closed.stderr == "Network shell commands are disabled in offline mode"
+
+
+@pytest.mark.asyncio
 async def test_shell_stream_yields_stdout_stderr_and_exit(monkeypatch):
     from services.shell.service import ShellService
 

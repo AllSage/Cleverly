@@ -6,6 +6,9 @@ from typing import Optional, AsyncIterator
 import asyncio
 from pathlib import Path
 
+from src.offline_policy import command_uses_network
+from src.settings import load_features, offline_mode
+
 
 @dataclass
 class ShellResult:
@@ -31,6 +34,14 @@ class ShellService:
         self.max_output = max_output
         self.cwd = str(Path.home())
 
+    def _network_command_allowed(self) -> bool:
+        if offline_mode():
+            return False
+        try:
+            return (load_features() or {}).get("network_integrations") is not False
+        except Exception:
+            return False
+
     async def execute(
         self,
         command: str,
@@ -50,6 +61,13 @@ class ShellService:
         """
         timeout = timeout or self.timeout
         cwd = cwd or self.cwd
+
+        if command_uses_network(command) and not self._network_command_allowed():
+            return ShellResult(
+                stdout="",
+                stderr="Network shell commands are disabled in offline mode",
+                exit_code=1,
+            )
 
         proc = None
         try:
@@ -100,6 +118,11 @@ class ShellService:
 
         proc = None
         reader_tasks = []
+        if command_uses_network(command) and not self._network_command_allowed():
+            yield {"stream": "stderr", "data": "Network shell commands are disabled in offline mode"}
+            yield {"exit_code": 1}
+            return
+
         try:
             proc = await asyncio.create_subprocess_shell(
                 command,
