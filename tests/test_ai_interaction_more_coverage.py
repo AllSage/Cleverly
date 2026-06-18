@@ -308,6 +308,14 @@ def test_ai_session_tools_pipeline_memory_and_dispatch(monkeypatch):
     desc, result = asyncio.run(ai.dispatch_ai_tool("ui_control", "toggle shell on", session_id="s1", owner="alice"))
     assert desc.startswith("ui_control")
     assert result["toggle_name"] == "bash"
+    switched_ui = asyncio.run(ai.do_ui_control("switch_model reviewer", session_id="s1", owner="alice"))
+    assert switched_ui["model"] == "reviewer"
+    assert manager.get_session("s1").model == "reviewer"
+    denied_switch = asyncio.run(
+        ai.do_ui_control("switch_model reviewer", session_id="bob-session", owner="alice")
+    )
+    assert "not found" in denied_switch["error"]
+    assert manager.get_session("bob-session").model == "main-model"
     desc, denied_dispatch = asyncio.run(
         ai.dispatch_ai_tool("send_to_session", "bob-session\nhello", owner="alice")
     )

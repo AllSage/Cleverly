@@ -1265,7 +1265,11 @@ async def do_manage_rag(content: str, session_id: Optional[str] = None) -> Dict:
 # UI control tool (returns events for frontend to apply)
 # ---------------------------------------------------------------------------
 
-async def do_ui_control(content: str, session_id: Optional[str] = None) -> Dict:
+async def do_ui_control(
+    content: str,
+    session_id: Optional[str] = None,
+    owner: Optional[str] = None,
+) -> Dict:
     """Control frontend UI: toggle settings, switch model, change theme.
 
     Content format:
@@ -1338,6 +1342,12 @@ async def do_ui_control(content: str, session_id: Optional[str] = None) -> Dict:
         if not model_spec:
             return {"error": "switch_model needs a model name"}
 
+        owned_sessions = None
+        if session_id and _session_manager and owner is not None:
+            owned_sessions = _session_manager.get_sessions_for_user(owner)
+            if session_id not in owned_sessions:
+                return {"error": f"Session '{session_id}' not found"}
+
         # Resolve the model to validate it exists
         try:
             url, model_id, headers = _resolve_model(model_spec)
@@ -1349,7 +1359,10 @@ async def do_ui_control(content: str, session_id: Optional[str] = None) -> Dict:
             from src.database import SessionLocal as SL2, Session as DbSess2
             db2 = SL2()
             try:
-                db_s = db2.query(DbSess2).filter(DbSess2.id == session_id).first()
+                query = db2.query(DbSess2).filter(DbSess2.id == session_id)
+                if owner is not None:
+                    query = query.filter(DbSess2.owner == owner)
+                db_s = query.first()
                 if db_s:
                     db_s.endpoint_url = url
                     db_s.model = model_id
@@ -1357,7 +1370,10 @@ async def do_ui_control(content: str, session_id: Optional[str] = None) -> Dict:
             finally:
                 db2.close()
 
-            sess = _session_manager.get_session(session_id)
+            if owned_sessions is not None:
+                sess = owned_sessions.get(session_id)
+            else:
+                sess = _session_manager.get_session(session_id)
             if sess:
                 sess.endpoint_url = url
                 sess.model = model_id
@@ -1818,7 +1834,7 @@ async def dispatch_ai_tool(
     elif tool == "ui_control":
         action = content.split("\n")[0].strip()[:60]
         desc = f"ui_control: {action}"
-        result = await do_ui_control(content, session_id)
+        result = await do_ui_control(content, session_id, owner=owner)
 
     elif tool == "ask_teacher":
         problem = content.split("\n", 1)[-1].strip()[:60]
