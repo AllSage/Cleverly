@@ -239,7 +239,11 @@ async def do_ask_teacher(content: str, session_id: Optional[str] = None) -> Dict
         return {"error": f"Teacher call failed ({model_spec}): {e}"}
 
 
-async def do_second_opinion(content: str, session_id: Optional[str] = None) -> Dict:
+async def do_second_opinion(
+    content: str,
+    session_id: Optional[str] = None,
+    owner: Optional[str] = None,
+) -> Dict:
     """Get a second opinion from another model, then have the original model
     evaluate the feedback and produce a unified version.
 
@@ -271,7 +275,10 @@ async def do_second_opinion(content: str, session_id: Optional[str] = None) -> D
     context_text = ""
     sess = None
     if session_id and _session_manager:
-        sess = _session_manager.get_session(session_id)
+        if owner is not None:
+            sess = _session_manager.get_sessions_for_user(owner).get(session_id)
+        else:
+            sess = _session_manager.get_session(session_id)
         if sess:
             messages = sess.get_context_messages()
             recent = messages[-15:] if len(messages) > 15 else messages

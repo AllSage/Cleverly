@@ -247,9 +247,13 @@ def test_ai_session_tools_pipeline_memory_and_dispatch(monkeypatch):
     listed = asyncio.run(ai.do_list_sessions("", owner="alice"))
     assert "Found" in listed["results"]
 
-    second = asyncio.run(ai.do_second_opinion("reviewer\nfocus", session_id="s1"))
+    second = asyncio.run(ai.do_second_opinion("reviewer\nfocus", session_id="s1", owner="alice"))
     assert "Second Opinion" in second["response"]
     assert calls[0][1] == "reviewer"
+    denied_second = asyncio.run(
+        ai.do_second_opinion("reviewer\nfocus", session_id="bob-session", owner="alice")
+    )
+    assert denied_second["error"] == "No conversation context found to review"
 
     sent = asyncio.run(ai.do_send_to_session("s1\nhello", owner="alice"))
     assert sent["response"] == "sent"
