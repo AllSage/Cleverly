@@ -551,6 +551,9 @@ async def test_session_lifecycle_export_archive_and_context(session_env):
     assert "[USER]" in export(request, "s1", fmt="txt", filename="chat.txt").body.decode()
     assert json.loads(export(request, "s1", fmt="json", filename="chat.json").body)["name"] == "Renamed"
     assert "<!DOCTYPE html>" in export(request, "s1", fmt="html", filename="chat.html").body.decode()
+    bad_header = export(request, "s1", fmt="md", filename="../bad\r\nX-Injected: yes.md").headers["content-disposition"]
+    assert bad_header == 'attachment; filename="bad_X-Injected_yes.md"'
+    assert "\r" not in bad_header and "\n" not in bad_header and ".." not in bad_header
 
     save_now = _endpoint(session_env.router, "/api/sessions/save", "POST")
     assert save_now(request) == {"ok": True, "path": "sessions.json"}

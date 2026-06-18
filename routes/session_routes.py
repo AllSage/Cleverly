@@ -33,6 +33,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["sessions"])
 
+
+def _safe_export_filename(name: str, fallback: str) -> str:
+    raw = str(name or fallback or "conversation").strip()
+    raw = raw.replace("\\", "/").split("/")[-1]
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("._")
+    return safe[:120] or fallback
+
+
+def _attachment_header(filename: str, fallback: str) -> str:
+    return f'attachment; filename="{_safe_export_filename(filename, fallback)}"'
+
+
 def _pick_endpoint_for_sort():
     """Pick model endpoint for auto-sort LLM call — uses utility endpoint setting, falls back to default."""
     from src.endpoint_resolver import resolve_endpoint
@@ -571,7 +583,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             return Response(
                 content=_json.dumps(data, indent=2, ensure_ascii=False),
                 media_type="application/json",
-                headers={"Content-Disposition": f"attachment; filename={out_name}"},
+                headers={"Content-Disposition": _attachment_header(out_name, f"conversation_{safe_name}_{timestamp}.json")},
             )
 
         if fmt == "txt":
@@ -584,7 +596,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             return Response(
                 content="\n".join(lines),
                 media_type="text/plain",
-                headers={"Content-Disposition": f"attachment; filename={out_name}"},
+                headers={"Content-Disposition": _attachment_header(out_name, f"conversation_{safe_name}_{timestamp}.txt")},
             )
 
         if fmt == "html":
@@ -609,7 +621,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             return Response(
                 content="\n".join(html_parts),
                 media_type="text/html",
-                headers={"Content-Disposition": f"attachment; filename={out_name}"},
+                headers={"Content-Disposition": _attachment_header(out_name, f"conversation_{safe_name}_{timestamp}.html")},
             )
 
         # Default: markdown
@@ -630,7 +642,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         return Response(
             content="\n".join(markdown_lines),
             media_type="text/markdown",
-            headers={"Content-Disposition": f"attachment; filename={out_name}"},
+            headers={"Content-Disposition": _attachment_header(out_name, f"conversation_{safe_name}_{timestamp}.md")},
         )
     
     @router.post("/sessions/save")
