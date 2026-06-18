@@ -1207,6 +1207,18 @@ def test_admin_mcp_oauth_success_link_encodes_server_id():
     assert "/api/mcp/oauth/authorize/${data.id}" not in admin_js
 
 
+def test_settings_mcp_management_encodes_server_paths():
+    settings_js = Path("static/js/settings.js").read_text(encoding="utf-8")
+
+    assert "const serverPathId = encodeURIComponent(srv.id || srv.name || '');" in settings_js
+    assert "/api/mcp/oauth/authorize/${serverPathId}" in settings_js
+    assert "/api/mcp/servers/${serverPathId}/reconnect" in settings_js
+    assert "/api/mcp/servers/${serverPathId}/tools" in settings_js
+    assert "/api/mcp/oauth/authorize/${srv.id}" not in settings_js
+    assert "/api/mcp/servers/${srv.id}" not in settings_js
+    assert "const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');" not in settings_js
+
+
 def test_training_lab_is_local_only_and_wired_to_ui():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     index_html = Path("static/index.html").read_text(encoding="utf-8")

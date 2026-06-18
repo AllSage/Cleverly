@@ -4289,7 +4289,7 @@ async function initUnifiedIntegrations() {
         const servers = await res.json();
         const srv = servers.find(s => (s.id || s.name) === editId);
         if (!srv) { formEl.innerHTML = '<div class="admin-card" style="margin-top:8px">Server not found</div>'; return; }
-        const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        const serverPathId = encodeURIComponent(srv.id || srv.name || '');
         const statusColor = srv.needs_oauth ? '#e5a33a' : srv.status === 'connected' ? 'var(--green,#50fa7b)' : srv.status === 'error' ? 'var(--red)' : 'var(--fg)';
         const toolInfo = srv.status === 'connected' ? `${srv.enabled_tool_count}/${srv.tool_count} tools` : '';
         const statusText = srv.needs_oauth ? 'Needs authorization' : srv.status === 'connected' ? `Connected (${toolInfo})` : srv.status === 'error' ? `Error: ${esc(srv.error || 'unknown')}` : 'Disconnected';
@@ -4301,7 +4301,7 @@ async function initUnifiedIntegrations() {
               <span style="font-size:11px;opacity:0.7">${statusText}</span>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-              ${srv.needs_oauth ? `<a href="/api/mcp/oauth/authorize/${srv.id}" target="_blank" class="admin-btn-sm" style="background:var(--red);color:#fff;text-decoration:none">Authorize</a>` : ''}
+              ${srv.needs_oauth ? `<a href="/api/mcp/oauth/authorize/${serverPathId}" target="_blank" class="admin-btn-sm" style="background:var(--red);color:#fff;text-decoration:none">Authorize</a>` : ''}
               <button class="admin-btn-sm" id="uf-mcp-reconnect">Reconnect</button>
               <button class="admin-btn-sm" id="uf-mcp-toggle">${srv.is_enabled ? 'Disable' : 'Enable'}</button>
               <button class="admin-btn-sm" id="uf-mcp-cancel" style="opacity:0.7">Close</button>
@@ -4313,7 +4313,7 @@ async function initUnifiedIntegrations() {
         el('uf-mcp-reconnect').addEventListener('click', async () => {
           const msg = el('uf-mcp-msg'); msg.textContent = 'Reconnecting...';
           try {
-            const r = await fetch(`/api/mcp/servers/${srv.id}/reconnect`, { method: 'POST', credentials: 'same-origin' });
+            const r = await fetch(`/api/mcp/servers/${serverPathId}/reconnect`, { method: 'POST', credentials: 'same-origin' });
             const d = await r.json();
             msg.textContent = d.connected ? `Connected (${d.tool_count} tools)` : `Failed: ${d.error || 'unknown'}`;
             await renderList();
@@ -4323,7 +4323,7 @@ async function initUnifiedIntegrations() {
         // Toggle enable/disable
         el('uf-mcp-toggle').addEventListener('click', async () => {
           const fd = new FormData(); fd.append('is_enabled', String(!srv.is_enabled));
-          await fetch(`/api/mcp/servers/${srv.id}`, { method: 'PATCH', body: fd, credentials: 'same-origin' });
+          await fetch(`/api/mcp/servers/${serverPathId}`, { method: 'PATCH', body: fd, credentials: 'same-origin' });
           await renderList();
           showMcpForm(editId);
         });
@@ -4332,7 +4332,7 @@ async function initUnifiedIntegrations() {
         if (srv.status === 'connected' && srv.tool_count > 0) {
           const panel = el('uf-mcp-tools-panel');
           try {
-            const tr = await fetch(`/api/mcp/servers/${srv.id}/tools`, { credentials: 'same-origin' });
+            const tr = await fetch(`/api/mcp/servers/${serverPathId}/tools`, { credentials: 'same-origin' });
             const tools = await tr.json();
             if (tools.length) {
               const disabled = new Set(tools.filter(t => t.is_disabled).map(t => t.name));
@@ -4340,7 +4340,7 @@ async function initUnifiedIntegrations() {
               const saveFn = async () => {
                 const dis = [];
                 panel.querySelectorAll('input[type=checkbox]').forEach(cb => { if (!cb.checked) dis.push(cb.dataset.mcpToolName); });
-                await fetch(`/api/mcp/servers/${srv.id}/tools`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ disabled: dis }) });
+                await fetch(`/api/mcp/servers/${serverPathId}/tools`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ disabled: dis }) });
                 const cnt = panel.querySelector('.mcp-tools-count');
                 if (cnt) cnt.textContent = `${tools.length - dis.length}/${tools.length} enabled`;
               };
