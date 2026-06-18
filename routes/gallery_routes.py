@@ -57,6 +57,16 @@ def _ensure_offline_local_image_url(url: str) -> None:
         raise HTTPException(502, "Image endpoint returned an external image URL while external endpoints are disabled; configure it to return b64_json.")
 
 
+def _image_model_weight_downloads_allowed() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("cookbook_downloads") is not False
+    except Exception as exc:
+        logger.warning("Gallery image model weight feature check failed; disabling weight downloads: %s", exc)
+        return False
+
+
 def setup_gallery_routes() -> APIRouter:
     router = APIRouter(tags=["gallery"])
 
@@ -1367,7 +1377,7 @@ def setup_gallery_routes() -> APIRouter:
         # Decode source image (RGB; Real-ESRGAN doesn't preserve alpha).
         img_bytes = base64.b64decode(image_b64)
         src = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-        if offline_mode():
+        if not _image_model_weight_downloads_allowed():
             raise HTTPException(403, "AI denoise requires remote model weights and is disabled in offline mode")
         try:
             from realesrgan import RealESRGANer
@@ -1418,7 +1428,7 @@ def setup_gallery_routes() -> APIRouter:
             raise HTTPException(500, f"Server missing dependency: {e}")
         img_bytes = base64.b64decode(image_b64)
         src = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-        if offline_mode():
+        if not _image_model_weight_downloads_allowed():
             raise HTTPException(403, "Local AI upscale requires remote model weights and is disabled in offline mode")
         try:
             from basicsr.archs.rrdbnet_arch import RRDBNet
@@ -1499,7 +1509,7 @@ def setup_gallery_routes() -> APIRouter:
         else:
             crop = img
 
-        if offline_mode():
+        if not _image_model_weight_downloads_allowed():
             raise HTTPException(403, "Background removal requires model weights and is disabled in offline mode")
 
         try:
@@ -1568,7 +1578,7 @@ def setup_gallery_routes() -> APIRouter:
             enhanced.save(buf, format="PNG")
             return {"image": base64.b64encode(buf.getvalue()).decode(), "method": "pil"}
 
-        if offline_mode():
+        if not _image_model_weight_downloads_allowed():
             logger.info("Offline mode: using PIL face enhancement fallback")
             return _pil_enhance()
 

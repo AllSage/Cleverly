@@ -548,6 +548,30 @@ async def test_gallery_offline_blocks_image_model_weight_downloads(gallery_env, 
     assert result["method"] == "pil"
     assert base64.b64decode(result["image"])
 
+    monkeypatch.setattr(routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(routes, "load_features", lambda: {"cookbook_downloads": False})
+    for path in [
+        "/api/image/denoise",
+        "/api/image/upscale-local",
+        "/api/image/remove-bg",
+    ]:
+        endpoint = _endpoint(gallery_env.router, path, "POST")
+        with pytest.raises(HTTPException) as feature_exc:
+            await endpoint(RequestLike(body={"image": image}))
+        assert feature_exc.value.status_code == 403
+
+    feature_disabled_face = await enhance(RequestLike(body={"image": image}))
+    assert feature_disabled_face["method"] == "pil"
+
+    monkeypatch.setattr(
+        routes,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    with pytest.raises(HTTPException) as fail_closed_exc:
+        await _endpoint(gallery_env.router, "/api/image/upscale-local", "POST")(RequestLike(body={"image": image}))
+    assert fail_closed_exc.value.status_code == 403
+
 
 @pytest.mark.asyncio
 async def test_gallery_upload_replace_rename_rotate_and_helpers(gallery_env):
