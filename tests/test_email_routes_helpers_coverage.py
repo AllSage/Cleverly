@@ -153,6 +153,13 @@ def test_email_owner_aliases_and_received_events(monkeypatch, tmp_path):
     aliases = routes._email_tag_owner_aliases(None, owner="alice")
     assert aliases == ["alice", "alice@example.com", "smtp@example.com", "Alice <alice@example.com>"]
     assert db.closed is True
+    clause, params = routes._email_tag_owner_clause(None, owner="alice")
+    assert clause == "owner IN (?,?,?,?)"
+    assert params == aliases
+    legacy_clause, legacy_params = routes._email_tag_owner_clause(None, owner="")
+    assert "OR owner IS NULL" in legacy_clause
+    assert legacy_clause.count("?") == len(legacy_params)
+    assert "" in legacy_params
 
     fired = []
     event_bus = types.ModuleType("src.event_bus")

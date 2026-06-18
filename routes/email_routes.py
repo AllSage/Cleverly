@@ -100,6 +100,14 @@ def _email_tag_owner_aliases(account_id: str | None, owner: str = "") -> list[st
     return out or [""]
 
 
+def _email_tag_owner_clause(account_id: str | None, owner: str = "") -> tuple[str, list[str]]:
+    aliases = _email_tag_owner_aliases(account_id, owner)
+    placeholders = ",".join("?" * len(aliases))
+    if owner:
+        return f"owner IN ({placeholders})", aliases
+    return f"(owner IN ({placeholders}) OR owner IS NULL)", aliases
+
+
 def _record_email_received_events(owner: str, account_id: str | None, folder: str, emails: list[dict]):
     """Baseline inbox messages, then fire `email_received` for new arrivals."""
     if not owner or (folder or "INBOX").upper() != "INBOX" or not emails:
@@ -655,8 +663,7 @@ def setup_email_routes():
                 try:
                     import sqlite3 as _sql3t
                     _ct = _sql3t.connect(SCHEDULED_DB)
-                    _owner_aliases = _email_tag_owner_aliases(account_id, owner)
-                    _owner_ph = ",".join("?" * len(_owner_aliases))
+                    _owner_clause, _owner_params = _email_tag_owner_clause(account_id, owner)
                     # SECURITY: owner-scope the lookup (review C2/H8). Without
                     # this, user A's `tag:urgent` filter would surface UIDs
                     # written by user B and IMAP would return whatever
@@ -668,8 +675,8 @@ def setup_email_routes():
                         rows_t = _ct.execute(
                             "SELECT message_id, uid FROM email_tags "
                             "WHERE folder=? AND spam_verdict=1 "
-                            f"AND (owner IN ({_owner_ph}) OR owner IS NULL)",
-                            (folder, *_owner_aliases),
+                            f"AND {_owner_clause}",
+                            (folder, *_owner_params),
                         ).fetchall()
                         for mid, uid in rows_t:
                             if mid:
@@ -680,8 +687,8 @@ def setup_email_routes():
                         rows_t = _ct.execute(
                             "SELECT message_id, uid, tags FROM email_tags "
                             "WHERE folder=? AND tags IS NOT NULL AND tags != '' "
-                            f"AND (owner IN ({_owner_ph}) OR owner IS NULL)",
-                            (folder, *_owner_aliases),
+                            f"AND {_owner_clause}",
+                            (folder, *_owner_params),
                         ).fetchall()
                         for r in rows_t:
                             try:
@@ -753,12 +760,11 @@ def setup_email_routes():
                 _uid_strs = [u.decode() for u in uid_list]
                 if _uid_strs:
                     placeholders = ",".join("?" * len(_uid_strs))
-                    _owner_aliases = _email_tag_owner_aliases(account_id, owner)
-                    _owner_ph = ",".join("?" * len(_owner_aliases))
+                    _owner_clause, _owner_params = _email_tag_owner_clause(account_id, owner)
                     rows = _c.execute(
                         f"SELECT uid, tags, spam_verdict FROM email_tags "
-                        f"WHERE folder=? AND (owner IN ({_owner_ph}) OR owner IS NULL) AND uid IN ({placeholders})",
-                        [folder, *_owner_aliases, *_uid_strs],
+                        f"WHERE folder=? AND {_owner_clause} AND uid IN ({placeholders})",
+                        [folder, *_owner_params, *_uid_strs],
                     ).fetchall()
                     for r in rows:
                         try:
@@ -815,14 +821,13 @@ def setup_email_routes():
                     if header_ids:
                         import sqlite3 as _sql3m
                         _cm = _sql3m.connect(SCHEDULED_DB)
-                        _owner_aliases_m = _email_tag_owner_aliases(account_id, owner)
-                        _owner_ph_m = ",".join("?" * len(_owner_aliases_m))
+                        _owner_clause_m, _owner_params_m = _email_tag_owner_clause(account_id, owner)
                         _mid_ph = ",".join("?" * len(header_ids))
                         rows_m = _cm.execute(
                             f"SELECT message_id, tags, spam_verdict FROM email_tags "
-                            f"WHERE folder=? AND (owner IN ({_owner_ph_m}) OR owner IS NULL) "
+                            f"WHERE folder=? AND {_owner_clause_m} "
                             f"AND message_id IN ({_mid_ph})",
-                            [folder, *_owner_aliases_m, *header_ids],
+                            [folder, *_owner_params_m, *header_ids],
                         ).fetchall()
                         _cm.close()
                         for mid, tags_raw, spam_raw in rows_m:
