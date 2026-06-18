@@ -34,6 +34,26 @@ from src.integrations import (
 logger = logging.getLogger(__name__)
 
 
+def _network_integrations_allowed() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (_load_features() or {}).get("network_integrations") is not False
+    except Exception as exc:
+        logger.warning("Network integration feature check failed; disabling integrations: %s", exc)
+        return False
+
+
+def _network_notifications_allowed() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (_load_features() or {}).get("network_notifications") is not False
+    except Exception as exc:
+        logger.warning("Network notification feature check failed; disabling notifications: %s", exc)
+        return False
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -425,7 +445,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user or not auth_manager.is_admin(user):
             raise HTTPException(403, "Admin only")
-        if offline_mode():
+        if not _network_integrations_allowed():
             return {"integrations": []}
         items = load_integrations()
         # Mask API keys for frontend display
@@ -435,7 +455,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
     @router.get("/integrations/presets")
     async def list_presets():
         """List available integration presets."""
-        if offline_mode():
+        if not _network_integrations_allowed():
             return {"presets": {}}
         return {"presets": {k: {kk: vv for kk, vv in v.items() if kk != "api_key"} for k, v in INTEGRATION_PRESETS.items()}}
 
@@ -445,8 +465,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user or not auth_manager.is_admin(user):
             raise HTTPException(403, "Admin only")
-        if offline_mode():
-            raise HTTPException(403, "Network integrations are disabled in offline mode")
+        if not _network_integrations_allowed():
+            raise HTTPException(403, "Network integrations are disabled")
         body = await request.json()
         item = add_integration(body)
         return {"ok": True, "integration": mask_integration_secret(item)}
@@ -457,8 +477,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user or not auth_manager.is_admin(user):
             raise HTTPException(403, "Admin only")
-        if offline_mode():
-            raise HTTPException(403, "Network integrations are disabled in offline mode")
+        if not _network_integrations_allowed():
+            raise HTTPException(403, "Network integrations are disabled")
         body = await request.json()
         item = update_integration(integration_id, body)
         if not item:
@@ -482,8 +502,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user or not auth_manager.is_admin(user):
             raise HTTPException(403, "Admin only")
-        if offline_mode():
-            raise HTTPException(403, "Network integration tests are disabled in offline mode")
+        if not _network_integrations_allowed():
+            raise HTTPException(403, "Network integration tests are disabled")
         integ = get_integration(integration_id)
         if not integ:
             raise HTTPException(404, "Integration not found")
@@ -497,6 +517,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         # subscriber app is wired up correctly, this is what the green
         # checkmark + a phone ping confirms together.
         if preset == "ntfy":
+            if not _network_notifications_allowed():
+                raise HTTPException(403, "Network notifications are disabled")
             import httpx
             from urllib.parse import urlparse
             # Strip any path/query the user accidentally pasted in the

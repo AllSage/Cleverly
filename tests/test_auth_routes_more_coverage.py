@@ -570,6 +570,16 @@ def test_admin_features_settings_integrations_and_rename(monkeypatch):
     monkeypatch.setattr(auth_routes, "execute_api_call", lambda *args, **kwargs: asyncio.sleep(0, result={"exit_code": 0}))
     assert asyncio.run(_endpoint(router, "/api/auth/integrations")(RequestLike(token="tok-admin")))["integrations"][0]["api_key"] == "***"
     assert "api_key" not in asyncio.run(_endpoint(router, "/api/auth/integrations/presets")())["presets"]["miniflux"]
+    monkeypatch.setattr(auth_routes, "_load_features", lambda: {"network_integrations": False, "network_notifications": True})
+    assert asyncio.run(_endpoint(router, "/api/auth/integrations")(RequestLike(token="tok-admin"))) == {"integrations": []}
+    assert asyncio.run(_endpoint(router, "/api/auth/integrations/presets")()) == {"presets": {}}
+    with pytest.raises(HTTPException) as disabled_create_integration:
+        asyncio.run(_endpoint(router, "/api/auth/integrations", "POST")(RequestLike(token="tok-admin", body={"name": "New"})))
+    assert disabled_create_integration.value.status_code == 403
+    with pytest.raises(HTTPException) as disabled_test_integration:
+        asyncio.run(_endpoint(router, "/api/auth/integrations/{integration_id}/test", "POST")("i1", RequestLike(token="tok-admin")))
+    assert disabled_test_integration.value.status_code == 403
+    monkeypatch.setattr(auth_routes, "_load_features", lambda: {"network_integrations": True, "network_notifications": True})
     with pytest.raises(HTTPException) as denied_create_integration:
         asyncio.run(_endpoint(router, "/api/auth/integrations", "POST")(RequestLike(token="tok-alice", body={"name": "New"})))
     assert denied_create_integration.value.status_code == 403
@@ -647,6 +657,17 @@ def test_admin_features_settings_integrations_and_rename(monkeypatch):
     ntfy_success = asyncio.run(_endpoint(router, "/api/auth/integrations/{integration_id}/test", "POST")("ntfy", RequestLike(token="tok-admin")))
     assert ntfy_success["ok"] is True
     assert "https://ntfy.example.test/alerts" in ntfy_success["message"]
+
+    monkeypatch.setattr(auth_routes, "_load_features", lambda: {"network_integrations": True, "network_notifications": False})
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("disabled notifications must not open HTTP clients")),
+    )
+    with pytest.raises(HTTPException) as disabled_ntfy:
+        asyncio.run(_endpoint(router, "/api/auth/integrations/{integration_id}/test", "POST")("ntfy", RequestLike(token="tok-admin")))
+    assert disabled_ntfy.value.status_code == 403
+    monkeypatch.setattr(auth_routes, "_load_features", lambda: {"network_integrations": True, "network_notifications": True})
 
     class NtfyFailureResponse(NtfyResponse):
         is_success = False
