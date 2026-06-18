@@ -122,6 +122,13 @@ async def test_execute_api_call_validation_and_auth(monkeypatch):
         ],
     )
 
+    monkeypatch.setattr(integrations, "offline_mode", lambda: True)
+    assert await integrations.execute_api_call("min", "GET", "/v1/me") == {
+        "error": "Network integrations are disabled in offline mode",
+        "exit_code": 1,
+    }
+    monkeypatch.setattr(integrations, "offline_mode", lambda: False)
+
     assert (await integrations.execute_api_call("missing", "GET", "/x"))["exit_code"] == 1
     assert "disabled" in (await integrations.execute_api_call("disabled", "GET", "/x"))["error"]
     assert "base_url" in (await integrations.execute_api_call("nobase", "GET", "/x"))["error"]

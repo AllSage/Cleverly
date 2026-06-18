@@ -1844,6 +1844,8 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
 async def do_api_call(content: str) -> Dict:
     """Execute an API call to a registered integration."""
     from src.integrations import execute_api_call, load_integrations
+    if not _feature_enabled("network_integrations"):
+        return {"error": "Network integrations are disabled in offline mode", "exit_code": 1}
     try:
         args = json.loads(content)
     except json.JSONDecodeError:

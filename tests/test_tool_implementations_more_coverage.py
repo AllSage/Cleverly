@@ -447,6 +447,12 @@ def test_manage_documents_settings_api_and_vault(monkeypatch, tmp_path):
     api = asyncio.run(tools.do_api_call("Demo\nPOST /items\n{\"x\":1}"))
     assert api["called"][:3] == ("demo", "POST", "/items")
     assert asyncio.run(tools.do_api_call('{"integration":"missing"}'))["exit_code"] == 1
+    monkeypatch.setattr(tools, "offline_mode", lambda: True)
+    assert asyncio.run(tools.do_api_call("Demo\nGET /items")) == {
+        "error": "Network integrations are disabled in offline mode",
+        "exit_code": 1,
+    }
+    monkeypatch.setattr(tools, "offline_mode", lambda: False)
 
     monkeypatch.chdir(tmp_path)
     assert tools._load_vault_config() == {}

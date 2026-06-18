@@ -305,6 +305,8 @@ async def execute_api_call(
     extra_headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Execute an HTTP request against a registered integration."""
+    if offline_mode():
+        return {"error": "Network integrations are disabled in offline mode", "exit_code": 1}
 
     integration = _find_integration(integration_id)
     if not integration:
