@@ -231,9 +231,18 @@ def test_hwfit_routes_remaining_manual_group_and_image_paths(monkeypatch):
     monkeypatch.setattr(models, "model_catalog_path", lambda: "catalog.json")
     monkeypatch.setattr(fit, "rank_models", lambda system, **kwargs: [{"system_gpu": system.get("gpu_vram_gb"), "kwargs": kwargs}])
     monkeypatch.setattr(image_models, "rank_image_models", lambda system, **kwargs: [{"image_gpu": system.get("gpu_vram_gb"), "kwargs": kwargs}])
+    monkeypatch.setattr(hwfit_routes, "offline_mode", lambda: False)
 
     router = hwfit_routes.setup_hwfit_routes()
     assert _endpoint(router, "/api/hwfit/system")(fresh=True)["gpu_count"] == 2
+
+    monkeypatch.setattr(hwfit_routes, "offline_mode", lambda: True)
+    for endpoint in ("/api/hwfit/system", "/api/hwfit/models", "/api/hwfit/image-models"):
+        with pytest.raises(HTTPException) as offline_exc:
+            _endpoint(router, endpoint)(host="user@example.test")
+        assert offline_exc.value.status_code == 403
+        assert offline_exc.value.detail == "Remote hardware detection is disabled in offline mode"
+    monkeypatch.setattr(hwfit_routes, "offline_mode", lambda: False)
 
     manual_ram = _endpoint(router, "/api/hwfit/models")(
         manual_mode="ram",

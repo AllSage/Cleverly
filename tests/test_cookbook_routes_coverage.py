@@ -186,6 +186,8 @@ def test_cookbook_remote_cache_and_gpu_probe_blocked_in_offline_mode(monkeypatch
     router = cookbook_routes.setup_cookbook_routes()
     model_cached = _endpoint(router, "/api/model/cached")
     list_gpus = _endpoint(router, "/api/cookbook/gpus")
+    server_setup = _endpoint(router, "/api/cookbook/setup", "POST")
+    kill_pid = _endpoint(router, "/api/cookbook/kill-pid", "POST")
 
     with pytest.raises(cookbook_routes.HTTPException) as cache_exc:
         asyncio.run(model_cached(RequestLike(), host="user@example.test"))
@@ -196,6 +198,21 @@ def test_cookbook_remote_cache_and_gpu_probe_blocked_in_offline_mode(monkeypatch
         asyncio.run(list_gpus(RequestLike(), host="user@example.test"))
     assert gpu_exc.value.status_code == 403
     assert gpu_exc.value.detail == "Remote Cookbook servers are disabled in offline mode"
+
+    with pytest.raises(cookbook_routes.HTTPException) as setup_exc:
+        asyncio.run(server_setup(RequestLike(), types.SimpleNamespace(host="user@example.test", ssh_port=None)))
+    assert setup_exc.value.status_code == 403
+    assert setup_exc.value.detail == "Remote Cookbook servers are disabled in offline mode"
+
+    with pytest.raises(cookbook_routes.HTTPException) as kill_exc:
+        asyncio.run(
+            kill_pid(
+                RequestLike(),
+                types.SimpleNamespace(pid=1234, host="user@example.test", ssh_port=None, signal="TERM"),
+            )
+        )
+    assert kill_exc.value.status_code == 403
+    assert kill_exc.value.detail == "Remote Cookbook servers are disabled in offline mode"
 
 
 def test_cookbook_tasks_status_parses_tmux_output_and_diagnosis(monkeypatch, tmp_path):

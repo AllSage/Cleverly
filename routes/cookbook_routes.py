@@ -1130,6 +1130,8 @@ def setup_cookbook_routes() -> APIRouter:
         host = _validate_remote_host(req.host)
         if not host:
             raise HTTPException(400, "host is required")
+        if offline_mode():
+            raise HTTPException(403, "Remote Cookbook servers are disabled in offline mode")
         port = req.ssh_port
         if port is not None and port != "" and not re.fullmatch(r"\d{1,5}", port):
             raise HTTPException(400, "Invalid ssh_port")
@@ -1491,6 +1493,8 @@ def setup_cookbook_routes() -> APIRouter:
         if sig not in ("TERM", "KILL", "INT"):
             raise HTTPException(400, "signal must be TERM, KILL, or INT")
         host = _validate_remote_host(req.host)
+        if offline_mode() and host:
+            raise HTTPException(403, "Remote Cookbook servers are disabled in offline mode")
         if req.ssh_port and not _SSH_PORT_RE.fullmatch(req.ssh_port):
             raise HTTPException(400, "Invalid ssh_port")
         kill_cmd = f"kill -{sig} {req.pid}"

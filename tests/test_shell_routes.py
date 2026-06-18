@@ -460,6 +460,7 @@ async def test_list_packages_local_and_remote(monkeypatch):
 
     monkeypatch.setattr(shell_routes, "_require_admin", lambda request: None)
     monkeypatch.setattr(shell_routes, "_reject_cross_site", lambda request: None)
+    monkeypatch.setattr(shell_routes, "offline_mode", lambda: False)
     monkeypatch.setattr(shell_routes, "_running_in_container", lambda: True)
     monkeypatch.setattr(shell_routes.shutil, "which", lambda name: "/bin/llama-server" if name == "llama-server" else None)
 
@@ -484,6 +485,13 @@ async def test_list_packages_local_and_remote(monkeypatch):
     assert by_name["docker"]["install_hint"] == shell_routes.DOCKER_IN_CONTAINER_HINT
     assert by_name["llama_cpp"]["installed"] is True
     assert by_name["playwright"]["installed"] is True
+
+    monkeypatch.setattr(shell_routes, "offline_mode", lambda: True)
+    with pytest.raises(Exception) as offline_exc:
+        await list_packages(RequestLike(), host="gpu.local", ssh_port="2222", venv="~/venv")
+    assert getattr(offline_exc.value, "status_code", None) == 403
+    assert getattr(offline_exc.value, "detail", "") == "Remote package probes are disabled in offline mode"
+    monkeypatch.setattr(shell_routes, "offline_mode", lambda: False)
 
     class Proc:
         def __init__(self, out):

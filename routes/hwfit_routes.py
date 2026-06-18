@@ -1,6 +1,8 @@
 from copy import deepcopy
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+
+from src.settings import offline_mode
 
 
 def setup_hwfit_routes():
@@ -86,6 +88,8 @@ def setup_hwfit_routes():
     def get_system(host: str = "", ssh_port: str = "", platform: str = "", fresh: bool = False):
         """Detect and return current system hardware info. Pass host=user@server for remote.
         fresh=true bypasses the per-host cache (the Rescan button)."""
+        if offline_mode() and host:
+            raise HTTPException(403, "Remote hardware detection is disabled in offline mode")
         from services.hwfit.hardware import detect_system
         return detect_system(host=host, ssh_port=ssh_port, platform=platform, fresh=fresh)
 
@@ -97,6 +101,8 @@ def setup_hwfit_routes():
             pools) to target — empty/auto = the largest pool. vLLM can only
             tensor-parallel across identical GPUs, so we never mix pools.
         fresh=true bypasses the hardware-detection cache."""
+        if offline_mode() and host:
+            raise HTTPException(403, "Remote hardware detection is disabled in offline mode")
         from services.hwfit.hardware import detect_system
         from services.hwfit.fit import rank_models
         from services.hwfit.models import get_models, model_catalog_path
@@ -177,6 +183,8 @@ def setup_hwfit_routes():
     @router.get("/image-models")
     def get_image_models(sort: str = "fit", search: str = "", host: str = "", gpu_count: str = "", ssh_port: str = "", platform: str = "", fresh: bool = False, manual_mode: str = "", manual_gpu_count: str = "", manual_vram_gb: str = "", manual_ram_gb: str = "", manual_backend: str = "", ignore_detected_gpu: bool = False, ignore_detected_ram: bool = False):
         """Rank image generation models against detected hardware."""
+        if offline_mode() and host:
+            raise HTTPException(403, "Remote hardware detection is disabled in offline mode")
         from services.hwfit.hardware import detect_system
         from services.hwfit.image_models import rank_image_models
         system = deepcopy(detect_system(host=host, ssh_port=ssh_port, platform=platform, fresh=fresh))

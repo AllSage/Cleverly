@@ -793,6 +793,8 @@ def setup_shell_routes() -> APIRouter:
         _require_admin(request)
         _reject_cross_site(request)
         import importlib, importlib.metadata as importlib_metadata, shlex, json as _json
+        if offline_mode() and host:
+            raise HTTPException(403, "Remote package probes are disabled in offline mode")
         if ssh_port and str(ssh_port).strip() not in ("", "22"):
             _port = str(ssh_port).strip()
             if not _SSH_PORT_RE.match(_port) or not (1 <= int(_port) <= 65535):
