@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import re
+import logging
 from typing import Any, Mapping
 
 from src.settings import load_features
+
+logger = logging.getLogger(__name__)
 
 EMAIL_ACTIONS = {
     "summarize_emails",
@@ -22,11 +25,17 @@ RESEARCH_EVENTS = {"research_completed"}
 
 
 def feature_flags() -> dict[str, Any]:
-    """Load feature flags, failing closed only for explicit false values."""
+    """Load feature flags, failing closed for background-capable online features."""
     try:
         return load_features() or {}
-    except Exception:
-        return {}
+    except Exception as exc:
+        logger.warning("Task feature flag check failed; disabling online task features: %s", exc)
+        return {
+            "deep_research": False,
+            "email": False,
+            "webhooks": False,
+            "mcp": False,
+        }
 
 
 def feature_enabled(features: Mapping[str, Any], key: str) -> bool:

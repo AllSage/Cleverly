@@ -626,3 +626,29 @@ def test_task_routes_hide_and_deny_disabled_online_features(monkeypatch):
     assert parsed["success"] is True
     assert parsed["draft"]["task_type"] == "llm"
     assert parsed["draft"]["output_target"] == "session"
+
+
+def test_task_feature_flags_fail_closed_for_online_task_features(monkeypatch):
+    import src.task_feature_guards as guards
+
+    monkeypatch.setattr(
+        guards,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+
+    features = guards.feature_flags()
+    assert features == {
+        "deep_research": False,
+        "email": False,
+        "webhooks": False,
+        "mcp": False,
+    }
+    assert guards.task_feature_disabled_reason({"task_type": "research"}, features)
+    assert guards.task_feature_disabled_reason({"trigger_type": "webhook"}, features)
+    assert guards.task_feature_disabled_reason({"output_target": "email"}, features)
+    assert guards.task_feature_disabled_reason({"output_target": "mcp__mail__send"}, features)
+    assert guards.action_allowed("summarize_emails", features) is False
+    assert guards.action_allowed("tidy_research", features) is False
+    assert guards.event_allowed("email_received", features) is False
+    assert guards.event_allowed("research_completed", features) is False
