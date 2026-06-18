@@ -67,10 +67,11 @@ class ChatMessage:
 
 
 class FakeSession:
-    def __init__(self, session_id="s1", name="Chat", model="main-model"):
+    def __init__(self, session_id="s1", name="Chat", model="main-model", owner="alice"):
         self.session_id = session_id
         self.name = name
         self.model = model
+        self.owner = owner
         self.endpoint_url = "http://main/chat"
         self.headers = {"x": "1"}
         self.message_count = 2
@@ -89,7 +90,10 @@ class FakeSession:
 
 class FakeSessionManager:
     def __init__(self):
-        self.sessions = {"s1": FakeSession("s1", "Chat")}
+        self.sessions = {
+            "s1": FakeSession("s1", "Chat", owner="alice"),
+            "bob-session": FakeSession("bob-session", "Private", owner="bob"),
+        }
         self.created = []
         self.deleted = []
         self.renamed = []
@@ -97,14 +101,25 @@ class FakeSessionManager:
     def create_session(self, **kwargs):
         self.created.append(kwargs)
         sid = kwargs["session_id"]
-        self.sessions[sid] = FakeSession(sid, kwargs["name"], kwargs["model"])
+        self.sessions[sid] = FakeSession(
+            sid,
+            kwargs["name"],
+            kwargs["model"],
+            owner=kwargs.get("owner"),
+        )
         self.sessions[sid].endpoint_url = kwargs["endpoint_url"]
 
     def get_session(self, session_id):
         return self.sessions.get(session_id)
 
     def get_sessions_for_user(self, owner):
-        return dict(self.sessions)
+        if owner is None:
+            return dict(self.sessions)
+        return {
+            sid: sess
+            for sid, sess in self.sessions.items()
+            if getattr(sess, "owner", None) == owner
+        }
 
     def update_session_name(self, session_id, name):
         self.renamed.append((session_id, name))
@@ -236,9 +251,12 @@ def test_ai_session_tools_pipeline_memory_and_dispatch(monkeypatch):
     assert "Second Opinion" in second["response"]
     assert calls[0][1] == "reviewer"
 
-    sent = asyncio.run(ai.do_send_to_session("s1\nhello"))
+    sent = asyncio.run(ai.do_send_to_session("s1\nhello", owner="alice"))
     assert sent["response"] == "sent"
     assert len(manager.get_session("s1").added) == 2
+    denied_send = asyncio.run(ai.do_send_to_session("bob-session\nhello", owner="alice"))
+    assert "not found" in denied_send["error"]
+    assert manager.get_session("bob-session").added == []
 
     pipeline = asyncio.run(ai.do_pipeline("m1 | draft\nm2 | revise"))
     assert len(pipeline["steps"]) == 2
@@ -286,6 +304,11 @@ def test_ai_session_tools_pipeline_memory_and_dispatch(monkeypatch):
     desc, result = asyncio.run(ai.dispatch_ai_tool("ui_control", "toggle shell on", session_id="s1", owner="alice"))
     assert desc.startswith("ui_control")
     assert result["toggle_name"] == "bash"
+    desc, denied_dispatch = asyncio.run(
+        ai.dispatch_ai_tool("send_to_session", "bob-session\nhello", owner="alice")
+    )
+    assert desc == "send_to_session: bob-session"
+    assert "not found" in denied_dispatch["error"]
     streamed = []
 
     async def collect():
