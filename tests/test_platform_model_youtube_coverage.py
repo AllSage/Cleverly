@@ -55,6 +55,21 @@ def test_model_discovery_tailscale_cache_success_and_failures(monkeypatch):
     assert md.discover_tailscale_hosts() == []
 
 
+def test_model_discovery_tailscale_skips_command_offline(monkeypatch):
+    import src.model_discovery as md
+
+    md._hosts_cache = ["100.64.0.9"]
+    md._hosts_cache_time = 9999999999
+    monkeypatch.setattr(md, "offline_mode", lambda: True)
+    monkeypatch.setattr(
+        md.subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("offline discovery should not invoke tailscale")),
+    )
+
+    assert md.discover_tailscale_hosts() == []
+
+
 def test_model_discovery_hosts_ports_providers_and_http(monkeypatch):
     import src.model_discovery as md
 

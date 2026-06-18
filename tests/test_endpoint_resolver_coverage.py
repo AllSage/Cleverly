@@ -138,6 +138,25 @@ def test_tailscale_resolution_handles_command_failures(monkeypatch):
     assert resolver._tailscale_cache["unknown"] is None
 
 
+def test_tailscale_resolution_skips_dns_and_command_offline(monkeypatch):
+    resolver._tailscale_cache.clear()
+    monkeypatch.setattr(resolver, "offline_mode", lambda: True)
+    monkeypatch.setattr(
+        socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("offline resolver should not query DNS")),
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("offline resolver should not invoke tailscale")),
+    )
+
+    assert resolver._resolve_tailscale_host("box") is None
+    assert resolver.resolve_url("http://box:8080/v1") == "http://box:8080/v1"
+    assert resolver._tailscale_cache["box"] is None
+
+
 def test_url_builders_normalize_providers_and_tailscale(monkeypatch):
     monkeypatch.setattr(resolver, "_resolve_tailscale_host", lambda host: "100.64.0.8" if host == "box" else None)
 

@@ -23,6 +23,9 @@ def discover_tailscale_hosts() -> List[str]:
     """Discover online Tailscale peers, returning their IPv4 addresses."""
     global _hosts_cache, _hosts_cache_time
 
+    if offline_mode():
+        return []
+
     now = time.time()
     if _hosts_cache and (now - _hosts_cache_time) < _HOSTS_CACHE_TTL:
         return list(_hosts_cache)

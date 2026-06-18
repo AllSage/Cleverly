@@ -13,6 +13,7 @@ from urllib.parse import urlparse, urlunparse
 
 from src.database import SessionLocal, ModelEndpoint
 from src.llm_core import _detect_provider
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,9 @@ _tailscale_cache: Dict[str, Optional[str]] = {}
 
 def _resolve_tailscale_host(hostname: str) -> Optional[str]:
     """Try to resolve a hostname via 'tailscale status' if DNS fails."""
+    if offline_mode():
+        _tailscale_cache[hostname] = None
+        return None
     if hostname in _tailscale_cache:
         return _tailscale_cache[hostname]
 
