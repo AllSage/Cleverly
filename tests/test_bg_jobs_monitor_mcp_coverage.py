@@ -374,6 +374,41 @@ async def test_mcp_manager_reconnect_and_database_connect(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("offline", "features"),
+    [
+        (True, {"mcp": True}),
+        (False, {"mcp": False}),
+    ],
+)
+async def test_mcp_manager_connect_all_enabled_skips_when_offline_or_disabled(monkeypatch, offline, features):
+    import src.mcp_manager as mcp_manager
+
+    mgr = mcp_manager.McpManager()
+
+    settings = types.ModuleType("src.settings")
+    settings.offline_mode = lambda: offline
+    settings.load_features = lambda: dict(features)
+    monkeypatch.setitem(sys.modules, "src.settings", settings)
+
+    database = types.ModuleType("src.database")
+
+    def fail_session_local():
+        raise AssertionError("offline MCP startup should not query configured servers")
+
+    database.SessionLocal = fail_session_local
+    database.McpServer = SimpleNamespace(is_enabled=True)
+    monkeypatch.setitem(sys.modules, "src.database", database)
+
+    async def fail_connect_server(**_kwargs):
+        raise AssertionError("offline MCP startup should not connect configured servers")
+
+    monkeypatch.setattr(mgr, "connect_server", fail_connect_server)
+
+    await mgr.connect_all_enabled()
+
+
+@pytest.mark.asyncio
 async def test_mcp_manager_connect_transports_reconnect_and_prompt_edges(monkeypatch):
     import src.mcp_manager as mcp_manager
 

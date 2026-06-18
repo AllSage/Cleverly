@@ -173,6 +173,16 @@ class McpManager:
 
     async def connect_all_enabled(self):
         """Connect to all enabled MCP servers from the database."""
+        from src.settings import load_features, offline_mode
+
+        try:
+            features = load_features() or {}
+        except Exception:
+            features = {}
+        if offline_mode() or features.get("mcp") is False:
+            logger.info("Skipping user MCP startup because MCP is disabled or offline mode is active")
+            return
+
         from src.database import McpServer, SessionLocal
 
         db = SessionLocal()
