@@ -2993,6 +2993,8 @@ def _scan_running_model_processes() -> List[Dict[str, Any]]:
 async def do_download_model(content: str, owner: Optional[str] = None) -> Dict:
     """Download a HuggingFace model via the cookbook API."""
     import httpx
+    if not _feature_enabled("cookbook_downloads"):
+        return {"error": "Model downloads are disabled in offline mode", "exit_code": 1}
     try:
         args = _parse_tool_args(content)
     except ValueError:
