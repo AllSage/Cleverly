@@ -3,6 +3,7 @@
 import os
 import hashlib
 import logging
+from pathlib import Path
 from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -18,6 +19,20 @@ from routes.gallery_helpers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _gallery_images_dir() -> Path:
+    path = Path("data/generated_images")
+    path.mkdir(parents=True, exist_ok=True)
+    return path.resolve()
+
+
+def _gallery_image_path(filename: str) -> Path:
+    root = _gallery_images_dir()
+    path = (root / str(filename or "")).resolve()
+    if path != root and root in path.parents:
+        return path
+    raise HTTPException(400, "Invalid image filename")
 
 
 def _ensure_offline_local_endpoint(url: str, label: str = "image endpoint") -> None:
@@ -38,8 +53,6 @@ def setup_gallery_routes() -> APIRouter:
     async def gallery_upload(request: Request):
         """Upload an image file to the gallery with EXIF extraction and dedup."""
         import uuid
-        from pathlib import Path
-
         form = await request.form()
         file = form.get("file")
         if not file or not hasattr(file, 'filename'):
@@ -67,8 +80,7 @@ def setup_gallery_routes() -> APIRouter:
                 return {"ok": False, "duplicate": True, "filename": existing.filename,
                         "id": existing.id, "message": "Duplicate photo skipped"}
 
-            img_dir = Path("data/generated_images")
-            img_dir.mkdir(parents=True, exist_ok=True)
+            img_dir = _gallery_images_dir()
 
             ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "png"
             VIDEO_EXTS = {"mp4", "mov", "webm", "mkv", "m4v"}
@@ -116,8 +128,6 @@ def setup_gallery_routes() -> APIRouter:
     @router.post("/api/gallery/{image_id}/replace")
     async def gallery_replace(request: Request, image_id: str):
         """Replace an existing gallery image file with a new one."""
-        from pathlib import Path
-
         user = get_current_user(request)
         db = SessionLocal()
         try:
@@ -133,9 +143,7 @@ def setup_gallery_routes() -> APIRouter:
                 raise HTTPException(400, "No image provided")
 
             content = await file.read()
-            img_dir = Path("data/generated_images")
-            img_dir.mkdir(parents=True, exist_ok=True)
-            img_path = img_dir / img.filename
+            img_path = _gallery_image_path(img.filename)
             img_path.write_bytes(content)
 
             # Refresh dimensions in case the editor resized the canvas.
@@ -188,7 +196,6 @@ def setup_gallery_routes() -> APIRouter:
     async def gallery_rotate(request: Request, image_id: str):
         """Rotate an image by ±90° or 180°. Updates the file on disk and the
         width/height in the DB. Body: {angle: 90 | -90 | 180}."""
-        from pathlib import Path
         from PIL import Image
         from io import BytesIO
 
@@ -209,7 +216,7 @@ def setup_gallery_routes() -> APIRouter:
             if not user or img.owner != user:
                 raise HTTPException(403, "Not your image")
 
-            img_path = Path("data/generated_images") / img.filename
+            img_path = _gallery_image_path(img.filename)
             if not img_path.exists():
                 raise HTTPException(404, "Image file not found")
 
@@ -688,14 +695,13 @@ def setup_gallery_routes() -> APIRouter:
             import io
             import re
             import zipfile
-            from pathlib import Path
             buf = io.BytesIO()
             used = set()
-            image_dir = Path("data/generated_images").resolve()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 for img in imgs:
-                    src = (image_dir / str(img.filename or "")).resolve()
-                    if image_dir != src and image_dir not in src.parents:
+                    try:
+                        src = _gallery_image_path(img.filename)
+                    except HTTPException:
                         logger.warning("Skipping gallery ZIP file outside image directory: %s", img.filename)
                         continue
                     if not src.exists() or not src.is_file():
@@ -823,9 +829,13 @@ def setup_gallery_routes() -> APIRouter:
 
             img_filename = img.filename
             # Remove the file from disk
-            img_path = os.path.join("data", "generated_images", img_filename)
-            if os.path.exists(img_path):
-                os.remove(img_path)
+            try:
+                img_path = _gallery_image_path(img_filename)
+            except HTTPException:
+                logger.warning("Skipping gallery delete for unsafe image filename: %s", img_filename)
+                img_path = None
+            if img_path and img_path.exists():
+                img_path.unlink()
 
             # Soft-delete the record
             img.is_active = False
@@ -1710,14 +1720,13 @@ def setup_gallery_routes() -> APIRouter:
     async def ai_tag_image(request: Request, image_id: str):
         """Send image to vision model for auto-tagging."""
         import base64, httpx
-        from pathlib import Path
 
         user = get_current_user(request)
         db = SessionLocal()
         try:
             img = _get_or_404_image(db, image_id, user)
 
-            img_path = Path("data/generated_images") / img.filename
+            img_path = _gallery_image_path(img.filename)
             if not img_path.exists():
                 raise HTTPException(404, "Image file not found")
 

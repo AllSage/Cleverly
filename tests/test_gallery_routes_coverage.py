@@ -557,6 +557,7 @@ async def test_gallery_upload_replace_rename_rotate_and_helpers(gallery_env):
         )
     )
     created = next(img for img in gallery_env.db.images if img.id == result["id"])
+    created_filename = created.filename
     assert result["ok"] is True
     assert created.owner == "alice"
     assert created.album_id == "album1"
@@ -570,6 +571,14 @@ async def test_gallery_upload_replace_rename_rotate_and_helpers(gallery_env):
     assert unsupported.value.status_code == 400
 
     replace = _endpoint(gallery_env.router, "/api/gallery/{image_id}/replace", "POST")
+    created.filename = "../outside.png"
+    with pytest.raises(HTTPException) as unsafe_replace:
+        await replace(
+            RequestLike(form_data={"image": UploadLike("replacement.png", _png_bytes((2, 5)))}),
+            created.id,
+        )
+    assert unsafe_replace.value.status_code == 400
+    created.filename = created_filename
     replaced = await replace(
         RequestLike(form_data={"image": UploadLike("replacement.png", _png_bytes((2, 5)))}),
         created.id,
@@ -589,6 +598,11 @@ async def test_gallery_upload_replace_rename_rotate_and_helpers(gallery_env):
     with pytest.raises(HTTPException) as bad_angle:
         await rotate(RequestLike(body={"angle": "sideways"}), created.id)
     assert bad_angle.value.status_code == 400
+    created.filename = "../outside.png"
+    with pytest.raises(HTTPException) as unsafe_rotate:
+        await rotate(RequestLike(body={"angle": 90}), created.id)
+    assert unsafe_rotate.value.status_code == 400
+    created.filename = created_filename
     rotated = await rotate(RequestLike(body={"angle": 90}), created.id)
     assert rotated["ok"] is True
     assert (created.width, created.height) == (5, 2)
@@ -739,6 +753,9 @@ async def test_gallery_zip_album_delete_and_image_tools(gallery_env):
     assert all(album.id != "album2" for album in gallery_env.db.albums)
 
     delete_image = _endpoint(gallery_env.router, "/api/gallery/{image_id}", "DELETE")
+    assert await delete_image(RequestLike(), "img2") == {"status": "deleted", "id": "img2"}
+    assert gallery_env.db.images[1].is_active is False
+    assert (image_dir.parent / "secret.txt").exists()
     assert await delete_image(RequestLike(), "img1") == {"status": "deleted", "id": "img1"}
     assert gallery_env.db.images[0].is_active is False
     assert not (image_dir / "img1.png").exists()
