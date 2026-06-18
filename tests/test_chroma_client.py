@@ -50,3 +50,21 @@ def test_get_chroma_client_does_not_cache_when_unreachable(monkeypatch):
     # A failed connection must leave the singleton unset so a later call
     # (once ChromaDB is up) can succeed.
     assert cc._client is None
+
+
+def test_get_chroma_client_blocks_external_host_offline_before_socket(monkeypatch):
+    cc.reset_client()
+    monkeypatch.setenv("CHROMADB_HOST", "chroma.example.test")
+    monkeypatch.setenv("CHROMADB_PORT", "8000")
+    monkeypatch.setattr(cc, "offline_mode", lambda: True)
+    monkeypatch.setattr(cc, "is_local_model_url", lambda _url: False)
+    monkeypatch.setattr(
+        cc.socket,
+        "create_connection",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("offline ChromaDB should not open sockets")),
+    )
+
+    with pytest.raises(RuntimeError, match="External ChromaDB hosts are disabled in offline mode"):
+        cc.get_chroma_client()
+
+    assert cc._client is None

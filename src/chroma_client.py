@@ -9,6 +9,9 @@ import os
 import socket
 import logging
 
+from src.offline_policy import is_local_model_url
+from src.settings import offline_mode
+
 logger = logging.getLogger(__name__)
 
 _client = None
@@ -28,6 +31,10 @@ def _port_open(host: str, port: int, timeout: float = None) -> bool:
         return False
 
 
+def _chroma_url(host: str, port: int) -> str:
+    return f"http://{host}:{port}"
+
+
 def get_chroma_client():
     """Get or create the singleton ChromaDB HTTP client.
 
@@ -38,6 +45,11 @@ def get_chroma_client():
     if _client is not None:
         return _client
 
+    host = os.getenv("CHROMADB_HOST", "localhost")
+    port = int(os.getenv("CHROMADB_PORT", "8100"))
+    if offline_mode() and not is_local_model_url(_chroma_url(host, port)):
+        raise RuntimeError("External ChromaDB hosts are disabled in offline mode")
+
     try:
         import chromadb
     except ImportError as e:
@@ -45,9 +57,6 @@ def get_chroma_client():
             "ChromaDB integration is not installed. Install the optional "
             "dependency with: pip install chromadb-client"
         ) from e
-
-    host = os.getenv("CHROMADB_HOST", "localhost")
-    port = int(os.getenv("CHROMADB_PORT", "8100"))
 
     if not _port_open(host, port):
         raise RuntimeError(
