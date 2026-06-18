@@ -533,6 +533,17 @@ def test_admin_features_settings_integrations_and_rename(monkeypatch):
         "code": True,
     }
     assert saved_features[-1]["email"] is True
+    monkeypatch.setattr(
+        auth_routes,
+        "_load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("features unavailable")),
+    )
+    failed_features = asyncio.run(_endpoint(router, "/api/auth/features")())
+    assert failed_features["email"] is False
+    assert failed_features["web_search"] is False
+    assert failed_features["external_model_endpoints"] is False
+    assert failed_features["document_editor"] is True
+    monkeypatch.setattr(auth_routes, "_load_features", lambda: {"network_integrations": True, "network_notifications": True})
 
     settings = {"api_key": "secret", "theme": "dark"}
     saved_settings = []

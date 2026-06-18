@@ -17,6 +17,7 @@ from src.settings import (
     load_features as _load_features,
     save_features as _save_features,
     DEFAULT_SETTINGS,
+    DEFAULT_FEATURES,
     offline_mode,
 )
 from src.integrations import (
@@ -32,6 +33,34 @@ from src.integrations import (
 )
 
 logger = logging.getLogger(__name__)
+
+_ONLINE_FEATURE_KEYS = {
+    "web_search",
+    "web_fetch",
+    "deep_research",
+    "cookbook_downloads",
+    "cookbook_dependency_installs",
+    "cookbook_remote_servers",
+    "external_model_endpoints",
+    "network_integrations",
+    "network_notifications",
+    "webhooks",
+    "mcp",
+    "vault",
+    "email",
+}
+
+
+def _safe_load_public_features() -> dict:
+    """Return feature flags for UI bootstrap, failing closed for online surfaces."""
+    try:
+        return _load_features()
+    except Exception as exc:
+        logger.warning("Feature visibility load failed; disabling online UI surfaces: %s", exc)
+        features = dict(DEFAULT_FEATURES)
+        for key in _ONLINE_FEATURE_KEYS:
+            features[key] = False
+        return features
 
 
 def _network_integrations_allowed() -> bool:
@@ -391,7 +420,7 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
     @router.get("/features")
     async def get_features():
         """Public: returns which UI features are enabled."""
-        return _load_features()
+        return _safe_load_public_features()
 
     @router.post("/features")
     async def set_features(request: Request):
