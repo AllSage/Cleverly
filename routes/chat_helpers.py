@@ -124,6 +124,22 @@ def needs_auto_name(name: str) -> bool:
     return False
 
 
+def _request_bool(value, default: bool = False) -> bool:
+    """Parse bool-like request values from forms or JSON."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off", ""}:
+        return False
+    return default
+
+
 async def auto_name_session(session_manager, sess):
     """Generate a short title for a session from its first user message."""
     try:
@@ -395,12 +411,13 @@ async def build_chat_context(
     )
 
     # Use RAG?
-    use_rag_val = (str(use_rag).lower() != "false") if use_rag is not None else True
+    use_rag_val = _request_bool(use_rag, default=True)
     if incognito:
         use_rag_val = False
 
     # If pre-fetched search context was provided (compare mode), skip live web search
     skip_web = bool(search_context)
+    use_web_val = _request_bool(use_web, default=False) and not skip_web
 
     # Build context preface
     # The stream path uses enhanced_message (with CoT/preprocessing applied),
@@ -409,7 +426,7 @@ async def build_chat_context(
     _preface_kwargs = dict(
         message=_ctx_msg,
         session=sess,
-        use_web=use_web and not skip_web,
+        use_web=use_web_val,
         use_memory=mem_enabled,
         time_filter=time_filter,
         preset_system_prompt=preset.system_prompt,

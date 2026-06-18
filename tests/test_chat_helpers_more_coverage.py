@@ -376,6 +376,54 @@ def test_extract_preprocess_events_auth_and_context(monkeypatch):
     assert ctx2.uprefs == {"memory_enabled": True, "skills_enabled": False}
 
 
+def test_build_chat_context_parses_request_boolean_strings(monkeypatch):
+    monkeypatch.setattr(chat_helpers, "ChatMessage", FakeChatMessage)
+    monkeypatch.setattr(chat_helpers, "get_current_user", lambda request: "alice")
+    monkeypatch.setattr(chat_helpers, "load_prefs_for_user", lambda user: {})
+    monkeypatch.setattr(chat_helpers, "normalize_model_id", lambda url, model: None)
+    monkeypatch.setattr(chat_helpers, "trim_for_context", lambda messages, context_length: messages)
+
+    async def fake_maybe_compact(sess, url, model, messages, headers):
+        return messages, 500, False
+
+    monkeypatch.setattr(chat_helpers, "maybe_compact", fake_maybe_compact)
+
+    class Handler:
+        def validate_and_extract_preset(self, preset_id):
+            return None, None, None, None
+
+        async def preprocess_message(self, message, att_ids, sess, auto_opened_docs=None):
+            return "enhanced", message, message, [], []
+
+        def update_session_name_if_needed(self, sess, text):
+            return None
+
+    seen = {}
+
+    class Processor:
+        _last_used_memories = []
+
+        def build_context_preface(self, **kwargs):
+            seen.update(kwargs)
+            return ([], [], [])
+
+    ctx = asyncio.run(chat_helpers.build_chat_context(
+        Session(),
+        RequestLike(),
+        Handler(),
+        Processor(),
+        "hello",
+        "s1",
+        use_web="false",
+        use_rag="0",
+        webhook_manager=None,
+    ))
+
+    assert seen["use_web"] is False
+    assert seen["use_rag"] is False
+    assert ctx.context_length == 500
+
+
 def test_token_usage_headers_thinking_and_save(monkeypatch):
     monkeypatch.setattr(chat_helpers, "ChatMessage", FakeChatMessage)
     row = SimpleNamespace(total_input_tokens=2, total_output_tokens=3)
