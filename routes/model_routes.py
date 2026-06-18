@@ -40,6 +40,16 @@ def _external_endpoint_allowed(base_url: str) -> bool:
         return False
 
 
+def _external_discovery_allowed() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("external_model_endpoints") is not False
+    except Exception as exc:
+        logger.warning("Model discovery feature check failed; disabling discovery: %s", exc)
+        return False
+
+
 _OFFLINE_EXTERNAL_PROBE_ERROR = "External endpoint probes are disabled"
 
 
@@ -923,7 +933,7 @@ def setup_model_routes(model_discovery):
     def providers(request: Request, refresh: bool = False):
         """Get all available providers (cached for 30s)."""
         require_admin(request)
-        if offline_mode():
+        if not _external_discovery_allowed():
             return []
         now = _time.time()
         if not refresh and _providers_cache["data"] is not None and (now - _providers_cache["time"]) < _PROVIDERS_CACHE_TTL:
@@ -937,7 +947,7 @@ def setup_model_routes(model_discovery):
     def discover_local(request: Request):
         """Scan local network for model servers on common ports."""
         require_admin(request)
-        if offline_mode():
+        if not _external_discovery_allowed():
             raise HTTPException(403, "Network model discovery is disabled in offline mode")
         return model_discovery.discover_models()
 

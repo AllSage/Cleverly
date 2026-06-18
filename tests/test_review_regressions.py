@@ -117,17 +117,42 @@ def test_providers_requires_admin_before_discovery_and_cache(monkeypatch):
             self.calls += 1
             return {"providers": [{"host": "internal.example"}]}
 
+        def discover_models(self):
+            return {"models": ["local"]}
+
     discovery = _Discovery()
     router = model_routes.setup_model_routes(discovery)
-    endpoint = next(
+    providers_endpoint = next(
         route.endpoint
         for route in router.routes
         if getattr(route, "path", "") == "/api/providers"
     )
+    discover_endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if getattr(route, "path", "") == "/api/discover"
+    )
     request = SimpleNamespace()
 
-    assert endpoint(request, refresh=True) == {"providers": [{"host": "internal.example"}]}
+    monkeypatch.setattr(model_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(model_routes, "load_features", lambda: {"external_model_endpoints": True})
+
+    assert providers_endpoint(request, refresh=True) == {"providers": [{"host": "internal.example"}]}
     assert discovery.calls == 1
+    assert discover_endpoint(request) == {"models": ["local"]}
+
+    monkeypatch.setattr(model_routes, "load_features", lambda: {"external_model_endpoints": False})
+    assert providers_endpoint(request, refresh=True) == []
+    with pytest.raises(HTTPException) as disabled_discover:
+        discover_endpoint(request)
+    assert disabled_discover.value.status_code == 403
+
+    monkeypatch.setattr(
+        model_routes,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    assert providers_endpoint(request, refresh=True) == []
 
     def deny_admin(_request):
         raise PermissionError("admin required")
@@ -135,9 +160,9 @@ def test_providers_requires_admin_before_discovery_and_cache(monkeypatch):
     monkeypatch.setattr(model_routes, "require_admin", deny_admin)
 
     with pytest.raises(PermissionError):
-        endpoint(request, refresh=True)
+        providers_endpoint(request, refresh=True)
     with pytest.raises(PermissionError):
-        endpoint(request, refresh=False)
+        providers_endpoint(request, refresh=False)
     assert discovery.calls == 1
 
 
