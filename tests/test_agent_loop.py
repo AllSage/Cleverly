@@ -342,6 +342,7 @@ def test_agent_loop_build_base_prompt_injects_skills_integrations_and_mcp(monkey
             self.data_dir = data_dir
 
         def index_for(self, owner=None, active_toolsets=None):
+            assert owner == "alice"
             assert "generate_image" not in active_toolsets
             return [{"category": "workflow", "name": "local-test", "description": "Use local tests", "status": "draft"}]
 
@@ -368,6 +369,7 @@ def test_agent_loop_build_base_prompt_injects_skills_integrations_and_mcp(monkey
         needs_admin=True,
         relevant_tools={"web_search"},
         mcp_disabled_map={"srv": {"tool"}},
+        owner="alice",
     )
 
     assert "web search" in prompt
@@ -375,6 +377,43 @@ def test_agent_loop_build_base_prompt_injects_skills_integrations_and_mcp(monkey
     assert "INTEGRATIONS PROMPT" in prompt
     assert "MCP PROMPT" in prompt
     assert "\n- image" not in prompt
+
+
+def test_agent_loop_base_prompt_cache_is_scoped_by_owner(monkeypatch):
+    monkeypatch.setattr(agent_loop, "_cached_base_prompt", None)
+    monkeypatch.setattr(agent_loop, "_cached_base_prompt_key", None)
+    monkeypatch.setattr(agent_loop, "get_builtin_overrides", lambda: {})
+    monkeypatch.setattr(agent_loop, "get_setting", lambda key, default=None: default)
+
+    calls = []
+
+    def fake_build(disabled_tools, mcp_mgr, needs_admin, relevant_tools=None, mcp_disabled_map=None, compact=False, owner=None):
+        calls.append(owner)
+        return f"prompt for {owner}"
+
+    monkeypatch.setattr(agent_loop, "_build_base_prompt", fake_build)
+
+    base_messages = [{"role": "user", "content": "hello"}]
+    alice_messages, _ = agent_loop._build_system_prompt(
+        list(base_messages),
+        "model",
+        None,
+        None,
+        disabled_tools=set(),
+        owner="alice",
+    )
+    bob_messages, _ = agent_loop._build_system_prompt(
+        list(base_messages),
+        "model",
+        None,
+        None,
+        disabled_tools=set(),
+        owner="bob",
+    )
+
+    assert calls == ["alice", "bob"]
+    assert alice_messages[0]["content"] == "prompt for alice"
+    assert bob_messages[0]["content"] == "prompt for bob"
 
 
 def test_agent_loop_message_context_tool_resolution_and_append(monkeypatch):
