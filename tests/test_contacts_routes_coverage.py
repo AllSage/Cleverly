@@ -28,6 +28,7 @@ def test_contacts_local_helpers_and_routes(monkeypatch, tmp_path):
     monkeypatch.setattr(contacts, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(contacts, "LOCAL_CONTACTS_FILE", tmp_path / "contacts.json")
     monkeypatch.setattr(contacts, "offline_mode", lambda: False)
+    monkeypatch.setattr(contacts, "load_features", lambda: {"network_integrations": True})
     monkeypatch.setattr(contacts.uuid, "uuid4", lambda: "uid-generated")
     monkeypatch.delenv("CARDDAV_URL", raising=False)
     monkeypatch.delenv("CARDDAV_USERNAME", raising=False)
@@ -40,6 +41,9 @@ def test_contacts_local_helpers_and_routes(monkeypatch, tmp_path):
     monkeypatch.setattr(contacts, "offline_mode", lambda: True)
     assert contacts._get_carddav_config() == {"url": "", "username": "", "password": ""}
     monkeypatch.setattr(contacts, "offline_mode", lambda: False)
+    monkeypatch.setattr(contacts, "load_features", lambda: {"network_integrations": False})
+    assert contacts._get_carddav_config() == {"url": "", "username": "", "password": ""}
+    monkeypatch.setattr(contacts, "load_features", lambda: {"network_integrations": True})
 
     normalized = contacts._normalize_contact({"email": " a@example.com ", "emails": ["a@example.com", "b@example.com"], "phone": " 123 "})
     assert normalized["name"] == "a"
@@ -145,6 +149,12 @@ def test_contacts_local_helpers_and_routes(monkeypatch, tmp_path):
         asyncio.run(_endpoint(router, "/api/contacts/config", "PUT")({"carddav_url": "https://dav.example/book"}, _admin=None))
     assert offline_cfg.value.status_code == 403
     monkeypatch.setattr(contacts, "offline_mode", lambda: False)
+    monkeypatch.setattr(contacts, "load_features", lambda: {"network_integrations": False})
+    with pytest.raises(HTTPException) as feature_cfg:
+        asyncio.run(_endpoint(router, "/api/contacts/config", "PUT")({"carddav_url": "https://dav.example/book"}, _admin=None))
+    assert feature_cfg.value.status_code == 403
+    assert asyncio.run(_endpoint(router, "/api/contacts/config", "PUT")({"carddav_url": ""}, _admin=None)) == {"success": True}
+    monkeypatch.setattr(contacts, "load_features", lambda: {"network_integrations": True})
     assert asyncio.run(_endpoint(router, "/api/contacts/config", "PUT")({"carddav_username": "new"}, _admin=None)) == {"success": True}
     assert asyncio.run(_endpoint(router, "/api/contacts/config", "PUT")({"carddav_url": ""}, _admin=None)) == {"success": True}
 

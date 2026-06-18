@@ -18,7 +18,7 @@ from fastapi import APIRouter, Query, Depends, Response, HTTPException
 from typing import List, Dict, Optional
 
 from src.auth_helpers import require_user
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 from core.middleware import require_admin
 
 logger = logging.getLogger(__name__)
@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 LOCAL_CONTACTS_FILE = DATA_DIR / "contacts.json"
+
+
+def _network_integrations_allowed() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("network_integrations") is not False
+    except Exception as exc:
+        logger.warning("Contacts network integration feature check failed; disabling CardDAV: %s", exc)
+        return False
 
 
 def _load_settings():
@@ -41,7 +51,7 @@ def _save_settings(settings):
 
 def _get_carddav_config():
     import os
-    if offline_mode():
+    if not _network_integrations_allowed():
         return {"url": "", "username": "", "password": ""}
     settings = _load_settings()
     return {
@@ -740,8 +750,8 @@ def setup_contacts_routes():
 
     @router.put("/config")
     async def update_config(data: dict, _admin: str = Depends(require_admin)):
-        if offline_mode() and (data.get("carddav_url") or "").strip():
-            raise HTTPException(403, "CardDAV sync is disabled in offline mode")
+        if not _network_integrations_allowed() and (data.get("carddav_url") or "").strip():
+            raise HTTPException(403, "CardDAV sync is disabled")
         settings = _load_settings()
         for key in ("carddav_url", "carddav_username", "carddav_password"):
             if key in data:

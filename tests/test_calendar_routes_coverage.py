@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import sys
 import types
 from datetime import datetime, timedelta, timezone
 
@@ -250,6 +251,7 @@ def test_calendar_routes_config_calendar_and_event_crud(monkeypatch):
     prefs_mod._save_for_user = lambda owner, data: prefs.__setitem__(owner, data)
     monkeypatch.setitem(__import__("sys").modules, "routes.prefs_routes", prefs_mod)
     monkeypatch.setattr(cal, "offline_mode", lambda: False)
+    monkeypatch.setattr(cal, "load_features", lambda: {"network_integrations": True})
 
     calendar = FakeCalendarCal(id="cal-1", owner="alice", name="Personal", color="#123", source="local")
     event = FakeCalendarEvent(
@@ -365,6 +367,52 @@ def test_calendar_routes_error_and_offline_branches(monkeypatch):
     assert db.rollbacks == 1
 
 
+def test_calendar_caldav_network_feature_blocks_remote_paths(monkeypatch):
+    cal = _calendar(monkeypatch)
+    prefs = {
+        "alice": {
+            "caldav": {
+                "url": "https://cal.example/user",
+                "username": "alice",
+                "password": "secret",
+            }
+        }
+    }
+    prefs_mod = types.ModuleType("routes.prefs_routes")
+    prefs_mod._load_for_user = lambda owner: prefs.get(owner, {})
+    prefs_mod._save_for_user = lambda owner, data: prefs.__setitem__(owner, data)
+    monkeypatch.setitem(sys.modules, "routes.prefs_routes", prefs_mod)
+    monkeypatch.setattr(cal, "offline_mode", lambda: False)
+    monkeypatch.setattr(cal, "load_features", lambda: {"network_integrations": False})
+    router = cal.setup_calendar_routes()
+
+    cfg = asyncio.run(_endpoint(router, "/api/calendar/config", "GET")(RequestLike()))
+    assert cfg == {"url": "", "username": "", "password": "", "has_password": False, "local": True}
+
+    assert asyncio.run(_endpoint(router, "/api/calendar/config", "POST")(RequestLike({"url": ""}))) == {
+        "ok": True,
+        "cleared": True,
+    }
+    with pytest.raises(HTTPException) as save_exc:
+        asyncio.run(_endpoint(router, "/api/calendar/config", "POST")(
+            RequestLike({"url": "https://cal.example/user", "username": "alice", "password": "secret"})
+        ))
+    assert save_exc.value.status_code == 403
+
+    class FailHttpx:
+        class AsyncClient:
+            def __init__(self, *args, **kwargs):
+                raise AssertionError("disabled CalDAV test must not create a network client")
+
+    monkeypatch.setitem(sys.modules, "httpx", FailHttpx)
+    with pytest.raises(HTTPException) as test_exc:
+        asyncio.run(_endpoint(router, "/api/calendar/test", "POST")(RequestLike({})))
+    assert test_exc.value.status_code == 403
+    with pytest.raises(HTTPException) as sync_exc:
+        asyncio.run(_endpoint(router, "/api/calendar/sync", "POST")(RequestLike({})))
+    assert sync_exc.value.status_code == 403
+
+
 def test_caldav_sync_helper_blocks_offline_before_network(monkeypatch):
     from src import caldav_sync
 
@@ -378,5 +426,23 @@ def test_caldav_sync_helper_blocks_offline_before_network(monkeypatch):
         "calendars": 0,
         "events": 0,
         "deleted": 0,
-        "errors": ["CalDAV sync is disabled in offline mode"],
+        "errors": ["CalDAV sync is disabled"],
+    }
+
+
+def test_caldav_sync_helper_blocks_feature_disabled_before_network(monkeypatch):
+    from src import caldav_sync
+
+    async def fail_to_thread(*args, **kwargs):
+        raise AssertionError("disabled CalDAV sync must not enter blocking network path")
+
+    monkeypatch.setattr(caldav_sync, "offline_mode", lambda: False)
+    monkeypatch.setattr(caldav_sync, "load_features", lambda: {"network_integrations": False})
+    monkeypatch.setattr(caldav_sync.asyncio, "to_thread", fail_to_thread)
+
+    assert asyncio.run(caldav_sync.sync_caldav("alice")) == {
+        "calendars": 0,
+        "events": 0,
+        "deleted": 0,
+        "errors": ["CalDAV sync is disabled"],
     }

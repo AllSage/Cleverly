@@ -28,7 +28,7 @@ import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,16 @@ logger = logging.getLogger(__name__)
 # events still come through via RRULE expansion on the frontend.
 _LOOKBACK_DAYS = 90
 _LOOKAHEAD_DAYS = 365
+
+
+def _network_integrations_allowed() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("network_integrations") is not False
+    except Exception as exc:
+        logger.warning("CalDAV feature check failed; disabling sync: %s", exc)
+        return False
 
 
 def _stable_cal_id(remote_url: str) -> str:
@@ -246,10 +256,10 @@ async def sync_caldav(owner: str) -> dict:
     """Pull CalDAV state into local DB for `owner`. Returns counts +
     errors. Loads credentials from the user's prefs; no-ops with a
     clear error if CalDAV isn't configured."""
-    if offline_mode():
+    if not _network_integrations_allowed():
         return {
             "calendars": 0, "events": 0, "deleted": 0,
-            "errors": ["CalDAV sync is disabled in offline mode"],
+            "errors": ["CalDAV sync is disabled"],
         }
 
     from routes.prefs_routes import _load_for_user

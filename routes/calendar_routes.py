@@ -14,7 +14,7 @@ from dateutil.rrule import DAILY, WEEKLY, MONTHLY, YEARLY
 
 from core.database import SessionLocal, CalendarCal, CalendarEvent
 from src.auth_helpers import get_current_user
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,16 @@ logger = logging.getLogger(__name__)
 from src.compat import getenv as _compat_getenv
 FALLBACK_OWNER = _compat_getenv("CLEVERLY_FALLBACK_OWNER", "owner@localhost")
 _SINGLE_USER_MODE = _compat_getenv("CLEVERLY_SINGLE_USER", "1") != "0"
+
+
+def _network_integrations_allowed() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("network_integrations") is not False
+    except Exception as exc:
+        logger.warning("Calendar network integration feature check failed; disabling CalDAV: %s", exc)
+        return False
 
 
 def _require_user(request: Request) -> str:
@@ -529,7 +539,7 @@ def setup_calendar_routes() -> APIRouter:
         owner = _require_user(request)
         from routes.prefs_routes import _load_for_user
         cfg = (_load_for_user(owner) or {}).get("caldav", {}) or {}
-        if offline_mode():
+        if not _network_integrations_allowed():
             cfg = {}
         # Surface url+username but never hand the password back to the
         # client — saved-state UI shouldn't leak the credential.
@@ -556,8 +566,8 @@ def setup_calendar_routes() -> APIRouter:
             prefs.pop("caldav", None)
             _save_for_user(owner, prefs)
             return {"ok": True, "cleared": True}
-        if offline_mode():
-            raise HTTPException(403, "CalDAV sync is disabled in offline mode")
+        if not _network_integrations_allowed():
+            raise HTTPException(403, "CalDAV sync is disabled")
         cfg["url"] = body.get("url", "").strip()
         cfg["username"] = (body.get("username") or "").strip()
         # Preserve the stored password when the client sends an empty
@@ -577,8 +587,8 @@ def setup_calendar_routes() -> APIRouter:
         creds otherwise. Returns {ok, error?} with a useful message on
         failure (status code, auth issue, network error)."""
         owner = _require_user(request)
-        if offline_mode():
-            raise HTTPException(403, "CalDAV sync is disabled in offline mode")
+        if not _network_integrations_allowed():
+            raise HTTPException(403, "CalDAV sync is disabled")
         try:
             body = await request.json()
         except Exception:
@@ -633,8 +643,8 @@ def setup_calendar_routes() -> APIRouter:
         Returns counts + any per-calendar errors. Called by the frontend
         on calendar open and by the periodic scheduler loop."""
         owner = _require_user(request)
-        if offline_mode():
-            raise HTTPException(403, "CalDAV sync is disabled in offline mode")
+        if not _network_integrations_allowed():
+            raise HTTPException(403, "CalDAV sync is disabled")
         from src.caldav_sync import sync_caldav
         return await sync_caldav(owner)
 
