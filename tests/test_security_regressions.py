@@ -1171,6 +1171,34 @@ def test_document_library_research_errors_escape_exception_text():
     assert "Failed to load: ${e.message}" not in document_library_js
 
 
+def test_settings_integration_cards_escape_configured_values():
+    settings_js = Path("static/js/settings.js").read_text(encoding="utf-8")
+
+    assert 'const itemId = esc(item.id);' in settings_js
+    assert 'const itemName = esc(item.name || \'\');' in settings_js
+    assert 'const itemDetail = esc(item.detail || \'\');' in settings_js
+    assert 'data-intg-id="${itemId}"' in settings_js
+    assert '${itemName} <span' in settings_js
+    assert '${itemDetail}</div>' in settings_js
+    assert 'data-intg-id="${item.id}"' not in settings_js
+    assert '${item.name} <span' not in settings_js
+    assert '${item.detail || \'\'}' not in settings_js
+
+
+def test_admin_mcp_server_rows_escape_configured_values():
+    admin_js = Path("static/js/admin.js").read_text(encoding="utf-8")
+
+    assert 'const statusText = esc(s.needs_oauth ?' in admin_js
+    assert 'const serverId = esc(s.id);' in admin_js
+    assert "const authId = encodeURIComponent(s.id || '');" in admin_js
+    assert 'data-adm-mcp-id="${serverId}"' in admin_js
+    assert 'data-adm-mcp-header="${serverId}"' in admin_js
+    assert 'data-adm-mcp-reconnect="${serverId}"' in admin_js
+    assert '>${statusText}</span>' in admin_js
+    assert 'data-adm-mcp-id="${s.id}"' not in admin_js
+    assert 'data-adm-mcp-header="${s.id}"' not in admin_js
+
+
 def test_training_lab_is_local_only_and_wired_to_ui():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     index_html = Path("static/index.html").read_text(encoding="utf-8")
