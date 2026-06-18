@@ -454,6 +454,12 @@ def test_manage_tasks_crud_and_run_paths(monkeypatch):
     db.data[ScheduledTask].insert(0, foreign)
     assert asyncio.run(tools.do_manage_tasks('{"action":"delete","task_id":"task-2"}', owner="alice"))["error"] == "Access denied"
     db.data[ScheduledTask].remove(foreign)
+    legacy = ScheduledTask(id="task-legacy", owner=None, name="Legacy", status="active")
+    db.data[ScheduledTask].insert(0, legacy)
+    assert asyncio.run(tools.do_manage_tasks('{"action":"edit","task_id":"task-legacy","name":"Nope"}', owner="alice"))["error"] == "Access denied"
+    assert asyncio.run(tools.do_manage_tasks('{"action":"run","task_id":"task-legacy"}', owner="alice"))["error"] == "Access denied"
+    assert legacy.name == "Legacy"
+    db.data[ScheduledTask].remove(legacy)
     deleted = asyncio.run(tools.do_manage_tasks('{"action":"delete","task_id":"task-1"}', owner="alice"))
     assert "Deleted task" in deleted["response"]
     assert task in db.deleted
@@ -553,6 +559,12 @@ def test_manage_notes_crud_checklists_and_duplicates(monkeypatch):
     db.data[Note].insert(0, foreign)
     assert asyncio.run(tools.do_manage_notes('{"action":"delete","id":"note-foreign"}', owner="alice"))["error"] == "Note not found"
     db.data[Note].remove(foreign)
+    legacy = Note(id="note-legacy", owner=None, title="Legacy", content="", items=None, note_type="note", archived=False, pinned=False, updated_at=datetime.utcnow())
+    db.data[Note].insert(0, legacy)
+    assert asyncio.run(tools.do_manage_notes('{"action":"update","id":"note-legacy","title":"Nope"}', owner="alice"))["error"] == "Note not found"
+    assert asyncio.run(tools.do_manage_notes('{"action":"delete","id":"note-legacy"}', owner="alice"))["error"] == "Note not found"
+    assert legacy.title == "Legacy"
+    db.data[Note].remove(legacy)
     deleted = asyncio.run(tools.do_manage_notes('{"action":"delete","id":"note-plain"}', owner="alice"))
     assert "Deleted note" in deleted["response"]
     assert plain in db.deleted
