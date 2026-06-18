@@ -374,12 +374,51 @@ async def test_direct_fallback_bash_blocks_network_commands_in_offline_mode(monk
         raise AssertionError("network shell command should not spawn")
 
     monkeypatch.setattr(tool_execution, "offline_mode", lambda: True)
+    monkeypatch.setattr(tool_execution, "load_features", lambda: {"network_integrations": True})
     monkeypatch.setattr(asyncio, "create_subprocess_shell", fail_shell)
 
     result = await tool_execution._direct_fallback("bash", "git fetch origin")
 
     assert result == {
         "error": "Network shell commands are disabled in offline mode",
+        "exit_code": 1,
+    }
+
+    monkeypatch.setattr(tool_execution, "offline_mode", lambda: False)
+    monkeypatch.setattr(tool_execution, "load_features", lambda: {"network_integrations": False})
+    disabled = await tool_execution._direct_fallback("bash", "curl https://example.com")
+    assert disabled == {
+        "error": "Network shell commands are disabled in offline mode",
+        "exit_code": 1,
+    }
+
+    monkeypatch.setattr(
+        tool_execution,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    failed_closed = await tool_execution._direct_fallback("bash", "git pull")
+    assert failed_closed == {
+        "error": "Network shell commands are disabled in offline mode",
+        "exit_code": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_direct_fallback_python_blocks_network_imports_when_feature_disabled(monkeypatch):
+    import src.tool_execution as tool_execution
+
+    async def fail_exec(*args, **kwargs):
+        raise AssertionError("network Python snippet should not spawn")
+
+    monkeypatch.setattr(tool_execution, "offline_mode", lambda: False)
+    monkeypatch.setattr(tool_execution, "load_features", lambda: {"network_integrations": False})
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fail_exec)
+
+    result = await tool_execution._direct_fallback("python", "import socket\nprint('nope')")
+
+    assert result == {
+        "error": "Network Python snippets are disabled in offline mode",
         "exit_code": 1,
     }
 
@@ -391,6 +430,11 @@ async def test_direct_fallback_web_search_and_fetch_are_no_network(monkeypatch):
     import src.tool_execution as tool_execution
 
     monkeypatch.setattr(tool_execution, "offline_mode", lambda: False)
+    monkeypatch.setattr(
+        tool_execution,
+        "load_features",
+        lambda: {"web_search": True, "web_fetch": True, "network_integrations": True},
+    )
 
     def fake_search(query, max_pages=5, time_filter=None, return_sources=False):
         assert query == "latest local ai"
@@ -427,6 +471,21 @@ async def test_direct_fallback_web_search_and_fetch_are_no_network(monkeypatch):
     assert blocked_search == {"error": "web_search is disabled in offline mode", "exit_code": 1}
     blocked_fetch = await tool_execution._direct_fallback("web_fetch", "example.com")
     assert blocked_fetch == {"error": "web_fetch is disabled in offline mode", "exit_code": 1}
+
+    monkeypatch.setattr(tool_execution, "offline_mode", lambda: False)
+    monkeypatch.setattr(tool_execution, "load_features", lambda: {"web_search": False, "web_fetch": False})
+    disabled_search = await tool_execution._direct_fallback("web_search", "latest local ai")
+    assert disabled_search == {"error": "web_search is disabled in offline mode", "exit_code": 1}
+    disabled_fetch = await tool_execution._direct_fallback("web_fetch", "example.com")
+    assert disabled_fetch == {"error": "web_fetch is disabled in offline mode", "exit_code": 1}
+
+    monkeypatch.setattr(
+        tool_execution,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    failed_search = await tool_execution._direct_fallback("web_search", "latest local ai")
+    assert failed_search == {"error": "web_search is disabled in offline mode", "exit_code": 1}
 
 
 class Column:

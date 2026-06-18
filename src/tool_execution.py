@@ -16,8 +16,8 @@ import sys
 import time
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
-from src.offline_policy import command_uses_network
-from src.settings import offline_mode
+from src.offline_policy import command_uses_network, python_code_uses_network
+from src.settings import load_features, offline_mode
 from src.tool_security import is_public_blocked_tool, owner_is_admin_or_single_user
 
 MAX_OUTPUT_CHARS = 10_000
@@ -57,6 +57,27 @@ def _truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
     return text
 
 logger = logging.getLogger(__name__)
+
+
+def _feature_enabled(key: str) -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get(key) is not False
+    except Exception:
+        return False
+
+
+def _network_integrations_allowed() -> bool:
+    return _feature_enabled("network_integrations")
+
+
+def _web_search_allowed() -> bool:
+    return _feature_enabled("web_search")
+
+
+def _web_fetch_allowed() -> bool:
+    return _feature_enabled("web_fetch")
 
 
 async def _run_subprocess_streaming(
@@ -329,7 +350,7 @@ async def _direct_fallback(
 
     try:
         if tool == "bash":
-            if offline_mode() and command_uses_network(content):
+            if command_uses_network(content) and not _network_integrations_allowed():
                 return {"error": "Network shell commands are disabled in offline mode", "exit_code": 1}
             proc = await asyncio.create_subprocess_shell(
                 content,
@@ -352,6 +373,8 @@ async def _direct_fallback(
             return {"output": output or "(no output)", "exit_code": rc or 0}
 
         if tool == "python":
+            if python_code_uses_network(content) and not _network_integrations_allowed():
+                return {"error": "Network Python snippets are disabled in offline mode", "exit_code": 1}
             # Run user code in a subprocess so an infinite loop or crash
             # can't take the whole server down. -I = isolated mode (skip
             # user site, no PYTHONPATH inheritance) for hygiene.
@@ -421,7 +444,7 @@ async def _direct_fallback(
             return {"output": f"Wrote {size} bytes to {path}", "exit_code": 0}
 
         if tool == "web_search":
-            if offline_mode():
+            if not _web_search_allowed():
                 return {"error": "web_search is disabled in offline mode", "exit_code": 1}
             from src.search import comprehensive_web_search
             raw = content.strip()
@@ -474,7 +497,7 @@ async def _direct_fallback(
             return {"output": output, "exit_code": 0}
 
         if tool == "web_fetch":
-            if offline_mode():
+            if not _web_fetch_allowed():
                 return {"error": "web_fetch is disabled in offline mode", "exit_code": 1}
             # Lightweight single-URL fetch. Wraps the SSRF-safe fetcher used
             # by deep research, so private/loopback/metadata addresses are

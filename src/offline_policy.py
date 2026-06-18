@@ -43,6 +43,13 @@ NETWORK_COMMAND_RE = re.compile(
     r"|\b(npm|pnpm|yarn)\s+(install|add|audit|publish)\b",
     re.IGNORECASE,
 )
+PYTHON_NETWORK_RE = re.compile(
+    r"(^|\n)\s*(import|from)\s+"
+    r"(aiohttp|ftplib|http\.client|httpx|requests|smtplib|socket|urllib|websocket)\b"
+    r"|(^|\n)\s*(__import__|importlib\.import_module)\(\s*['\"]"
+    r"(aiohttp|ftplib|http\.client|httpx|requests|smtplib|socket|urllib|websocket)",
+    re.IGNORECASE,
+)
 
 
 class OfflinePolicyError(RuntimeError):
@@ -96,6 +103,11 @@ def is_local_model_url(base_url: str) -> bool:
 def command_uses_network(command: str) -> bool:
     """Detect shell commands that commonly open outbound network connections."""
     return bool(NETWORK_COMMAND_RE.search(command or ""))
+
+
+def python_code_uses_network(code: str) -> bool:
+    """Detect Python snippets that directly import common network clients."""
+    return bool(PYTHON_NETWORK_RE.search(code or ""))
 
 
 def _check(check_id: str, label: str, status: str, detail: str) -> PolicyCheck:
