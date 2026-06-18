@@ -407,9 +407,19 @@ async def test_shell_exec_route_and_package_install(monkeypatch):
     import routes.shell_routes as shell_routes
 
     monkeypatch.setattr(shell_routes, "_require_admin", lambda request: None)
+    monkeypatch.setattr(shell_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(
+        shell_routes,
+        "load_features",
+        lambda: {
+            "network_integrations": True,
+            "cookbook_dependency_installs": True,
+        },
+    )
     router = shell_routes.setup_shell_routes()
 
     shell_exec = _endpoint(router, "/api/shell/exec", "POST")
+    shell_stream = _endpoint(router, "/api/shell/stream", "POST")
     install = _endpoint(router, "/api/cookbook/packages/install", "POST")
 
     assert await shell_exec(RequestLike(), shell_routes.ShellExecRequest(command="   ")) == {
@@ -431,6 +441,59 @@ async def test_shell_exec_route_and_package_install(monkeypatch):
     assert getattr(exc.value, "status_code", None) == 403
 
     monkeypatch.setattr(shell_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(
+        shell_routes,
+        "load_features",
+        lambda: {
+            "network_integrations": False,
+            "cookbook_dependency_installs": True,
+        },
+    )
+    with pytest.raises(Exception) as shell_feature_exc:
+        await shell_exec(RequestLike(), shell_routes.ShellExecRequest(command="curl https://example.com"))
+    assert getattr(shell_feature_exc.value, "status_code", None) == 403
+    assert getattr(shell_feature_exc.value, "detail", "") == "Network shell commands are disabled"
+    with pytest.raises(Exception) as stream_feature_exc:
+        await shell_stream(RequestLike(), shell_routes.ShellExecRequest(command="curl https://example.com"))
+    assert getattr(stream_feature_exc.value, "status_code", None) == 403
+    assert getattr(stream_feature_exc.value, "detail", "") == "Network shell commands are disabled"
+    monkeypatch.setattr(
+        shell_routes,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    with pytest.raises(Exception) as shell_failed_feature_exc:
+        await shell_exec(RequestLike(), shell_routes.ShellExecRequest(command="curl https://example.com"))
+    assert getattr(shell_failed_feature_exc.value, "status_code", None) == 403
+
+    monkeypatch.setattr(
+        shell_routes,
+        "load_features",
+        lambda: {
+            "network_integrations": True,
+            "cookbook_dependency_installs": False,
+        },
+    )
+    with pytest.raises(Exception) as install_feature_exc:
+        await install(RequestLike(body={"pip": "playwright"}))
+    assert getattr(install_feature_exc.value, "status_code", None) == 403
+    assert getattr(install_feature_exc.value, "detail", "") == "Dependency installs are disabled"
+    monkeypatch.setattr(
+        shell_routes,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    with pytest.raises(Exception) as install_failed_feature_exc:
+        await install(RequestLike(body={"pip": "playwright"}))
+    assert getattr(install_failed_feature_exc.value, "status_code", None) == 403
+    monkeypatch.setattr(
+        shell_routes,
+        "load_features",
+        lambda: {
+            "network_integrations": True,
+            "cookbook_dependency_installs": True,
+        },
+    )
     assert await install(RequestLike(body={})) == {"ok": False, "error": "No package specified"}
     assert await install(RequestLike(body={"pip": "evil"})) == {"ok": False, "error": "Unknown package: evil"}
 
@@ -466,6 +529,7 @@ async def test_list_packages_local_and_remote(monkeypatch):
     monkeypatch.setattr(shell_routes, "_require_admin", lambda request: None)
     monkeypatch.setattr(shell_routes, "_reject_cross_site", lambda request: None)
     monkeypatch.setattr(shell_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(shell_routes, "load_features", lambda: {"cookbook_remote_servers": True})
     monkeypatch.setattr(shell_routes, "_running_in_container", lambda: True)
     monkeypatch.setattr(shell_routes.shutil, "which", lambda name: "/bin/llama-server" if name == "llama-server" else None)
 
@@ -497,6 +561,20 @@ async def test_list_packages_local_and_remote(monkeypatch):
     assert getattr(offline_exc.value, "status_code", None) == 403
     assert getattr(offline_exc.value, "detail", "") == "Remote package probes are disabled in offline mode"
     monkeypatch.setattr(shell_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(shell_routes, "load_features", lambda: {"cookbook_remote_servers": False})
+    with pytest.raises(Exception) as remote_feature_exc:
+        await list_packages(RequestLike(), host="gpu.local", ssh_port="2222", venv="~/venv")
+    assert getattr(remote_feature_exc.value, "status_code", None) == 403
+    assert getattr(remote_feature_exc.value, "detail", "") == "Remote package probes are disabled"
+    monkeypatch.setattr(
+        shell_routes,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    with pytest.raises(Exception) as remote_failed_feature_exc:
+        await list_packages(RequestLike(), host="gpu.local", ssh_port="2222", venv="~/venv")
+    assert getattr(remote_failed_feature_exc.value, "status_code", None) == 403
+    monkeypatch.setattr(shell_routes, "load_features", lambda: {"cookbook_remote_servers": True})
 
     class Proc:
         def __init__(self, out):

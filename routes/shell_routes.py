@@ -39,7 +39,28 @@ from core.platform_compat import (
     find_bash,
 )
 from src.offline_policy import command_uses_network
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
+
+
+def _feature_enabled(key: str) -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get(key) is not False
+    except Exception:
+        return False
+
+
+def _network_shell_allowed() -> bool:
+    return _feature_enabled("network_integrations")
+
+
+def _remote_package_probes_allowed() -> bool:
+    return _feature_enabled("cookbook_remote_servers")
+
+
+def _dependency_installs_allowed() -> bool:
+    return _feature_enabled("cookbook_dependency_installs")
 
 
 def _require_admin(request: Request):
@@ -655,8 +676,9 @@ def setup_shell_routes() -> APIRouter:
         cmd = req.command.strip()
         if not cmd:
             return {"stdout": "", "stderr": "No command provided", "exit_code": 1}
-        if offline_mode() and command_uses_network(cmd):
-            raise HTTPException(403, "Network shell commands are disabled in offline mode")
+        if command_uses_network(cmd) and not _network_shell_allowed():
+            detail = "Network shell commands are disabled in offline mode" if offline_mode() else "Network shell commands are disabled"
+            raise HTTPException(403, detail)
 
         logger.info("User shell exec requested: length=%d", len(cmd))
         result = await _exec_shell(cmd, timeout=EXEC_TIMEOUT)
@@ -672,8 +694,9 @@ def setup_shell_routes() -> APIRouter:
                 yield f"data: {json.dumps({'stream': 'stderr', 'data': 'No command provided'})}\n\n"
                 yield f"data: {json.dumps({'exit_code': 1})}\n\n"
             return StreamingResponse(empty(), media_type="text/event-stream")
-        if offline_mode() and command_uses_network(cmd):
-            raise HTTPException(403, "Network shell commands are disabled in offline mode")
+        if command_uses_network(cmd) and not _network_shell_allowed():
+            detail = "Network shell commands are disabled in offline mode" if offline_mode() else "Network shell commands are disabled"
+            raise HTTPException(403, detail)
 
         timeout = req.timeout if req.timeout is not None else STREAM_TIMEOUT
         use_pty = req.use_pty
@@ -798,8 +821,9 @@ def setup_shell_routes() -> APIRouter:
         _require_admin(request)
         _reject_cross_site(request)
         import importlib, importlib.metadata as importlib_metadata, shlex, json as _json
-        if offline_mode() and host:
-            raise HTTPException(403, "Remote package probes are disabled in offline mode")
+        if host and not _remote_package_probes_allowed():
+            detail = "Remote package probes are disabled in offline mode" if offline_mode() else "Remote package probes are disabled"
+            raise HTTPException(403, detail)
         if ssh_port and str(ssh_port).strip() not in ("", "22"):
             _port = str(ssh_port).strip()
             if not _SSH_PORT_RE.match(_port) or not (1 <= int(_port) <= 65535):
@@ -919,8 +943,9 @@ def setup_shell_routes() -> APIRouter:
     async def install_package(request: Request):
         """Install a package via pip. Admin only — pip install is effectively code exec."""
         _require_admin(request)
-        if offline_mode():
-            raise HTTPException(403, "Dependency installs are disabled in offline mode")
+        if not _dependency_installs_allowed():
+            detail = "Dependency installs are disabled in offline mode" if offline_mode() else "Dependency installs are disabled"
+            raise HTTPException(403, detail)
         import sys as _sys
         body = await request.json()
         pip_name = body.get("pip")
