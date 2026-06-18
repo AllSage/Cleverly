@@ -7,6 +7,8 @@ import types
 from contextlib import contextmanager
 from email.message import EmailMessage
 
+import pytest
+
 
 def _endpoint(router, path, method="GET"):
     for route in router.routes:
@@ -138,6 +140,41 @@ def _email_routes(monkeypatch, tmp_path):
     thread_parser.parse_thread = lambda html, text: [{"speaker": "parsed"}]
     monkeypatch.setitem(sys.modules, "src.email_thread_parser", thread_parser)
     return routes
+
+
+@pytest.mark.asyncio
+async def test_email_account_connection_test_blocks_offline_sockets(monkeypatch, tmp_path):
+    routes = _email_routes(monkeypatch, tmp_path)
+    monkeypatch.setattr(routes, "offline_mode", lambda: True)
+
+    class RequestLike:
+        async def json(self):
+            return {
+                "imap_host": "imap.example.test",
+                "imap_port": 993,
+                "imap_user": "alice",
+                "imap_password": "secret",
+                "smtp_host": "smtp.example.test",
+                "smtp_port": 465,
+                "smtp_user": "alice",
+                "smtp_password": "secret",
+            }
+
+    class BlockedSocket:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("offline email connection test should not open sockets")
+
+    monkeypatch.setattr(routes.imaplib, "IMAP4", BlockedSocket)
+    monkeypatch.setattr(routes.imaplib, "IMAP4_SSL", BlockedSocket)
+    monkeypatch.setattr(routes.smtplib, "SMTP", BlockedSocket)
+    monkeypatch.setattr(routes.smtplib, "SMTP_SSL", BlockedSocket)
+
+    endpoint = _endpoint(routes.setup_email_routes(), "/api/email/accounts/test", "POST")
+    with pytest.raises(routes.HTTPException) as exc:
+        await endpoint(RequestLike(), owner="alice")
+
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Email connection tests are disabled in offline mode"
 
 
 def test_email_list_endpoint_uses_fake_imap_cache_tags_and_attachment_filter(monkeypatch, tmp_path):

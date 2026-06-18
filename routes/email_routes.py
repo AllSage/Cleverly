@@ -35,6 +35,7 @@ from fastapi import APIRouter, Query, UploadFile, File, BackgroundTasks, HTTPExc
 from fastapi.responses import FileResponse
 
 from src.llm_core import llm_call_async
+from src.settings import offline_mode
 
 from routes.email_helpers import (
     _strip_think, _extract_reply, _apply_email_style_mechanics, require_owner, require_user, _assert_owns_account,
@@ -3055,6 +3056,9 @@ def setup_email_routes():
             body = await req.json()
         except Exception:
             return {"ok": False, "imap": {"ok": False, "error": "invalid request body"}}
+
+        if offline_mode():
+            raise HTTPException(403, "Email connection tests are disabled in offline mode")
 
         # Saved-account shortcut — hydrate missing credentials from the DB row,
         # while keeping any edited form fields from the request. This lets the UI
