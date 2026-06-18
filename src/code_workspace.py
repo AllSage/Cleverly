@@ -328,6 +328,8 @@ def _iter_workspace_files(workspace: Path, *, include_large: bool = False):
         rel_parts = path.relative_to(workspace).parts
         if any(part in SKIP_DIRS for part in rel_parts):
             continue
+        if path.is_symlink():
+            continue
         if path.is_dir():
             continue
         try:

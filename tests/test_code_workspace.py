@@ -146,6 +146,47 @@ def test_code_workspace_snapshots_restore_and_export(tmp_path):
     assert Path(exported["path"]).exists()
 
 
+def test_code_workspace_export_and_snapshot_skip_symlinks(tmp_path):
+    meta = cw.create_workspace("Symlink Export", owner="alice", root=tmp_path)
+    workspace = tmp_path / meta["id"]
+    outside = tmp_path / "outside-secret.txt"
+    outside.write_text("secret outside workspace\n", encoding="utf-8")
+    link = workspace / "linked-secret.txt"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    exported = cw.export_workspace(meta["id"], owner="alice", root=tmp_path)
+    with zipfile.ZipFile(exported["path"]) as zf:
+        assert "linked-secret.txt" not in zf.namelist()
+        assert "secret outside workspace" not in "\n".join(
+            zf.read(name).decode("utf-8", "ignore") for name in zf.namelist()
+        )
+
+    snapshot = cw.create_snapshot(meta["id"], "skip symlink", owner="alice", root=tmp_path)
+    with zipfile.ZipFile(snapshot["path"]) as zf:
+        assert "linked-secret.txt" not in zf.namelist()
+
+
+def test_code_workspace_file_iterator_excludes_symlink_paths(tmp_path, monkeypatch):
+    meta = cw.create_workspace("Symlink Iterator", owner="alice", root=tmp_path)
+    workspace = tmp_path / meta["id"]
+    (workspace / "linked-secret.txt").write_text("secret\n", encoding="utf-8")
+    (workspace / "app.txt").write_text("safe\n", encoding="utf-8")
+    real_is_symlink = Path.is_symlink
+
+    def fake_is_symlink(path):
+        if path.name == "linked-secret.txt":
+            return True
+        return real_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", fake_is_symlink)
+
+    names = {path.name for path, _stat in cw._iter_workspace_files(workspace, include_large=True)}
+    assert names == {"app.txt"}
+
+
 def test_code_workspace_snapshot_restore_rejects_symlink_archive_before_clearing(tmp_path):
     meta = cw.create_workspace("Snapshot Symlink", owner="alice", root=tmp_path)
     cw.write_file(meta["id"], "app.txt", "safe\n", owner="alice", root=tmp_path)
