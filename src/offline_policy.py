@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,14 @@ MODEL_URL_ENVS = (
     "OLLAMA_URL",
     "RESEARCH_LLM_ENDPOINT",
     "EMBEDDING_URL",
+)
+NETWORK_COMMAND_RE = re.compile(
+    r"(^|[;&|]\s*)(curl|wget|ssh|scp|sftp|ftp|nc|ncat|telnet|rsync)\b"
+    r"|\bgit\s+(clone|pull|push|fetch|submodule|remote)\b"
+    r"|\b(hf\s+download|ollama\s+pull)\b"
+    r"|\b(pip|python\s+-m\s+pip)\s+install\b"
+    r"|\b(npm|pnpm|yarn)\s+(install|add|audit|publish)\b",
+    re.IGNORECASE,
 )
 
 
@@ -82,6 +91,11 @@ def is_local_model_url(base_url: str) -> bool:
         return True
     # Compose service names are bare DNS labels such as "ollama" or "vllm".
     return "." not in host
+
+
+def command_uses_network(command: str) -> bool:
+    """Detect shell commands that commonly open outbound network connections."""
+    return bool(NETWORK_COMMAND_RE.search(command or ""))
 
 
 def _check(check_id: str, label: str, status: str, detail: str) -> PolicyCheck:

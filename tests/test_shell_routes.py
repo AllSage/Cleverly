@@ -421,6 +421,11 @@ async def test_shell_exec_route_and_package_install(monkeypatch):
     assert (await shell_exec(RequestLike(), shell_routes.ShellExecRequest(command=" echo hi ")))["stdout"] == "echo hi"
 
     monkeypatch.setattr(shell_routes, "offline_mode", lambda: True)
+    with pytest.raises(Exception) as shell_offline_exc:
+        await shell_exec(RequestLike(), shell_routes.ShellExecRequest(command="curl https://example.com"))
+    assert getattr(shell_offline_exc.value, "status_code", None) == 403
+    assert getattr(shell_offline_exc.value, "detail", "") == "Network shell commands are disabled in offline mode"
+
     with pytest.raises(Exception) as exc:
         await install(RequestLike(body={"pip": "playwright"}))
     assert getattr(exc.value, "status_code", None) == 403

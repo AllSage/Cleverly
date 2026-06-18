@@ -132,3 +132,36 @@ async def test_ping_notes_does_not_dispatch_ownerless_notes_for_authenticated_ow
     assert [item["note_id"] for item in dispatched] == ["alice-note"]
     assert dispatched[0]["owner"] == "alice"
     assert db.closed is True
+
+
+@pytest.mark.asyncio
+async def test_shell_actions_block_network_commands_in_offline_mode(monkeypatch):
+    from src import builtin_actions
+
+    calls = []
+
+    async def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return "ran", True
+
+    monkeypatch.setattr(builtin_actions, "offline_mode", lambda: True)
+    monkeypatch.setattr(builtin_actions, "_run_subprocess", fake_run)
+
+    assert await builtin_actions.action_run_local("alice", script="curl https://example.com") == (
+        "Network shell commands are disabled in offline mode",
+        False,
+    )
+    assert await builtin_actions.action_run_script("alice", script="echo ok", host="user@example.test") == (
+        "Remote scripts are disabled in offline mode",
+        False,
+    )
+    assert await builtin_actions.action_ssh_command("alice", command="echo ok", host="user@example.test") == (
+        "Remote shell commands are disabled in offline mode",
+        False,
+    )
+    assert await builtin_actions.action_ssh_command("alice", command="git fetch origin", host="localhost") == (
+        "Network shell commands are disabled in offline mode",
+        False,
+    )
+
+    assert calls == []

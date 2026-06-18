@@ -367,6 +367,24 @@ async def test_direct_fallback_bash_python_and_mcp_not_connected(monkeypatch, tm
 
 
 @pytest.mark.asyncio
+async def test_direct_fallback_bash_blocks_network_commands_in_offline_mode(monkeypatch):
+    import src.tool_execution as tool_execution
+
+    async def fail_shell(*args, **kwargs):
+        raise AssertionError("network shell command should not spawn")
+
+    monkeypatch.setattr(tool_execution, "offline_mode", lambda: True)
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", fail_shell)
+
+    result = await tool_execution._direct_fallback("bash", "git fetch origin")
+
+    assert result == {
+        "error": "Network shell commands are disabled in offline mode",
+        "exit_code": 1,
+    }
+
+
+@pytest.mark.asyncio
 async def test_direct_fallback_web_search_and_fetch_are_no_network(monkeypatch):
     import src.search as search_module
     import src.search.content as search_content

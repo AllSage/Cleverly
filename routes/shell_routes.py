@@ -38,6 +38,7 @@ from core.platform_compat import (
     detached_popen_kwargs,
     find_bash,
 )
+from src.offline_policy import command_uses_network
 from src.settings import offline_mode
 
 
@@ -654,6 +655,8 @@ def setup_shell_routes() -> APIRouter:
         cmd = req.command.strip()
         if not cmd:
             return {"stdout": "", "stderr": "No command provided", "exit_code": 1}
+        if offline_mode() and command_uses_network(cmd):
+            raise HTTPException(403, "Network shell commands are disabled in offline mode")
 
         logger.info("User shell exec requested: length=%d", len(cmd))
         result = await _exec_shell(cmd, timeout=EXEC_TIMEOUT)
@@ -669,6 +672,8 @@ def setup_shell_routes() -> APIRouter:
                 yield f"data: {json.dumps({'stream': 'stderr', 'data': 'No command provided'})}\n\n"
                 yield f"data: {json.dumps({'exit_code': 1})}\n\n"
             return StreamingResponse(empty(), media_type="text/event-stream")
+        if offline_mode() and command_uses_network(cmd):
+            raise HTTPException(403, "Network shell commands are disabled in offline mode")
 
         timeout = req.timeout if req.timeout is not None else STREAM_TIMEOUT
         use_pty = req.use_pty

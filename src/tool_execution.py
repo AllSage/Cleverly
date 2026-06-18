@@ -16,6 +16,7 @@ import sys
 import time
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
+from src.offline_policy import command_uses_network
 from src.settings import offline_mode
 from src.tool_security import is_public_blocked_tool, owner_is_admin_or_single_user
 
@@ -328,6 +329,8 @@ async def _direct_fallback(
 
     try:
         if tool == "bash":
+            if offline_mode() and command_uses_network(content):
+                return {"error": "Network shell commands are disabled in offline mode", "exit_code": 1}
             proc = await asyncio.create_subprocess_shell(
                 content,
                 stdout=asyncio.subprocess.PIPE,
