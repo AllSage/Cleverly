@@ -472,7 +472,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
             action = task.action or ""
         finally:
@@ -544,7 +544,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
             return _task_to_dict(task)
         finally:
@@ -558,7 +558,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
 
             effective = _effective_task_values(task, req)
@@ -651,7 +651,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
             db.delete(task)
             db.commit()
@@ -667,7 +667,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
             task.status = "paused"
             db.commit()
@@ -683,7 +683,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
             task.status = "active"
             if (task.trigger_type or "schedule") == "schedule":
@@ -706,7 +706,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
             defs = HOUSEKEEPING_DEFAULTS.get(task.action) if task.action else None
             if not defs:
@@ -745,7 +745,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
         finally:
             db.close()
@@ -762,7 +762,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
         finally:
             db.close()
@@ -840,7 +840,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
             runs = db.query(TaskRun).filter(TaskRun.task_id == task_id)\
                 .order_by(TaskRun.started_at.desc())\
@@ -957,7 +957,7 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             task = db.query(ScheduledTask).filter(ScheduledTask.id == task_id).first()
             if not task:
                 raise HTTPException(404, "Task not found")
-            if user and task.owner != user:
+            if user is not None and task.owner != user:
                 raise HTTPException(403, "Access denied")
             task.webhook_token = secrets.token_urlsafe(32)
             db.commit()

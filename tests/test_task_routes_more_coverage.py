@@ -392,6 +392,13 @@ def test_task_create_update_lifecycle_and_controls(monkeypatch):
     with pytest.raises(HTTPException) as denied:
         asyncio.run(get_task(RequestLike(user="bob"), "existing"))
     assert denied.value.status_code == 403
+    db.tasks["legacy"] = FakeScheduledTask(id="legacy", owner=None)
+    with pytest.raises(HTTPException) as legacy_read:
+        asyncio.run(get_task(request, "legacy"))
+    assert legacy_read.value.status_code == 403
+    with pytest.raises(HTTPException) as legacy_run:
+        asyncio.run(_endpoint(router, "/api/tasks/{task_id}/run", "POST")(request, "legacy"))
+    assert legacy_run.value.status_code == 403
 
     update = _endpoint(router, "/api/tasks/{task_id}", "PUT")
     updated = asyncio.run(
