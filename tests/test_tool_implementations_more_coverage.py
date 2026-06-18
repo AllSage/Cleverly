@@ -527,10 +527,23 @@ def test_cookbook_download_tools_blocked_in_offline_mode(monkeypatch):
     tools = _tool_module()
 
     monkeypatch.setattr(tools, "offline_mode", lambda: True)
+    monkeypatch.setattr(tools, "_cookbook_servers", lambda: asyncio.sleep(0, result={"default_host": "gpu-box", "hosts": []}))
 
     search_result = asyncio.run(tools.do_search_hf_models('{"query":"llama"}'))
     download_result = asyncio.run(tools.do_download_model('{"repo_id":"Team/Model-7B"}'))
     cached_result = asyncio.run(tools.do_list_cached_models('{"host":"gpu-box"}'))
+    remote_serve_result = asyncio.run(
+        tools.do_serve_model('{"repo_id":"Team/Model-7B","cmd":"vllm serve Team/Model-7B","host":"gpu-box"}')
+    )
+    default_remote_serve_result = asyncio.run(
+        tools.do_serve_model('{"repo_id":"Team/Model-7B","cmd":"vllm serve Team/Model-7B"}')
+    )
+    install_serve_result = asyncio.run(
+        tools.do_serve_model('{"repo_id":"playwright","cmd":"python -m pip install playwright","local":true}')
+    )
+    download_serve_result = asyncio.run(
+        tools.do_serve_model('{"repo_id":"Team/Model-7B","cmd":"hf download Team/Model-7B","local":true}')
+    )
 
     assert search_result == {
         "error": "HuggingFace model search is disabled in offline mode",
@@ -544,6 +557,51 @@ def test_cookbook_download_tools_blocked_in_offline_mode(monkeypatch):
         "error": "Remote Cookbook servers are disabled in offline mode",
         "exit_code": 1,
     }
+    assert remote_serve_result == {
+        "error": "Remote Cookbook servers are disabled in offline mode",
+        "exit_code": 1,
+    }
+    assert default_remote_serve_result == {
+        "error": "Remote Cookbook servers are disabled in offline mode",
+        "exit_code": 1,
+    }
+    assert install_serve_result == {
+        "error": "Dependency installs are disabled in offline mode",
+        "exit_code": 1,
+    }
+    assert download_serve_result == {
+        "error": "Network download commands are disabled in offline mode",
+        "exit_code": 1,
+    }
+
+
+def test_cookbook_serve_tool_feature_gates(monkeypatch):
+    tools = _tool_module()
+
+    monkeypatch.setattr(tools, "offline_mode", lambda: False)
+    monkeypatch.setattr(tools, "_cookbook_servers", lambda: asyncio.sleep(0, result={"default_host": "gpu-box", "hosts": []}))
+    monkeypatch.setattr(tools, "_cookbook_env_for_host", lambda host: asyncio.sleep(0, result={}))
+    monkeypatch.setattr(tools, "_cookbook_register_task", lambda *args, **kwargs: asyncio.sleep(0, result=True))
+
+    monkeypatch.setattr(tools, "load_features", lambda: {"cookbook_remote_servers": False})
+    assert asyncio.run(
+        tools.do_serve_model('{"repo_id":"Team/Model-7B","cmd":"vllm serve Team/Model-7B","host":"gpu-box"}')
+    ) == {"error": "Remote Cookbook servers are disabled in offline mode", "exit_code": 1}
+
+    monkeypatch.setattr(tools, "load_features", lambda: {"cookbook_dependency_installs": False})
+    assert asyncio.run(
+        tools.do_serve_model('{"repo_id":"playwright","cmd":"python -m pip install playwright","local":true}')
+    ) == {"error": "Dependency installs are disabled in offline mode", "exit_code": 1}
+
+    monkeypatch.setattr(tools, "load_features", lambda: {"cookbook_downloads": False})
+    assert asyncio.run(
+        tools.do_serve_model('{"repo_id":"Team/Model-7B","cmd":"python -c \\"from huggingface_hub import snapshot_download\\"","local":true}')
+    ) == {"error": "Network download commands are disabled in offline mode", "exit_code": 1}
+
+    monkeypatch.setattr(tools, "load_features", lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")))
+    assert asyncio.run(
+        tools.do_serve_model('{"repo_id":"Team/Model-7B","cmd":"vllm serve Team/Model-7B","host":"gpu-box"}')
+    ) == {"error": "Remote Cookbook servers are disabled in offline mode", "exit_code": 1}
 
 
 def test_manage_tasks_crud_and_run_paths(monkeypatch):

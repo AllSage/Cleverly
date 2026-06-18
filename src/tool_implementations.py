@@ -50,6 +50,18 @@ def _external_model_endpoint_allowed(base_url: str) -> bool:
 def _webhooks_enabled() -> bool:
     return _feature_enabled("webhooks")
 
+
+def _serve_command_requires_download(cmd: str) -> bool:
+    return bool(re.search(
+        r"\b(hf\s+download|ollama\s+pull|git\s+clone|curl\b|wget\b|snapshot_download|huggingface_hub)\b",
+        cmd or "",
+        re.IGNORECASE,
+    ))
+
+
+def _serve_command_installs_dependency(cmd: str) -> bool:
+    return bool(re.search(r"\b(pip|python\s+-m\s+pip)\s+install\b", cmd or "", re.IGNORECASE))
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -3094,13 +3106,22 @@ async def do_serve_model(content: str, owner: Optional[str] = None) -> Dict:
     cmd = args.get("cmd", "")
     if not repo_id or not cmd:
         return {"error": "repo_id and cmd are required", "exit_code": 1}
+    if _serve_command_installs_dependency(cmd) and not _feature_enabled("cookbook_dependency_installs"):
+        return {"error": "Dependency installs are disabled in offline mode", "exit_code": 1}
+    if _serve_command_requires_download(cmd) and not _feature_enabled("cookbook_downloads"):
+        return {"error": "Network download commands are disabled in offline mode", "exit_code": 1}
     host = (args.get("host") or "").strip()
+    if host and host.lower() not in ("local", "localhost", "this machine", "here"):
+        if not _feature_enabled("cookbook_remote_servers"):
+            return {"error": "Remote Cookbook servers are disabled in offline mode", "exit_code": 1}
     if host:
         host = await _resolve_cookbook_host(host)
     if not host and not args.get("local"):
         _servers = await _cookbook_servers()
         if _servers.get("default_host"):
             host = _servers["default_host"]
+            if not _feature_enabled("cookbook_remote_servers"):
+                return {"error": "Remote Cookbook servers are disabled in offline mode", "exit_code": 1}
     payload = {"repo_id": repo_id, "cmd": cmd}
     if host:
         payload["remote_host"] = host
