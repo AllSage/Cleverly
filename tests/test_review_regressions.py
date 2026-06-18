@@ -320,6 +320,90 @@ def test_offline_mode_blocks_external_model_probe_network_calls(monkeypatch):
     assert listed_models == [{"id": "cached-model", "display": "cached-model", "is_hidden": False}]
 
 
+def test_external_model_feature_blocks_external_model_probe_network_calls(monkeypatch):
+    _install_model_route_import_stubs(monkeypatch)
+    import routes.model_routes as model_routes
+
+    external_ep = SimpleNamespace(
+        id="cloud",
+        name="Cloud",
+        base_url="https://api.openai.com/v1",
+        api_key="secret",
+        is_enabled=True,
+        cached_models=None,
+        hidden_models=None,
+        model_type="llm",
+        supports_tools=None,
+    )
+
+    monkeypatch.setattr(model_routes, "SessionLocal", lambda: _FakeDb([external_ep]))
+    monkeypatch.setattr(model_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(model_routes, "load_features", lambda: {"external_model_endpoints": False})
+
+    def fail_network(*_args, **_kwargs):
+        raise AssertionError("external network should not be touched when external endpoints are disabled")
+
+    monkeypatch.setattr(model_routes.httpx, "get", fail_network)
+    monkeypatch.setattr(model_routes.httpx, "post", fail_network)
+
+    assert model_routes._probe_endpoint("https://api.openai.com/v1", "secret") == []
+    ping = model_routes._ping_endpoint("https://api.openai.com/v1", "secret")
+    assert ping == {"reachable": False, "error": "External endpoints are disabled", "status_code": None}
+
+    monkeypatch.setattr(model_routes, "_probe_single_model", fail_network)
+    monkeypatch.setattr(model_routes, "_probe_endpoint", fail_network)
+    monkeypatch.setattr(model_routes, "_ping_endpoint", fail_network)
+
+    router = model_routes.setup_model_routes(model_discovery=None)
+    endpoints = {
+        (getattr(route, "path", ""), next(iter(getattr(route, "methods", {"GET"})))): route.endpoint
+        for route in router.routes
+    }
+    request = SimpleNamespace()
+
+    ping_route = endpoints[("/api/ping", "GET")](request)
+    assert ping_route["endpoints"][0]["status"] == "offline"
+    assert ping_route["endpoints"][0]["error"] == model_routes._OFFLINE_EXTERNAL_PROBE_ERROR
+
+    listed = endpoints[("/api/model-endpoints", "GET")](request)
+    assert listed[0]["status"] == "offline"
+    assert listed[0]["ping_error"] == model_routes._OFFLINE_EXTERNAL_PROBE_ERROR
+
+    selected = endpoints[("/api/probe-selected", "POST")](
+        request,
+        {"models": [{"endpoint_id": "cloud", "model": "gpt-4o"}]},
+    )
+    assert selected["results"][0]["error"] == model_routes._OFFLINE_EXTERNAL_PROBE_ERROR
+
+    with pytest.raises(HTTPException) as create_exc:
+        endpoints[("/api/model-endpoints", "POST")](
+            request,
+            name="Cloud",
+            base_url="https://api.openai.com/v1",
+            api_key="secret",
+            skip_probe="false",
+            require_models="false",
+            model_type="llm",
+            supports_tools="",
+            shared="true",
+        )
+    assert create_exc.value.status_code == 403
+
+    with pytest.raises(HTTPException) as test_exc:
+        endpoints[("/api/model-endpoints/test", "POST")](
+            request,
+            base_url="https://api.openai.com/v1",
+            api_key="secret",
+        )
+    assert test_exc.value.status_code == 403
+
+    with pytest.raises(HTTPException) as probe_exc:
+        endpoints[("/api/model-endpoints/{ep_id}/probe", "GET")]("cloud", request)
+    assert probe_exc.value.status_code == 403
+
+    assert endpoints[("/api/model-endpoints/{ep_id}/models", "GET")]("cloud", request) == []
+
+
 def test_preset_manager_persists_inject_fields(tmp_path):
     manager = PresetManager(str(tmp_path))
 
