@@ -1157,6 +1157,13 @@ def test_skill_test_errors_escape_exception_text():
     assert "Test failed: ' + (e.message || e)" not in skills_js
 
 
+def test_chat_compaction_errors_escape_exception_text():
+    renderer_js = Path("static/js/chatRenderer.js").read_text(encoding="utf-8")
+
+    assert "Compaction failed: ' + uiModule.esc(err.message || err)" in renderer_js
+    assert "Compaction failed: ' + err.message" not in renderer_js
+
+
 def test_training_lab_is_local_only_and_wired_to_ui():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     index_html = Path("static/index.html").read_text(encoding="utf-8")
