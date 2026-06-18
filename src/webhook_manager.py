@@ -138,10 +138,15 @@ def _webhooks_enabled() -> bool:
 
 class WebhookManager:
     def __init__(self, api_key_manager=None):
-        # Disable redirects to prevent SSRF via redirect chains
-        self._client = httpx.AsyncClient(timeout=10, follow_redirects=False)
+        self._client: Optional[httpx.AsyncClient] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._api_key_manager = api_key_manager
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            # Disable redirects to prevent SSRF via redirect chains.
+            self._client = httpx.AsyncClient(timeout=10, follow_redirects=False)
+        return self._client
 
     def set_loop(self, loop: asyncio.AbstractEventLoop):
         self._loop = loop
@@ -214,7 +219,7 @@ class WebhookManager:
 
         db = SessionLocal()
         try:
-            resp = await self._client.post(url, content=body, headers=headers)
+            resp = await self._get_client().post(url, content=body, headers=headers)
             db.query(Webhook).filter(Webhook.id == webhook_id).update({
                 "last_triggered_at": datetime.utcnow(),
                 "last_status_code": resp.status_code,
@@ -236,4 +241,5 @@ class WebhookManager:
             db.close()
 
     async def close(self):
-        await self._client.aclose()
+        if self._client is not None:
+            await self._client.aclose()

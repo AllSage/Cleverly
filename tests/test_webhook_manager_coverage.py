@@ -114,6 +114,19 @@ def make_manager(api_key_manager=None, client=None):
     return manager
 
 
+def test_constructor_does_not_create_http_client_offline(monkeypatch):
+    monkeypatch.setattr(manager_module, "offline_mode", lambda: True)
+    monkeypatch.setattr(
+        manager_module.httpx,
+        "AsyncClient",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("offline webhook manager should not create HTTP clients")),
+    )
+
+    manager = manager_module.WebhookManager()
+
+    assert manager._client is None
+
+
 def test_hostname_resolution_and_private_url_detection(monkeypatch):
     def fake_getaddrinfo(hostname, _port):
         if hostname == "bad.test":
@@ -342,3 +355,12 @@ async def test_close_closes_client():
     await manager.close()
 
     assert client.closed is True
+
+
+@pytest.mark.asyncio
+async def test_close_without_client_is_noop():
+    manager = manager_module.WebhookManager()
+
+    await manager.close()
+
+    assert manager._client is None
