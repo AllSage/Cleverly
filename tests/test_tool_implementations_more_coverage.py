@@ -374,6 +374,16 @@ def test_manage_endpoints_mcp_webhooks_and_tokens(monkeypatch):
         tools.do_manage_endpoints('{"action":"add","base_url":"http://localhost:11434/v1"}')
     )["response"]
     monkeypatch.setattr(tools, "offline_mode", lambda: False)
+    monkeypatch.setattr(tools, "load_features", lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")))
+    assert asyncio.run(tools.do_manage_webhooks('{"action":"list"}'))["webhooks"] == []
+    assert asyncio.run(tools.do_manage_webhooks('{"action":"add","url":"https://example.test/hook"}'))["exit_code"] == 1
+    assert "External model endpoints are disabled" in asyncio.run(
+        tools.do_manage_endpoints('{"action":"add","base_url":"https://api.openai.com/v1"}')
+    )["error"]
+    assert "Added endpoint" in asyncio.run(
+        tools.do_manage_endpoints('{"action":"add","base_url":"http://localhost:11434/v1"}')
+    )["response"]
+    monkeypatch.setattr(tools, "load_features", lambda: {})
 
     bcrypt = types.ModuleType("bcrypt")
     bcrypt.gensalt = lambda: b"salt"

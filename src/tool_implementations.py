@@ -36,8 +36,9 @@ def _feature_enabled(key: str) -> bool:
         return False
     try:
         return (load_features() or {}).get(key) is not False
-    except Exception:
-        return True
+    except Exception as exc:
+        logger.warning("Tool feature check failed; disabling %s: %s", key, exc)
+        return False
 
 
 def _external_model_endpoint_allowed(base_url: str) -> bool:
