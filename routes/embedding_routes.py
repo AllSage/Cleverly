@@ -111,6 +111,16 @@ def _external_embedding_endpoint_allowed(url: str) -> bool:
         return False
 
 
+def _embedding_model_downloads_allowed() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("cookbook_downloads") is not False
+    except Exception as exc:
+        logger.warning("Embedding model download feature check failed; blocking download: %s", exc)
+        return False
+
+
 def setup_embedding_routes():
     router = APIRouter(prefix="/api/embeddings", dependencies=[Depends(require_admin)])
 
@@ -168,7 +178,7 @@ def setup_embedding_routes():
         if hf_src and _is_downloaded(hf_src):
             return {"status": "already_downloaded", "model": model_name}
 
-        if offline_mode():
+        if not _embedding_model_downloads_allowed():
             raise HTTPException(403, "Embedding model downloads are disabled in offline mode")
 
         if model_name in _downloading:

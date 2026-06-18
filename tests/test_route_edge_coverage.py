@@ -87,6 +87,7 @@ def test_embedding_routes_remaining_error_reset_and_cache_paths(monkeypatch, tmp
     monkeypatch.setitem(sys.modules, "fastembed", fastembed)
     monkeypatch.setenv("FASTEMBED_MODEL", "active")
     monkeypatch.setattr(embedding_routes, "_downloading", {})
+    monkeypatch.setattr(embedding_routes, "load_features", lambda: {"cookbook_downloads": True, "external_model_endpoints": True})
     models = _endpoint(router, "/api/embeddings/models")()
     assert models[0]["model"] == "active"
     assert models[0]["downloaded"] is True
@@ -110,6 +111,19 @@ def test_embedding_routes_remaining_error_reset_and_cache_paths(monkeypatch, tmp
         asyncio.run(_endpoint(router, "/api/embeddings/models/{model_name:path}/download", "POST")("broken"))
     assert offline_download.value.status_code == 403
     monkeypatch.setattr(embedding_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(embedding_routes, "load_features", lambda: {"cookbook_downloads": False})
+    with pytest.raises(HTTPException) as feature_disabled_download:
+        asyncio.run(_endpoint(router, "/api/embeddings/models/{model_name:path}/download", "POST")("broken"))
+    assert feature_disabled_download.value.status_code == 403
+    monkeypatch.setattr(
+        embedding_routes,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    with pytest.raises(HTTPException) as fail_closed_download:
+        asyncio.run(_endpoint(router, "/api/embeddings/models/{model_name:path}/download", "POST")("broken"))
+    assert fail_closed_download.value.status_code == 403
+    monkeypatch.setattr(embedding_routes, "load_features", lambda: {"cookbook_downloads": True, "external_model_endpoints": True})
     with pytest.raises(HTTPException) as broken_download:
         asyncio.run(_endpoint(router, "/api/embeddings/models/{model_name:path}/download", "POST")("broken"))
     assert broken_download.value.status_code == 500
