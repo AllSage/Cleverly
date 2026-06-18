@@ -57,6 +57,16 @@ logger = logging.getLogger(__name__)
 CLEVERLY_MAIL_ORIGIN = "cleverly-ui"
 
 
+def _email_feature_enabled() -> bool:
+    """Return whether network email actions are currently allowed."""
+    try:
+        from src.settings import load_features
+        return (load_features() or {}).get("email") is not False
+    except Exception as exc:
+        logger.warning("Email feature check failed; disabling email routes: %s", exc)
+        return False
+
+
 def _email_tag_owner_aliases(account_id: str | None, owner: str = "") -> list[str]:
     aliases = [owner or ""]
     try:
@@ -1943,6 +1953,8 @@ def setup_email_routes():
         """Schedule an email to be sent at a specific time. ISO8601 UTC."""
         import sqlite3
         import uuid as _uuid
+        if not _email_feature_enabled():
+            raise HTTPException(403, "Email is disabled in offline mode")
         try:
             send_at = req.get("send_at")
             if not send_at:
@@ -2085,6 +2097,8 @@ def setup_email_routes():
 
         Uses req.account_id to pick the sending account (falls back to default)."""
         # Body-based account_id — dep can't see it, check here.
+        if not _email_feature_enabled():
+            raise HTTPException(403, "Email is disabled in offline mode")
         if req.account_id:
             _assert_owns_account(req.account_id, owner)
 

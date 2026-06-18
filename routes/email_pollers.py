@@ -48,6 +48,16 @@ logger = logging.getLogger(__name__)
 
 # ── Routes ──
 
+def _email_feature_enabled() -> bool:
+    """Return whether network email actions are currently allowed."""
+    try:
+        from src.settings import load_features
+        return (load_features() or {}).get("email") is not False
+    except Exception as exc:
+        logger.warning("Email feature check failed; disabling email pollers: %s", exc)
+        return False
+
+
 async def _emit_progress(progress_cb, message: str):
     if not progress_cb:
         return
@@ -926,6 +936,8 @@ def _scheduled_poll_once() -> dict:
     import sqlite3
     sent = []
     failed = []
+    if not _email_feature_enabled():
+        return {"sent": sent, "failed": failed, "skipped": "Email is disabled in offline mode"}
     try:
         now_iso = datetime.utcnow().isoformat()
         conn = sqlite3.connect(SCHEDULED_DB)

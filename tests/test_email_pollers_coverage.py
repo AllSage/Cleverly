@@ -389,6 +389,52 @@ def test_scheduled_poll_once_success_failure_and_flags(monkeypatch, tmp_path):
     assert "error" in errored
 
 
+def test_scheduled_poll_once_skips_when_email_feature_disabled(monkeypatch, tmp_path):
+    import routes.email_pollers as pollers
+
+    db_path = tmp_path / "scheduled.sqlite"
+    _create_mail_db(db_path, scheduled=True)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "INSERT INTO scheduled_emails VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "pending1",
+            "to@example.com",
+            "",
+            "",
+            "Subject",
+            "Body",
+            "",
+            "",
+            json.dumps([]),
+            "acct1",
+            "scheduled",
+            "pending",
+            "2000-01-01T00:00:00",
+            "",
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(pollers, "SCHEDULED_DB", str(db_path))
+    monkeypatch.setattr(pollers, "_email_feature_enabled", lambda: False)
+    monkeypatch.setattr(
+        pollers,
+        "_send_smtp_message",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not send")),
+    )
+
+    result = pollers._scheduled_poll_once()
+    assert result == {"sent": [], "failed": [], "skipped": "Email is disabled in offline mode"}
+
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT status FROM scheduled_emails WHERE id='pending1'").fetchone()[0] == "pending"
+    finally:
+        conn.close()
+
+
 def test_inprocess_poller_flag_values(monkeypatch):
     import routes.email_pollers as pollers
 

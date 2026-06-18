@@ -5,6 +5,7 @@ import types
 from email.message import EmailMessage
 
 import pytest
+from fastapi import BackgroundTasks, HTTPException
 
 
 class Column:
@@ -106,6 +107,15 @@ class FakeConn:
 
 def _email_routes():
     return importlib.import_module("routes.email_routes")
+
+
+def _endpoint(router, path: str, method: str | None = None):
+    method = method.upper() if method else None
+    return next(
+        route.endpoint
+        for route in router.routes
+        if route.path == path and (method is None or method in getattr(route, "methods", set()))
+    )
 
 
 def _install_core_database(monkeypatch, rows):
@@ -264,3 +274,29 @@ def test_email_send_config_headers_markdown_and_sanitizer(monkeypatch):
         '<a href="mailto:a@example.com" target="_blank" rel="noopener noreferrer">mail</a><br></p></body></html>'
     )
     assert routes._sanitize_email_html("<script>only hidden</script>") is None
+
+
+def test_email_send_and_schedule_reject_when_feature_disabled(monkeypatch):
+    routes = _email_routes()
+
+    monkeypatch.setattr(routes, "_start_poller", lambda: None)
+    monkeypatch.setattr(routes, "_email_feature_enabled", lambda: False)
+    monkeypatch.setattr(
+        routes,
+        "_resolve_send_config",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not resolve SMTP")),
+    )
+
+    router = routes.setup_email_routes()
+    send = _endpoint(router, "/api/email/send", "POST")
+    schedule = _endpoint(router, "/api/email/schedule", "POST")
+
+    with pytest.raises(HTTPException) as send_exc:
+        import asyncio
+        asyncio.run(send(routes.SendEmailRequest(to="a@example.com", subject="S", body="B"), BackgroundTasks(), owner="alice"))
+    assert send_exc.value.status_code == 403
+
+    with pytest.raises(HTTPException) as schedule_exc:
+        import asyncio
+        asyncio.run(schedule({"send_at": "2999-01-01T00:00:00"}, owner="alice"))
+    assert schedule_exc.value.status_code == 403
