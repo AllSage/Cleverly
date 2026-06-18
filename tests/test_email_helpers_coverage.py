@@ -195,6 +195,7 @@ def test_account_owner_config_list_and_settings(monkeypatch, tmp_path):
     rows = [
         FakeEmailAccount(id="acct-1", owner="alice", is_default=True, from_address="alice@example.com"),
         FakeEmailAccount(id="acct-2", owner="bob", from_address="bob@example.com"),
+        FakeEmailAccount(id="acct-legacy", owner=None, from_address="legacy@example.com"),
     ]
     db = _install_core_database(monkeypatch, rows)
     monkeypatch.setattr(helpers, "_decrypt", lambda value: f"dec:{value}")
@@ -209,8 +210,19 @@ def test_account_owner_config_list_and_settings(monkeypatch, tmp_path):
     with pytest.raises(HTTPException) as exc:
         helpers._assert_owns_account("acct-2", "alice")
     assert exc.value.status_code == 404
+    with pytest.raises(HTTPException) as legacy_exc:
+        helpers._assert_owns_account("acct-legacy", "alice")
+    assert legacy_exc.value.status_code == 404
 
-    assert [acct["account_id"] for acct in helpers._list_email_accounts()] == ["acct-1", "acct-2"]
+    denied_cfg = helpers._get_email_config("acct-2", owner="alice")
+    assert denied_cfg["account_id"] == "acct-2"
+    assert denied_cfg["smtp_host"] == ""
+    assert denied_cfg["imap_host"] == ""
+    missing_cfg = helpers._get_email_config("missing", owner="alice")
+    assert missing_cfg["account_id"] == "missing"
+    assert missing_cfg["smtp_host"] == ""
+
+    assert [acct["account_id"] for acct in helpers._list_email_accounts()] == ["acct-1", "acct-2", "acct-legacy"]
 
     _install_core_database(monkeypatch, [], raise_on_query=True)
     settings_file = tmp_path / "settings.json"

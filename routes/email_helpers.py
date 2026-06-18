@@ -199,7 +199,7 @@ def _assert_owns_account(account_id: str, owner: str) -> None:
             row = db.query(_EA).filter(_EA.id == account_id).first()
             if row is None:
                 raise HTTPException(404, "Account not found")
-            if row.owner and row.owner != owner:
+            if row.owner != owner:
                 # Treat as 404 (not 403) so we don't leak existence.
                 raise HTTPException(404, "Account not found")
         finally:
@@ -503,6 +503,22 @@ def _get_email_config(account_id: str | None = None, owner: str = "") -> dict:
     import os
     from core.database import SessionLocal as _SL, EmailAccount as _EA
 
+    def _empty_account_config(requested_id: str | None = None) -> dict:
+        return {
+            "account_id": requested_id,
+            "account_name": "",
+            "smtp_host": "",
+            "smtp_port": 465,
+            "smtp_user": "",
+            "smtp_password": "",
+            "imap_host": "",
+            "imap_port": 993,
+            "imap_user": "",
+            "imap_password": "",
+            "imap_starttls": True,
+            "from_address": "",
+        }
+
     def _owner_or_matching_legacy_account(query):
         if not owner:
             return query
@@ -523,15 +539,15 @@ def _get_email_config(account_id: str | None = None, owner: str = "") -> dict:
                 # in depth — `require_owner` already calls `_assert_owns_account`
                 # for query-param account_ids, but other callers (cookbook
                 # rules, scheduled poller) may not.
-                if row is not None and owner and row.owner and row.owner != owner:
-                    row = None
+                if row is None or (owner and row.owner != owner):
+                    return _empty_account_config(account_id)
             # Fallback path — restrict to this owner's accounts so we don't
             # leak another user's default mailbox to an unconfigured user.
-            if row is None:
+            if row is None and not account_id:
                 q = db.query(_EA).filter(_EA.is_default == True, _EA.enabled == True)  # noqa: E712
                 q = _owner_or_matching_legacy_account(q)
                 row = q.first()
-            if row is None:
+            if row is None and not account_id:
                 q = db.query(_EA).filter(_EA.enabled == True)  # noqa: E712
                 q = _owner_or_matching_legacy_account(q)
                 row = q.order_by(_EA.created_at.asc()).first()
@@ -560,6 +576,8 @@ def _get_email_config(account_id: str | None = None, owner: str = "") -> dict:
             db.close()
     except Exception as e:
         logger.debug(f"email_accounts lookup failed, falling back to settings.json: {e}")
+        if account_id:
+            return _empty_account_config(account_id)
 
     # Legacy fallback — flat keys in settings.json / env vars
     settings = _load_settings()
