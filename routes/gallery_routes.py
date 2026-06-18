@@ -688,14 +688,19 @@ def setup_gallery_routes() -> APIRouter:
             import io
             import re
             import zipfile
+            from pathlib import Path
             buf = io.BytesIO()
             used = set()
+            image_dir = Path("data/generated_images").resolve()
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 for img in imgs:
-                    src = os.path.join("data", "generated_images", img.filename)
-                    if not os.path.exists(src):
+                    src = (image_dir / str(img.filename or "")).resolve()
+                    if image_dir != src and image_dir not in src.parents:
+                        logger.warning("Skipping gallery ZIP file outside image directory: %s", img.filename)
                         continue
-                    ext = os.path.splitext(img.filename)[1] or ".png"
+                    if not src.exists() or not src.is_file():
+                        continue
+                    ext = src.suffix or ".png"
                     base = (img.prompt or "").strip() or os.path.splitext(img.filename)[0]
                     base = re.sub(r"[^\w\-. ]+", "", base)[:60].strip() or img.id
                     name = f"{base}{ext}"

@@ -710,6 +710,11 @@ async def test_gallery_zip_album_delete_and_image_tools(gallery_env):
     with pytest.raises(HTTPException) as missing_file:
         await download_zip(RequestLike(body={"ids": ["img2"]}))
     assert missing_file.value.status_code == 404
+    (image_dir.parent / "secret.txt").write_text("do not zip", encoding="utf-8")
+    gallery_env.db.images[1].filename = "../secret.txt"
+    with pytest.raises(HTTPException) as traversal_file:
+        await download_zip(RequestLike(body={"ids": ["img2"]}))
+    assert traversal_file.value.status_code == 404
 
     add_album = _endpoint(gallery_env.router, "/api/gallery/albums/{album_id}/add", "POST")
     assert await add_album(RequestLike(body={"image_ids": ["img2"]}), "album2") == {"ok": True, "count": 1}
