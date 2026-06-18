@@ -28,7 +28,7 @@ from core.platform_compat import (
     which_tool,
 )
 from routes.shell_routes import TMUX_LOG_DIR
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,39 @@ _HF_TOKEN_STATUS_SNIPPET = (
     'Add one in Cleverly Settings -> Cookbook -> HuggingFace Token."; '
     'fi'
 )
+
+
+def _feature_enabled(key: str) -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get(key) is not False
+    except Exception:
+        return False
+
+
+def _feature_disabled_detail(key: str, offline_detail: str, disabled_detail: str) -> str | None:
+    if offline_mode():
+        return offline_detail
+    if not _feature_enabled(key):
+        return disabled_detail
+    return None
+
+
+def _raise_if_feature_disabled(key: str, offline_detail: str, disabled_detail: str) -> None:
+    detail = _feature_disabled_detail(key, offline_detail, disabled_detail)
+    if detail:
+        raise HTTPException(403, detail)
+
+
+def _raise_if_remote_cookbook_disabled(host: str | None) -> None:
+    if not host:
+        return
+    _raise_if_feature_disabled(
+        "cookbook_remote_servers",
+        "Remote Cookbook servers are disabled in offline mode",
+        "Remote Cookbook servers are disabled",
+    )
 
 def setup_cookbook_routes() -> APIRouter:
     router = APIRouter(tags=["cookbook"])
@@ -385,13 +418,17 @@ def setup_cookbook_routes() -> APIRouter:
         Uses `hf download` CLI directly — runs in tmux via `script -qc`
         for real TTY progress, streams ANSI-stripped output via log file."""
         require_admin(request)
-        if offline_mode():
-            raise HTTPException(403, "Model downloads are disabled in offline mode")
+        _raise_if_feature_disabled(
+            "cookbook_downloads",
+            "Model downloads are disabled in offline mode",
+            "Model downloads are disabled",
+        )
         # Defence-in-depth: even though this endpoint is admin-gated, refuse
         # values that would land in shell contexts with metacharacters.
         _validate_repo_id(req.repo_id)
         _validate_include(req.include)
         _validate_remote_host(req.remote_host)
+        _raise_if_remote_cookbook_disabled(req.remote_host)
         req.ssh_port = _validate_ssh_port(req.ssh_port)
         req.local_dir = _validate_local_dir(req.local_dir)
         req.hf_token = req.hf_token or _load_stored_hf_token()
@@ -646,8 +683,7 @@ def setup_cookbook_routes() -> APIRouter:
         # `host`/`ssh_port` are interpolated into an ssh command below, so an
         # unvalidated value (e.g. "x'; rm -rf ~ #") would be command injection.
         host = _validate_remote_host(host)
-        if offline_mode() and host:
-            raise HTTPException(403, "Remote Cookbook servers are disabled in offline mode")
+        _raise_if_remote_cookbook_disabled(host)
         if ssh_port is not None and ssh_port != "" and not _SSH_PORT_RE.fullmatch(ssh_port):
             raise HTTPException(400, "Invalid ssh_port")
         TMUX_LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -788,8 +824,7 @@ def setup_cookbook_routes() -> APIRouter:
         a fake org/name wrapper.
         """
         require_admin(request)
-        if offline_mode() and req.remote_host:
-            raise HTTPException(403, "Remote Cookbook servers are disabled in offline mode")
+        _raise_if_remote_cookbook_disabled(req.remote_host)
         # Defence-in-depth: reject values that could break out of shell contexts.
         _validate_remote_host(req.remote_host)
         req.ssh_port = _validate_ssh_port(req.ssh_port)
@@ -804,14 +839,22 @@ def setup_cookbook_routes() -> APIRouter:
         # `TypeError: argument of type 'NoneType'` (a 500 instead of a clean 400).
         req.cmd = _validate_serve_cmd(req.cmd) or ""
         is_pip_install = bool(req.cmd and "pip install" in req.cmd)
-        if offline_mode() and is_pip_install:
-            raise HTTPException(403, "Dependency installs are disabled in offline mode")
-        if offline_mode() and req.cmd and re.search(
+        if is_pip_install:
+            _raise_if_feature_disabled(
+                "cookbook_dependency_installs",
+                "Dependency installs are disabled in offline mode",
+                "Dependency installs are disabled",
+            )
+        if req.cmd and re.search(
             r"\b(hf\s+download|ollama\s+pull|git\s+clone|curl\b|wget\b|snapshot_download|huggingface_hub)\b",
             req.cmd,
             re.IGNORECASE,
         ):
-            raise HTTPException(403, "Network download commands are disabled in offline mode")
+            _raise_if_feature_disabled(
+                "cookbook_downloads",
+                "Network download commands are disabled in offline mode",
+                "Network download commands are disabled",
+            )
         if is_pip_install:
             # PEP-508-style package spec — letters, digits, `.-_` for the
             # name; `[` `]` for extras; `<>=!~,` for version specifiers.
@@ -1130,8 +1173,12 @@ def setup_cookbook_routes() -> APIRouter:
         host = _validate_remote_host(req.host)
         if not host:
             raise HTTPException(400, "host is required")
-        if offline_mode():
-            raise HTTPException(403, "Remote Cookbook servers are disabled in offline mode")
+        _raise_if_remote_cookbook_disabled(host)
+        _raise_if_feature_disabled(
+            "cookbook_dependency_installs",
+            "Dependency installs are disabled in offline mode",
+            "Dependency installs are disabled",
+        )
         port = req.ssh_port
         if port is not None and port != "" and not re.fullmatch(r"\d{1,5}", port):
             raise HTTPException(400, "Invalid ssh_port")
@@ -1372,8 +1419,7 @@ def setup_cookbook_routes() -> APIRouter:
         """
         require_admin(request)
         host = _validate_remote_host(host)
-        if offline_mode() and host:
-            raise HTTPException(403, "Remote Cookbook servers are disabled in offline mode")
+        _raise_if_remote_cookbook_disabled(host)
         if ssh_port is not None and ssh_port != "" and not _SSH_PORT_RE.fullmatch(ssh_port):
             raise HTTPException(400, "Invalid ssh_port")
         gpu_query = "nvidia-smi --query-gpu=index,name,memory.free,memory.total,memory.used,utilization.gpu,uuid --format=csv,noheader,nounits"
@@ -1493,8 +1539,7 @@ def setup_cookbook_routes() -> APIRouter:
         if sig not in ("TERM", "KILL", "INT"):
             raise HTTPException(400, "signal must be TERM, KILL, or INT")
         host = _validate_remote_host(req.host)
-        if offline_mode() and host:
-            raise HTTPException(403, "Remote Cookbook servers are disabled in offline mode")
+        _raise_if_remote_cookbook_disabled(host)
         if req.ssh_port and not _SSH_PORT_RE.fullmatch(req.ssh_port):
             raise HTTPException(400, "Invalid ssh_port")
         kill_cmd = f"kill -{sig} {req.pid}"
@@ -1625,8 +1670,11 @@ def setup_cookbook_routes() -> APIRouter:
         import re
         import httpx
 
-        if offline_mode():
-            raise HTTPException(403, "HuggingFace model search is disabled in offline mode")
+        _raise_if_feature_disabled(
+            "cookbook_downloads",
+            "HuggingFace model search is disabled in offline mode",
+            "HuggingFace model search is disabled",
+        )
 
         # Fetch a larger pool so we have enough to filter from (we drop ~80%)
         pool_size = max(limit * 15, 100)

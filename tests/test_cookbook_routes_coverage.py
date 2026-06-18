@@ -144,6 +144,7 @@ def test_cookbook_hf_latest_filters_and_reports_http_errors(monkeypatch):
 
     monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
     monkeypatch.setattr(cookbook_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(cookbook_routes, "load_features", lambda: {"cookbook_downloads": True})
 
     router = cookbook_routes.setup_cookbook_routes()
     hf_latest = _endpoint(router, "/api/cookbook/hf-latest")
@@ -168,6 +169,27 @@ def test_cookbook_hf_latest_filters_and_reports_http_errors(monkeypatch):
         "models": [],
         "error": "offline",
     }
+
+    class FailClient:
+        def __init__(self, *_args, **_kwargs):
+            raise AssertionError("disabled HuggingFace search should not create an HTTP client")
+
+    monkeypatch.setattr(cookbook_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(cookbook_routes, "load_features", lambda: {"cookbook_downloads": False})
+    monkeypatch.setattr(httpx, "AsyncClient", FailClient)
+    with pytest.raises(cookbook_routes.HTTPException) as disabled_exc:
+        asyncio.run(hf_latest(vram_gb=0, limit=1, pipeline="text-generation", owner="alice"))
+    assert disabled_exc.value.status_code == 403
+    assert disabled_exc.value.detail == "HuggingFace model search is disabled"
+
+    monkeypatch.setattr(
+        cookbook_routes,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    with pytest.raises(cookbook_routes.HTTPException) as failed_feature_exc:
+        asyncio.run(hf_latest(vram_gb=0, limit=1, pipeline="text-generation", owner="alice"))
+    assert failed_feature_exc.value.status_code == 403
 
     monkeypatch.setattr(cookbook_routes, "offline_mode", lambda: True)
     with pytest.raises(cookbook_routes.HTTPException) as offline_exc:
@@ -213,6 +235,154 @@ def test_cookbook_remote_cache_and_gpu_probe_blocked_in_offline_mode(monkeypatch
         )
     assert kill_exc.value.status_code == 403
     assert kill_exc.value.detail == "Remote Cookbook servers are disabled in offline mode"
+
+    monkeypatch.setattr(cookbook_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(
+        cookbook_routes,
+        "load_features",
+        lambda: {
+            "cookbook_remote_servers": False,
+            "cookbook_dependency_installs": True,
+        },
+    )
+    for endpoint, args in (
+        (model_cached, (RequestLike(),)),
+        (list_gpus, (RequestLike(),)),
+    ):
+        with pytest.raises(cookbook_routes.HTTPException) as disabled_exc:
+            asyncio.run(endpoint(*args, host="user@example.test"))
+        assert disabled_exc.value.status_code == 403
+        assert disabled_exc.value.detail == "Remote Cookbook servers are disabled"
+    with pytest.raises(cookbook_routes.HTTPException) as setup_disabled:
+        asyncio.run(server_setup(RequestLike(), types.SimpleNamespace(host="user@example.test", ssh_port=None)))
+    assert setup_disabled.value.status_code == 403
+    assert setup_disabled.value.detail == "Remote Cookbook servers are disabled"
+    with pytest.raises(cookbook_routes.HTTPException) as kill_disabled:
+        asyncio.run(
+            kill_pid(
+                RequestLike(),
+                types.SimpleNamespace(pid=1234, host="user@example.test", ssh_port=None, signal="TERM"),
+            )
+        )
+    assert kill_disabled.value.status_code == 403
+
+    monkeypatch.setattr(
+        cookbook_routes,
+        "load_features",
+        lambda: {
+            "cookbook_remote_servers": True,
+            "cookbook_dependency_installs": False,
+        },
+    )
+    with pytest.raises(cookbook_routes.HTTPException) as setup_dep_disabled:
+        asyncio.run(server_setup(RequestLike(), types.SimpleNamespace(host="user@example.test", ssh_port=None)))
+    assert setup_dep_disabled.value.status_code == 403
+    assert setup_dep_disabled.value.detail == "Dependency installs are disabled"
+
+    monkeypatch.setattr(
+        cookbook_routes,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    with pytest.raises(cookbook_routes.HTTPException) as failed_feature_exc:
+        asyncio.run(model_cached(RequestLike(), host="user@example.test"))
+    assert failed_feature_exc.value.status_code == 403
+
+
+def test_cookbook_download_and_serve_feature_gates(monkeypatch, tmp_path):
+    import pytest
+    import routes.cookbook_routes as cookbook_routes
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(cookbook_routes, "require_admin", lambda request: None)
+    monkeypatch.setattr(cookbook_routes, "offline_mode", lambda: False)
+
+    router = cookbook_routes.setup_cookbook_routes()
+    model_download = _endpoint(router, "/api/model/download", "POST")
+    model_serve = _endpoint(router, "/api/model/serve", "POST")
+
+    download_req = types.SimpleNamespace(
+        repo_id="Team/Good-7B",
+        include=None,
+        remote_host=None,
+        ssh_port=None,
+        local_dir=None,
+        hf_token=None,
+        disable_hf_transfer=False,
+        platform="linux",
+        env_prefix="",
+    )
+    monkeypatch.setattr(cookbook_routes, "load_features", lambda: {"cookbook_downloads": False})
+    with pytest.raises(cookbook_routes.HTTPException) as download_disabled:
+        asyncio.run(model_download(RequestLike(), download_req))
+    assert download_disabled.value.status_code == 403
+    assert download_disabled.value.detail == "Model downloads are disabled"
+
+    remote_download_req = types.SimpleNamespace(**{**download_req.__dict__, "remote_host": "user@example.test"})
+    monkeypatch.setattr(
+        cookbook_routes,
+        "load_features",
+        lambda: {
+            "cookbook_downloads": True,
+            "cookbook_remote_servers": False,
+        },
+    )
+    with pytest.raises(cookbook_routes.HTTPException) as remote_download_disabled:
+        asyncio.run(model_download(RequestLike(), remote_download_req))
+    assert remote_download_disabled.value.status_code == 403
+    assert remote_download_disabled.value.detail == "Remote Cookbook servers are disabled"
+
+    remote_serve_req = types.SimpleNamespace(remote_host="user@example.test")
+    with pytest.raises(cookbook_routes.HTTPException) as remote_serve_disabled:
+        asyncio.run(model_serve(RequestLike(), remote_serve_req))
+    assert remote_serve_disabled.value.status_code == 403
+    assert remote_serve_disabled.value.detail == "Remote Cookbook servers are disabled"
+
+    pip_serve_req = types.SimpleNamespace(
+        remote_host=None,
+        ssh_port=None,
+        gpus=None,
+        hf_token=None,
+        cmd="python -m pip install playwright",
+        repo_id="playwright",
+        platform="linux",
+    )
+    monkeypatch.setattr(
+        cookbook_routes,
+        "load_features",
+        lambda: {
+            "cookbook_remote_servers": True,
+            "cookbook_dependency_installs": False,
+            "cookbook_downloads": True,
+        },
+    )
+    with pytest.raises(cookbook_routes.HTTPException) as pip_disabled:
+        asyncio.run(model_serve(RequestLike(), pip_serve_req))
+    assert pip_disabled.value.status_code == 403
+    assert pip_disabled.value.detail == "Dependency installs are disabled"
+
+    network_serve_req = types.SimpleNamespace(
+        remote_host=None,
+        ssh_port=None,
+        gpus=None,
+        hf_token=None,
+        cmd='python -c "import huggingface_hub"',
+        repo_id="Team/Good-7B",
+        platform="linux",
+    )
+    monkeypatch.setattr(
+        cookbook_routes,
+        "load_features",
+        lambda: {
+            "cookbook_remote_servers": True,
+            "cookbook_dependency_installs": True,
+            "cookbook_downloads": False,
+        },
+    )
+    with pytest.raises(cookbook_routes.HTTPException) as network_disabled:
+        asyncio.run(model_serve(RequestLike(), network_serve_req))
+    assert network_disabled.value.status_code == 403
+    assert network_disabled.value.detail == "Network download commands are disabled"
 
 
 def test_cookbook_tasks_status_parses_tmux_output_and_diagnosis(monkeypatch, tmp_path):
