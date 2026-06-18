@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Tuple
 
+from src.settings import load_features, offline_mode
 from src.task_feature_guards import task_feature_disabled_reason
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,17 @@ logger = logging.getLogger(__name__)
 _shared_cache: Dict[Tuple, Tuple[float, Any]] = {}
 _shared_cache_pending: Dict[Tuple, asyncio.Future] = {}
 _shared_cache_lock = asyncio.Lock()
+
+
+def _network_integrations_allowed() -> bool:
+    """Return True only when scheduled tasks may fetch external integrations."""
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("network_integrations") is not False
+    except Exception as exc:
+        logger.warning("Network integration feature check failed; disabling scheduled integration fetches: %s", exc)
+        return False
 
 
 async def _cached(key: Tuple, ttl: float, fetch: Callable[[], Awaitable[Any]]) -> Any:
@@ -1071,8 +1083,11 @@ class TaskScheduler:
 
         # Auto-discover API integrations (Miniflux RSS, etc.).
         try:
-            import httpx
-            from src.integrations import load_integrations
+            if not _network_integrations_allowed():
+                load_integrations = lambda: ()
+            else:
+                import httpx
+                from src.integrations import load_integrations
             for integ in load_integrations():
                 if not integ.get("enabled"):
                     continue

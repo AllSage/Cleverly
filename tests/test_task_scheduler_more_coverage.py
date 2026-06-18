@@ -104,6 +104,48 @@ def _scheduler():
 
 
 @pytest.mark.asyncio
+async def test_checkin_skips_network_integrations_offline(monkeypatch):
+    import src.task_scheduler as ts
+
+    scheduler = _scheduler()
+    captured = {}
+
+    async def fake_run_agent_loop(*args, **kwargs):
+        captured["context"] = kwargs.get("override_user_message", "")
+        return "offline check-in"
+
+    fake_tools = types.ModuleType("src.tool_implementations")
+    fake_tools.do_manage_notes = lambda payload, owner="": asyncio.sleep(0, result={"results": "local notes"})
+    fake_agent_tools = types.ModuleType("src.agent_tools")
+    fake_agent_tools.get_mcp_manager = lambda: None
+    fake_integrations = types.ModuleType("src.integrations")
+
+    def load_integrations():
+        raise AssertionError("offline check-in should not load network integrations")
+
+    fake_integrations.load_integrations = load_integrations
+    monkeypatch.setitem(sys.modules, "src.tool_implementations", fake_tools)
+    monkeypatch.setitem(sys.modules, "src.agent_tools", fake_agent_tools)
+    monkeypatch.setitem(sys.modules, "src.integrations", fake_integrations)
+    monkeypatch.setattr(ts, "offline_mode", lambda: True)
+    monkeypatch.setattr(ts, "load_features", lambda: {"network_integrations": True})
+    monkeypatch.setattr(scheduler, "_run_agent_loop", fake_run_agent_loop)
+
+    result = await scheduler._execute_checkin(
+        SimpleNamespace(owner="alice", prompt="Summarize the day", crew_member_id=None),
+        SimpleNamespace(personality=""),
+        SimpleNamespace(),
+        "session-id",
+        "http://localhost:11434/v1/chat/completions",
+        "local-model",
+    )
+
+    assert result == "offline check-in"
+    assert "local notes" in captured["context"]
+    assert "rss_miniflux_unread" not in captured["context"]
+
+
+@pytest.mark.asyncio
 async def test_cached_singleflight_hit_and_exception(monkeypatch):
     import src.task_scheduler as ts
 
