@@ -1199,6 +1199,14 @@ def test_admin_mcp_server_rows_escape_configured_values():
     assert 'data-adm-mcp-header="${s.id}"' not in admin_js
 
 
+def test_admin_mcp_oauth_success_link_encodes_server_id():
+    admin_js = Path("static/js/admin.js").read_text(encoding="utf-8")
+
+    assert "const authId = encodeURIComponent(data.id || '');" in admin_js
+    assert "/api/mcp/oauth/authorize/${authId}" in admin_js
+    assert "/api/mcp/oauth/authorize/${data.id}" not in admin_js
+
+
 def test_training_lab_is_local_only_and_wired_to_ui():
     app_js = Path("static/app.js").read_text(encoding="utf-8")
     index_html = Path("static/index.html").read_text(encoding="utf-8")
