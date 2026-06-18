@@ -492,6 +492,25 @@ def test_manage_documents_settings_api_and_vault(monkeypatch, tmp_path):
     assert "Password: p" in got["output"]
     monkeypatch.setattr(tools, "_run_bw", lambda *args, **kwargs: asyncio.sleep(0, result=("session-key", "", 0)))
     assert "Vault unlocked" in asyncio.run(tools.do_vault_unlock('{"master_password":"pw"}'))["output"]
+    monkeypatch.setattr(tools, "offline_mode", lambda: True)
+
+    async def fail_bw(*_args, **_kwargs):
+        raise AssertionError("offline vault tools must not launch bw")
+
+    monkeypatch.setattr(tools, "_run_bw", fail_bw)
+    assert asyncio.run(tools.do_vault_search('{"query":"demo"}')) == {
+        "error": "Vault integration is disabled in offline mode",
+        "exit_code": 1,
+    }
+    assert asyncio.run(tools.do_vault_get('{"item_id":"item123456","reason":"testing"}')) == {
+        "error": "Vault integration is disabled in offline mode",
+        "exit_code": 1,
+    }
+    assert asyncio.run(tools.do_vault_unlock('{"master_password":"pw"}')) == {
+        "error": "Vault integration is disabled in offline mode",
+        "exit_code": 1,
+    }
+    monkeypatch.setattr(tools, "offline_mode", lambda: False)
 
 
 def test_cookbook_download_tools_blocked_in_offline_mode(monkeypatch):

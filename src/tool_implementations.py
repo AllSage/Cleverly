@@ -4051,6 +4051,10 @@ def _load_vault_config() -> Dict:
     return {}
 
 
+def _vault_disabled_result() -> Dict:
+    return {"error": "Vault integration is disabled in offline mode", "exit_code": 1}
+
+
 async def _run_bw(args: list, session: Optional[str] = None, input_text: Optional[str] = None) -> tuple:
     """Run a bw CLI command with optional session + stdin. Returns (stdout, stderr, returncode)."""
     import asyncio
@@ -4073,6 +4077,8 @@ async def _run_bw(args: list, session: Optional[str] = None, input_text: Optiona
 
 async def do_vault_search(content: str, owner: Optional[str] = None) -> Dict:
     """Search the vault by keyword. Returns matching item names + URLs, NO passwords."""
+    if not _feature_enabled("vault"):
+        return _vault_disabled_result()
     try:
         args = _parse_tool_args(content)
     except ValueError:
@@ -4118,6 +4124,8 @@ async def do_vault_search(content: str, owner: Optional[str] = None) -> Dict:
 
 async def do_vault_get(content: str, owner: Optional[str] = None) -> Dict:
     """Retrieve a full vault entry (including password) by item ID. Logs access to assistant chat."""
+    if not _feature_enabled("vault"):
+        return _vault_disabled_result()
     try:
         args = _parse_tool_args(content)
     except ValueError:
@@ -4176,6 +4184,8 @@ async def do_vault_get(content: str, owner: Optional[str] = None) -> Dict:
 
 async def do_vault_unlock(content: str, owner: Optional[str] = None) -> Dict:
     """Unlock the vault using a master password. Stores the resulting session key."""
+    if not _feature_enabled("vault"):
+        return _vault_disabled_result()
     try:
         args = _parse_tool_args(content)
     except ValueError:
