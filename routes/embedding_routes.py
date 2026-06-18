@@ -9,6 +9,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Form, Depends
 from core.constants import BASE_DIR
 from core.middleware import require_admin
+from src.offline_policy import is_local_model_url
+from src.settings import offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +156,9 @@ def setup_embedding_routes():
         if hf_src and _is_downloaded(hf_src):
             return {"status": "already_downloaded", "model": model_name}
 
+        if offline_mode():
+            raise HTTPException(403, "Embedding model downloads are disabled in offline mode")
+
         if model_name in _downloading:
             return {"status": "already_downloading", "model": model_name}
 
@@ -241,6 +246,8 @@ def setup_embedding_routes():
         url = url.strip()
         if not url:
             raise HTTPException(400, "URL is required")
+        if offline_mode() and not is_local_model_url(url):
+            raise HTTPException(403, "External embedding endpoints are disabled in offline mode")
 
         # Quick health check
         try:

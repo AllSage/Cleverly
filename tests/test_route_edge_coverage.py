@@ -105,6 +105,11 @@ def test_embedding_routes_remaining_error_reset_and_cache_paths(monkeypatch, tmp
     with pytest.raises(HTTPException) as unknown_download:
         asyncio.run(_endpoint(router, "/api/embeddings/models/{model_name:path}/download", "POST")("missing"))
     assert unknown_download.value.status_code == 404
+    monkeypatch.setattr(embedding_routes, "offline_mode", lambda: True)
+    with pytest.raises(HTTPException) as offline_download:
+        asyncio.run(_endpoint(router, "/api/embeddings/models/{model_name:path}/download", "POST")("broken"))
+    assert offline_download.value.status_code == 403
+    monkeypatch.setattr(embedding_routes, "offline_mode", lambda: False)
     with pytest.raises(HTTPException) as broken_download:
         asyncio.run(_endpoint(router, "/api/embeddings/models/{model_name:path}/download", "POST")("broken"))
     assert broken_download.value.status_code == 500
@@ -150,6 +155,12 @@ def test_embedding_routes_remaining_error_reset_and_cache_paths(monkeypatch, tmp
     with pytest.raises(HTTPException) as empty_url:
         _endpoint(router, "/api/embeddings/endpoint", "POST")("")
     assert empty_url.value.status_code == 400
+    monkeypatch.setattr(embedding_routes, "offline_mode", lambda: True)
+    monkeypatch.setattr(embedding_routes, "is_local_model_url", lambda _url: False)
+    with pytest.raises(HTTPException) as offline_endpoint:
+        _endpoint(router, "/api/embeddings/endpoint", "POST")("https://remote.example/embed")
+    assert offline_endpoint.value.status_code == 403
+    monkeypatch.setattr(embedding_routes, "offline_mode", lambda: False)
 
     httpx_failed = types.ModuleType("httpx")
     httpx_failed.post = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("down"))
