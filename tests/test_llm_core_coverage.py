@@ -28,6 +28,7 @@ class Response:
 @pytest.fixture(autouse=True)
 def _clear_llm_state(monkeypatch):
     monkeypatch.setattr(llm_core, "offline_mode", lambda: False)
+    monkeypatch.setattr(llm_core, "load_features", lambda: {"external_model_endpoints": True})
     llm_core._response_cache.clear()
     llm_core._dead_hosts.clear()
     llm_core._host_fails.clear()
@@ -143,6 +144,48 @@ def test_list_and_normalize_models(monkeypatch):
 
 def test_offline_mode_blocks_external_model_endpoints(monkeypatch):
     monkeypatch.setattr(llm_core, "offline_mode", lambda: True)
+    monkeypatch.setattr(llm_core, "is_local_model_url", lambda url: "localhost" in url)
+    monkeypatch.setattr(llm_core.httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+    monkeypatch.setattr(llm_core.httpx, "post", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+
+    class BlockedClient:
+        async def post(self, *args, **kwargs):
+            raise AssertionError("network")
+
+        def stream(self, *args, **kwargs):
+            raise AssertionError("network")
+
+    monkeypatch.setattr(llm_core, "_get_http_client", lambda: BlockedClient())
+
+    remote = "https://api.openai.com/v1/chat/completions"
+    local = "http://localhost:11434/v1/chat/completions"
+    assert llm_core.list_model_ids(remote) == []
+    assert llm_core._external_model_endpoint_blocked(remote) is True
+    assert llm_core._external_model_endpoint_blocked(local) is False
+
+    with pytest.raises(HTTPException) as sync_exc:
+        llm_core.llm_call(remote, "m", [{"role": "user", "content": "hi"}])
+    assert sync_exc.value.status_code == 403
+
+    async def async_call():
+        await llm_core.llm_call_async(remote, "m", [{"role": "user", "content": "hi"}])
+
+    with pytest.raises(HTTPException) as async_exc:
+        asyncio.run(async_call())
+    assert async_exc.value.status_code == 403
+
+    async def collect_stream():
+        return [chunk async for chunk in llm_core.stream_llm(remote, "m", [{"role": "user", "content": "hi"}])]
+
+    chunks = asyncio.run(collect_stream())
+    assert len(chunks) == 1
+    assert chunks[0].startswith("event: error")
+    assert '"status": 403' in chunks[0]
+
+
+def test_external_endpoint_feature_flag_blocks_core_model_calls(monkeypatch):
+    monkeypatch.setattr(llm_core, "offline_mode", lambda: False)
+    monkeypatch.setattr(llm_core, "load_features", lambda: {"external_model_endpoints": False})
     monkeypatch.setattr(llm_core, "is_local_model_url", lambda url: "localhost" in url)
     monkeypatch.setattr(llm_core.httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
     monkeypatch.setattr(llm_core.httpx, "post", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))

@@ -11,7 +11,7 @@ from typing import Optional, Dict, List
 from urllib.parse import urlparse
 
 from src.offline_policy import is_local_model_url
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -86,11 +86,19 @@ def seconds_since_model_activity(url: str, model: str) -> Optional[float]:
 
 
 def _external_model_endpoint_blocked(url: str) -> bool:
-    return offline_mode() and not is_local_model_url(url)
+    if is_local_model_url(url):
+        return False
+    if offline_mode():
+        return True
+    try:
+        return (load_features() or {}).get("external_model_endpoints") is False
+    except Exception as exc:
+        logger.warning("External model endpoint feature check failed; blocking remote endpoint: %s", exc)
+        return True
 
 
 def _offline_model_endpoint_error(url: str) -> HTTPException:
-    return HTTPException(403, f"External model endpoint is disabled in offline mode: {_host_key(url)}")
+    return HTTPException(403, f"External model endpoint is disabled: {_host_key(url)}")
 
 def _host_key(url: str) -> str:
     from urllib.parse import urlsplit
