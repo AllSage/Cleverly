@@ -596,6 +596,15 @@ def test_document_route_error_paths(document_routes_env, monkeypatch):
             )
         )
     assert missing_session.value.status_code == 404
+    db.sessions.append(FakeSessionModel("legacy", "Legacy", None))
+    with pytest.raises(HTTPException) as legacy_create:
+        asyncio.run(
+            _endpoint(router, "/api/document", "POST")(
+                request,
+                document_routes.DocumentCreate(session_id="legacy", title="Bad", content="x"),
+            )
+        )
+    assert legacy_create.value.status_code == 403
 
     with pytest.raises(HTTPException) as missing_doc:
         asyncio.run(_endpoint(router, "/api/document/{doc_id}")(request, "missing"))
@@ -604,6 +613,9 @@ def test_document_route_error_paths(document_routes_env, monkeypatch):
     with pytest.raises(HTTPException) as no_session:
         asyncio.run(_endpoint(router, "/api/documents/{session_id}")(request, "missing"))
     assert no_session.value.status_code == 404
+    with pytest.raises(HTTPException) as legacy_session_list:
+        asyncio.run(_endpoint(router, "/api/documents/{session_id}")(request, "legacy"))
+    assert legacy_session_list.value.status_code == 403
 
     with pytest.raises(HTTPException) as no_ids:
         asyncio.run(_endpoint(router, "/api/documents/export-zip", "POST")(RequestLike(body={})))

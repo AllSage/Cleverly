@@ -45,6 +45,7 @@ for _stub in [
             m.ScheduledTask = MagicMock()
             m.TaskRun = MagicMock()
             m.ModelEndpoint = MagicMock()
+            m.Signature = MagicMock()
         elif _stub == "core.auth":
             m.AuthManager = MagicMock()
         sys.modules[_stub] = m
