@@ -1495,8 +1495,7 @@ async def action_ping_notes(owner: str, **kwargs) -> Tuple[str, bool]:
             q = db.query(_N).filter(_N.archived == False)  # noqa: E712
             q = q.filter(_N.due_date.isnot(None), _N.due_date != "")
             if owner:
-                # Match owner OR legacy null-owner notes (single-user installs).
-                q = owner_filter(q, _N, owner)
+                q = owner_filter(q, _N, owner, include_shared=False)
             notes = q.all()
             if not notes:
                 raise TaskNoop("no notes with due dates")
