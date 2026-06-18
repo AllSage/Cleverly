@@ -369,6 +369,7 @@ def test_ai_ui_control_and_list_models(monkeypatch):
 def test_generate_image_blocks_external_endpoint_offline(monkeypatch):
     ai = _ai()
     monkeypatch.setattr(ai, "offline_mode", lambda: True)
+    monkeypatch.setattr(ai, "load_features", lambda: {"external_model_endpoints": True})
     monkeypatch.setattr(ai, "is_local_model_url", lambda url: "localhost" in url)
     monkeypatch.setattr(
         ai,
@@ -385,7 +386,30 @@ def test_generate_image_blocks_external_endpoint_offline(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", BlockedClient)
 
     result = asyncio.run(ai.do_generate_image("Draw a sealed computer\ngpt-image-1"))
-    assert result == {"error": "External image generation endpoint is disabled in offline mode."}
+    assert result == {"error": "External image generation endpoint is disabled."}
+
+
+def test_generate_image_blocks_external_endpoint_feature_disabled(monkeypatch):
+    ai = _ai()
+    monkeypatch.setattr(ai, "offline_mode", lambda: False)
+    monkeypatch.setattr(ai, "load_features", lambda: {"external_model_endpoints": False})
+    monkeypatch.setattr(ai, "is_local_model_url", lambda url: "localhost" in url)
+    monkeypatch.setattr(
+        ai,
+        "_resolve_model",
+        lambda _model: ("https://api.openai.com/v1/chat/completions", "gpt-image-1", {}),
+    )
+
+    import httpx
+
+    class BlockedClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("network")
+
+    monkeypatch.setattr(httpx, "AsyncClient", BlockedClient)
+
+    result = asyncio.run(ai.do_generate_image("Draw a sealed computer\ngpt-image-1"))
+    assert result == {"error": "External image generation endpoint is disabled."}
 
 
 def test_list_models_marks_external_endpoint_disabled_offline(monkeypatch):
@@ -395,6 +419,7 @@ def test_list_models_marks_external_endpoint_disabled_offline(monkeypatch):
     _install_database(monkeypatch, {ModelEndpoint: [endpoint]})
     monkeypatch.setattr(ai, "_normalize_base", lambda base: base.rstrip("/"))
     monkeypatch.setattr(ai, "offline_mode", lambda: True)
+    monkeypatch.setattr(ai, "load_features", lambda: {"external_model_endpoints": True})
     monkeypatch.setattr(ai, "is_local_model_url", lambda url: False)
     monkeypatch.setattr(ai, "build_headers", lambda key, base: {})
 
@@ -402,4 +427,40 @@ def test_list_models_marks_external_endpoint_disabled_offline(monkeypatch):
 
     monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
     result = asyncio.run(ai.do_list_models(""))
-    assert "external endpoint disabled in offline mode" in result["results"]
+    assert "external endpoint disabled" in result["results"]
+
+
+def test_list_models_marks_external_endpoint_disabled_by_feature(monkeypatch):
+    ai = _ai()
+    _install_llm(monkeypatch)
+    endpoint = ModelEndpoint(name="Cloud", base_url="https://api.openai.com/v1", api_key="sk", is_enabled=True)
+    _install_database(monkeypatch, {ModelEndpoint: [endpoint]})
+    monkeypatch.setattr(ai, "_normalize_base", lambda base: base.rstrip("/"))
+    monkeypatch.setattr(ai, "offline_mode", lambda: False)
+    monkeypatch.setattr(ai, "load_features", lambda: {"external_model_endpoints": False})
+    monkeypatch.setattr(ai, "is_local_model_url", lambda url: False)
+    monkeypatch.setattr(ai, "build_headers", lambda key, base: {})
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+    result = asyncio.run(ai.do_list_models(""))
+    assert "external endpoint disabled" in result["results"]
+
+
+def test_resolve_model_skips_external_endpoint_feature_disabled(monkeypatch):
+    ai = _ai()
+    _install_llm(monkeypatch)
+    endpoint = ModelEndpoint(name="Cloud", base_url="https://api.openai.com/v1", api_key="sk", is_enabled=True)
+    _install_database(monkeypatch, {ModelEndpoint: [endpoint]})
+    monkeypatch.setattr(ai, "_normalize_base", lambda base: base.rstrip("/"))
+    monkeypatch.setattr(ai, "offline_mode", lambda: False)
+    monkeypatch.setattr(ai, "load_features", lambda: {"external_model_endpoints": False})
+    monkeypatch.setattr(ai, "is_local_model_url", lambda url: False)
+
+    import httpx
+    import pytest
+
+    monkeypatch.setattr(httpx, "get", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network")))
+    with pytest.raises(ValueError, match="Model 'gpt' not found"):
+        ai._resolve_model("gpt")
