@@ -469,6 +469,7 @@ def test_cookbook_download_tools_blocked_in_offline_mode(monkeypatch):
 
     search_result = asyncio.run(tools.do_search_hf_models('{"query":"llama"}'))
     download_result = asyncio.run(tools.do_download_model('{"repo_id":"Team/Model-7B"}'))
+    cached_result = asyncio.run(tools.do_list_cached_models('{"host":"gpu-box"}'))
 
     assert search_result == {
         "error": "HuggingFace model search is disabled in offline mode",
@@ -476,6 +477,10 @@ def test_cookbook_download_tools_blocked_in_offline_mode(monkeypatch):
     }
     assert download_result == {
         "error": "Model downloads are disabled in offline mode",
+        "exit_code": 1,
+    }
+    assert cached_result == {
+        "error": "Remote Cookbook servers are disabled in offline mode",
         "exit_code": 1,
     }
 

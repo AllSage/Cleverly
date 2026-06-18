@@ -646,6 +646,8 @@ def setup_cookbook_routes() -> APIRouter:
         # `host`/`ssh_port` are interpolated into an ssh command below, so an
         # unvalidated value (e.g. "x'; rm -rf ~ #") would be command injection.
         host = _validate_remote_host(host)
+        if offline_mode() and host:
+            raise HTTPException(403, "Remote Cookbook servers are disabled in offline mode")
         if ssh_port is not None and ssh_port != "" and not _SSH_PORT_RE.fullmatch(ssh_port):
             raise HTTPException(400, "Invalid ssh_port")
         TMUX_LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -1368,6 +1370,8 @@ def setup_cookbook_routes() -> APIRouter:
         """
         require_admin(request)
         host = _validate_remote_host(host)
+        if offline_mode() and host:
+            raise HTTPException(403, "Remote Cookbook servers are disabled in offline mode")
         if ssh_port is not None and ssh_port != "" and not _SSH_PORT_RE.fullmatch(ssh_port):
             raise HTTPException(400, "Invalid ssh_port")
         gpu_query = "nvidia-smi --query-gpu=index,name,memory.free,memory.total,memory.used,utilization.gpu,uuid --format=csv,noheader,nounits"

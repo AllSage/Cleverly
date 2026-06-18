@@ -3656,6 +3656,9 @@ async def do_list_cached_models(content: str, owner: Optional[str] = None) -> Di
         return {"error": "Invalid JSON arguments", "exit_code": 1}
     params: Dict[str, str] = {}
     raw_host = (args.get("host") or "").strip()
+    if raw_host and raw_host.lower() not in ("local", "localhost", "this machine", "here"):
+        if not _feature_enabled("cookbook_remote_servers"):
+            return {"error": "Remote Cookbook servers are disabled in offline mode", "exit_code": 1}
     host = await _resolve_cookbook_host(raw_host) if raw_host else ""
     if host:
         params["host"] = host

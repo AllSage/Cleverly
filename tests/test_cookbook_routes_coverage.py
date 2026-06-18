@@ -175,6 +175,29 @@ def test_cookbook_hf_latest_filters_and_reports_http_errors(monkeypatch):
     assert offline_exc.value.status_code == 403
 
 
+def test_cookbook_remote_cache_and_gpu_probe_blocked_in_offline_mode(monkeypatch, tmp_path):
+    import pytest
+    import routes.cookbook_routes as cookbook_routes
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(cookbook_routes, "require_admin", lambda request: None)
+    monkeypatch.setattr(cookbook_routes, "offline_mode", lambda: True)
+
+    router = cookbook_routes.setup_cookbook_routes()
+    model_cached = _endpoint(router, "/api/model/cached")
+    list_gpus = _endpoint(router, "/api/cookbook/gpus")
+
+    with pytest.raises(cookbook_routes.HTTPException) as cache_exc:
+        asyncio.run(model_cached(RequestLike(), host="user@example.test"))
+    assert cache_exc.value.status_code == 403
+    assert cache_exc.value.detail == "Remote Cookbook servers are disabled in offline mode"
+
+    with pytest.raises(cookbook_routes.HTTPException) as gpu_exc:
+        asyncio.run(list_gpus(RequestLike(), host="user@example.test"))
+    assert gpu_exc.value.status_code == 403
+    assert gpu_exc.value.detail == "Remote Cookbook servers are disabled in offline mode"
+
+
 def test_cookbook_tasks_status_parses_tmux_output_and_diagnosis(monkeypatch, tmp_path):
     import routes.cookbook_routes as cookbook_routes
 
