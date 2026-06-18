@@ -445,6 +445,60 @@ def test_note_routes_crud_toggles_reorder_and_reminder(monkeypatch):
     assert db.deleted[-1].id == "n1"
 
 
+def test_dispatch_reminder_blocks_external_channels_when_offline(monkeypatch, tmp_path):
+    import routes.note_routes as note_routes
+    import src.settings as settings
+
+    monkeypatch.chdir(tmp_path)
+    notifications = []
+
+    class FakeScheduler:
+        def add_notification(self, **kwargs):
+            notifications.append(kwargs)
+
+    def unexpected_email_config(*_args, **_kwargs):
+        raise AssertionError("disabled email reminders must not load SMTP config")
+
+    def unexpected_integrations():
+        raise AssertionError("disabled ntfy reminders must not load integrations")
+
+    email_module = types.ModuleType("routes.email_routes")
+    email_module._get_email_config = unexpected_email_config
+    integrations_module = types.ModuleType("src.integrations")
+    integrations_module.load_integrations = unexpected_integrations
+
+    monkeypatch.setattr(note_routes, "_scheduler_ref", FakeScheduler())
+    monkeypatch.setattr(settings, "offline_mode", lambda: True)
+    monkeypatch.setattr(settings, "load_features", lambda: {"email": False, "network_notifications": False})
+    monkeypatch.setitem(sys.modules, "routes.email_routes", email_module)
+    monkeypatch.setitem(sys.modules, "src.integrations", integrations_module)
+
+    monkeypatch.setattr(
+        settings,
+        "load_settings",
+        lambda: {"reminder_channel": "email", "reminder_llm_synthesis": False},
+    )
+    email_result = asyncio.run(
+        note_routes.dispatch_reminder("Pay invoice", "Due today", "email-note", owner="alice")
+    )
+    assert email_result["email_sent"] is False
+    assert "disabled" in email_result["email_error"].lower()
+    assert email_result["browser_sent"] is True
+
+    monkeypatch.setattr(
+        settings,
+        "load_settings",
+        lambda: {"reminder_channel": "ntfy", "reminder_llm_synthesis": False},
+    )
+    ntfy_result = asyncio.run(
+        note_routes.dispatch_reminder("Check backup", "Run local check", "ntfy-note", owner="alice")
+    )
+    assert ntfy_result["ntfy_sent"] is False
+    assert "disabled" in ntfy_result["ntfy_error"].lower()
+    assert ntfy_result["browser_sent"] is True
+    assert [item["task_id"] for item in notifications] == ["reminder-email-note", "reminder-ntfy-note"]
+
+
 def test_vault_routes_config_login_unlock_lock_logout_and_helpers(monkeypatch, tmp_path):
     import routes.vault_routes as vault_routes
 

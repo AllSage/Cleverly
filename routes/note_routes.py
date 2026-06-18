@@ -128,8 +128,20 @@ async def dispatch_reminder(
     the in-memory notification queue picked up by the frontend poller, so
     nothing is "sent" synchronously for it — the channel just routes there.
     """
-    from src.settings import load_settings
+    from src.settings import load_features, load_settings, offline_mode
     settings = load_settings()
+    try:
+        features = load_features() or {}
+    except Exception as _e:
+        logger.warning(f"dispatch_reminder: feature load failed; disabling external reminder channels: {_e}")
+        features = {"email": False, "network_notifications": False}
+    try:
+        offline = bool(offline_mode())
+    except Exception as _e:
+        logger.warning(f"dispatch_reminder: offline mode check failed; disabling external reminder channels: {_e}")
+        offline = True
+    email_channel_enabled = (not offline) and features.get("email") is not False
+    ntfy_channel_enabled = (not offline) and features.get("network_notifications") is not False
     channel = settings.get("reminder_channel", "browser")
     llm_on = bool(settings.get("reminder_llm_synthesis", False))
     title = (title or "").strip()
@@ -265,7 +277,9 @@ async def dispatch_reminder(
 
     email_sent = False
     email_error = ""
-    if channel == "email":
+    if channel == "email" and not email_channel_enabled:
+        email_error = "Email reminders are disabled in offline mode."
+    elif channel == "email":
         try:
             from routes.email_routes import _get_email_config
             from email.mime.text import MIMEText
@@ -362,7 +376,9 @@ async def dispatch_reminder(
 
     ntfy_sent = False
     ntfy_error = ""
-    if channel == "ntfy":
+    if channel == "ntfy" and not ntfy_channel_enabled:
+        ntfy_error = "Network notifications are disabled in offline mode."
+    elif channel == "ntfy":
         try:
             from src.integrations import load_integrations
             import httpx
