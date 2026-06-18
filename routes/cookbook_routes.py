@@ -1617,6 +1617,9 @@ def setup_cookbook_routes() -> APIRouter:
         import re
         import httpx
 
+        if offline_mode():
+            raise HTTPException(403, "HuggingFace model search is disabled in offline mode")
+
         # Fetch a larger pool so we have enough to filter from (we drop ~80%)
         pool_size = max(limit * 15, 100)
         url = (

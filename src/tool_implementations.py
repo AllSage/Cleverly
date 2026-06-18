@@ -3315,6 +3315,8 @@ async def do_cancel_download(content: str, owner: Optional[str] = None) -> Dict:
 async def do_search_hf_models(content: str, owner: Optional[str] = None) -> Dict:
     """Search HuggingFace via the cookbook /api/cookbook/hf-latest endpoint."""
     import httpx
+    if not _feature_enabled("cookbook_downloads"):
+        return {"error": "HuggingFace model search is disabled in offline mode", "exit_code": 1}
     try:
         args = _parse_tool_args(content)
     except ValueError:

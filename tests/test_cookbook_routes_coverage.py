@@ -83,6 +83,7 @@ def test_cookbook_state_save_get_masks_tokens_preserves_recent_tasks(monkeypatch
 
 def test_cookbook_hf_latest_filters_and_reports_http_errors(monkeypatch):
     import httpx
+    import pytest
     import routes.cookbook_routes as cookbook_routes
 
     class Response:
@@ -142,6 +143,7 @@ def test_cookbook_hf_latest_filters_and_reports_http_errors(monkeypatch):
             return self.response
 
     monkeypatch.setattr(httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(cookbook_routes, "offline_mode", lambda: False)
 
     router = cookbook_routes.setup_cookbook_routes()
     hf_latest = _endpoint(router, "/api/cookbook/hf-latest")
@@ -166,6 +168,11 @@ def test_cookbook_hf_latest_filters_and_reports_http_errors(monkeypatch):
         "models": [],
         "error": "offline",
     }
+
+    monkeypatch.setattr(cookbook_routes, "offline_mode", lambda: True)
+    with pytest.raises(cookbook_routes.HTTPException) as offline_exc:
+        asyncio.run(hf_latest(vram_gb=0, limit=1, pipeline="text-generation", owner="alice"))
+    assert offline_exc.value.status_code == 403
 
 
 def test_cookbook_tasks_status_parses_tmux_output_and_diagnosis(monkeypatch, tmp_path):

@@ -462,6 +462,19 @@ def test_manage_documents_settings_api_and_vault(monkeypatch, tmp_path):
     assert "Vault unlocked" in asyncio.run(tools.do_vault_unlock('{"master_password":"pw"}'))["output"]
 
 
+def test_search_hf_models_blocked_in_offline_mode(monkeypatch):
+    tools = _tool_module()
+
+    monkeypatch.setattr(tools, "offline_mode", lambda: True)
+
+    result = asyncio.run(tools.do_search_hf_models('{"query":"llama"}'))
+
+    assert result == {
+        "error": "HuggingFace model search is disabled in offline mode",
+        "exit_code": 1,
+    }
+
+
 def test_manage_tasks_crud_and_run_paths(monkeypatch):
     tools = _tool_module()
 
