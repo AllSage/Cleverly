@@ -66,6 +66,7 @@ def test_model_key_resolution_and_extractors(monkeypatch):
     monkeypatch.setattr(agent, "build_chat_url", lambda base: f"{base}/chat/completions")
     monkeypatch.setattr(agent, "build_headers", lambda key, base: {"Authorization": f"Bearer {key}", "Base": base})
     monkeypatch.setattr(agent, "offline_mode", lambda: True)
+    monkeypatch.setattr(agent, "load_features", lambda: {"external_model_endpoints": True})
     monkeypatch.setattr(agent, "is_local_model_url", lambda url: "localhost" in url)
     monkeypatch.setattr(agent, "ModelEndpoint", Endpoint)
 
@@ -77,6 +78,16 @@ def test_model_key_resolution_and_extractors(monkeypatch):
     with pytest.raises(agent.code_workspace.CodeWorkspaceError, match="No enabled local"):
         agent.resolve_model_key("glm")
     assert remote_only.closed is True
+
+    monkeypatch.setattr(agent, "offline_mode", lambda: False)
+    monkeypatch.setattr(agent, "load_features", lambda: {"external_model_endpoints": False})
+    remote_disabled = DB([Endpoint("remote", "https://api.example/v1", cached_models='["glm"]')])
+    monkeypatch.setattr(agent, "SessionLocal", lambda: remote_disabled)
+    with pytest.raises(agent.code_workspace.CodeWorkspaceError, match="No enabled local"):
+        agent.resolve_model_key("glm")
+    assert remote_disabled.closed is True
+
+    monkeypatch.setattr(agent, "load_features", lambda: {"external_model_endpoints": True})
 
     local = DB([
         Endpoint("Local One", "http://localhost:11434/v1", cached_models='["z-ai/GLM-5.2"]', owner="alice"),

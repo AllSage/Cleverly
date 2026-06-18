@@ -12,7 +12,7 @@ from src import code_workspace
 from src.endpoint_resolver import build_chat_url, build_headers, normalize_base
 from src.llm_core import llm_call_async
 from src.offline_policy import is_local_model_url
-from src.settings import get_setting, offline_mode
+from src.settings import get_setting, load_features, offline_mode
 
 
 MAX_CONTEXT_CHARS = 80_000
@@ -26,6 +26,17 @@ def _model_match(wanted: str, model_id: str) -> bool:
     w = _slug(wanted)
     m = _slug(model_id)
     return bool(w and m and (w == m or w in m or m in w))
+
+
+def _external_endpoint_allowed(base_url: str) -> bool:
+    if is_local_model_url(base_url):
+        return True
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("external_model_endpoints") is not False
+    except Exception:
+        return False
 
 
 def resolve_model_key(model_key: str, owner: str = "") -> tuple[str, str, dict[str, str]]:
@@ -48,7 +59,7 @@ def resolve_model_key(model_key: str, owner: str = "") -> tuple[str, str, dict[s
             ep_owner = getattr(ep, "owner", None)
             if owner and ep_owner and ep_owner != owner:
                 continue
-            if offline_mode() and not is_local_model_url(ep.base_url):
+            if not _external_endpoint_allowed(ep.base_url):
                 continue
             candidates.append(ep)
 
