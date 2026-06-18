@@ -529,8 +529,8 @@ async def do_search_chats(query: str, limit: int = 20, owner: str | None = None)
     Without an owner filter this used to leak EVERY user's chat history
     into the agent's `search_chats` results (v2 review HIGH-11). The
     caller in `tool_execution.execute_tool_block` now plumbs the owner
-    through; legacy callers without owner pass through as before but
-    will only see legacy/null-owner rows.
+    through. Legacy callers without owner pass through as before, but
+    authenticated users must not see legacy/null-owner chat history.
     """
     from src.database import SessionLocal, ChatMessage as DBChatMessage, Session as DBSession
     # Escape LIKE wildcards in the user-supplied query so a stray % or _
@@ -548,9 +548,7 @@ async def do_search_chats(query: str, limit: int = 20, owner: str | None = None)
             )
         )
         if owner is not None:
-            # Restrict to this user's sessions plus legacy null-owner
-            # rows (so single-user upgrades keep seeing their own data).
-            q = q.filter((DBSession.owner == owner) | (DBSession.owner.is_(None)))
+            q = q.filter(DBSession.owner == owner)
         rows = q.order_by(DBChatMessage.timestamp.desc()).limit(limit).all()
 
         if not rows:

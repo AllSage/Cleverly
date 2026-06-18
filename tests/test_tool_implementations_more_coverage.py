@@ -132,6 +132,106 @@ def _tool_module():
     return importlib.import_module("src.tool_implementations")
 
 
+def test_search_chats_excludes_legacy_ownerless_sessions_for_authenticated_user(monkeypatch):
+    tools = _tool_module()
+
+    class SearchColumn:
+        def __init__(self, name):
+            self.name = name
+
+        def __eq__(self, other):
+            return ("eq", self.name, other)
+
+        def desc(self):
+            return ("desc", self.name)
+
+        def ilike(self, pattern, **_kwargs):
+            return ("ilike", self.name, pattern)
+
+        def in_(self, values):
+            return ("in", self.name, values)
+
+    class DbSession(SimpleNamespace):
+        id = SearchColumn("id")
+        name = SearchColumn("name")
+        owner = SearchColumn("owner")
+        archived = SearchColumn("archived")
+
+    class DbChatMessage(SimpleNamespace):
+        session_id = SearchColumn("session_id")
+        content = SearchColumn("content")
+        role = SearchColumn("role")
+        timestamp = SearchColumn("timestamp")
+
+    class ChatSearchQuery:
+        def __init__(self, rows):
+            self.rows = list(rows)
+
+        def join(self, *_args, **_kwargs):
+            return self
+
+        def filter(self, *exprs, **_kwargs):
+            for expr in exprs:
+                if not isinstance(expr, tuple) or len(expr) < 3:
+                    continue
+                op, name, value = expr[:3]
+                if op == "eq":
+                    self.rows = [
+                        row for row in self.rows
+                        if getattr(row[0], name, getattr(row[1], name, None)) == value
+                    ]
+                elif op == "ilike":
+                    needle = str(value).strip("%").replace("\\%", "%").replace("\\_", "_").lower()
+                    self.rows = [row for row in self.rows if needle in str(getattr(row[0], name, "")).lower()]
+                elif op == "in":
+                    self.rows = [row for row in self.rows if getattr(row[0], name, None) in value]
+            return self
+
+        def order_by(self, *_args, **_kwargs):
+            return self
+
+        def limit(self, limit):
+            self.rows = self.rows[:limit]
+            return self
+
+        def all(self):
+            return [(msg, sess.id, sess.name) for msg, sess in self.rows]
+
+    class SearchDb:
+        def __init__(self, rows):
+            self.rows = rows
+            self.closed = False
+
+        def query(self, *_args):
+            return ChatSearchQuery(self.rows)
+
+        def close(self):
+            self.closed = True
+
+    now = datetime.utcnow()
+    alice = DbSession(id="alice-chat", name="Alice", owner="alice", archived=False)
+    legacy = DbSession(id="legacy-chat", name="Legacy", owner=None, archived=False)
+    bob = DbSession(id="bob-chat", name="Bob", owner="bob", archived=False)
+    rows = [
+        (DbChatMessage(session_id="alice-chat", role="user", content="needle belongs to alice", timestamp=now), alice),
+        (DbChatMessage(session_id="legacy-chat", role="user", content="needle legacy secret", timestamp=now), legacy),
+        (DbChatMessage(session_id="bob-chat", role="user", content="needle bob secret", timestamp=now), bob),
+    ]
+    db = SearchDb(rows)
+    database = types.ModuleType("src.database")
+    database.SessionLocal = lambda: db
+    database.ChatMessage = DbChatMessage
+    database.Session = DbSession
+    monkeypatch.setitem(sys.modules, "src.database", database)
+
+    result = asyncio.run(tools.do_search_chats("needle", owner="alice"))["results"]
+
+    assert "Alice" in result
+    assert "Legacy" not in result
+    assert "Bob" not in result
+    assert db.closed is True
+
+
 def test_tool_helpers_document_parsing_and_active_state():
     tools = _tool_module()
 
