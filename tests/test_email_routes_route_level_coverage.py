@@ -145,7 +145,6 @@ def _email_routes(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_email_account_connection_test_blocks_offline_sockets(monkeypatch, tmp_path):
     routes = _email_routes(monkeypatch, tmp_path)
-    monkeypatch.setattr(routes, "offline_mode", lambda: True)
 
     class RequestLike:
         async def json(self):
@@ -170,11 +169,21 @@ async def test_email_account_connection_test_blocks_offline_sockets(monkeypatch,
     monkeypatch.setattr(routes.smtplib, "SMTP_SSL", BlockedSocket)
 
     endpoint = _endpoint(routes.setup_email_routes(), "/api/email/accounts/test", "POST")
+
+    monkeypatch.setattr(routes, "offline_mode", lambda: True)
     with pytest.raises(routes.HTTPException) as exc:
         await endpoint(RequestLike(), owner="alice")
 
     assert exc.value.status_code == 403
-    assert exc.value.detail == "Email connection tests are disabled in offline mode"
+    assert exc.value.detail == "Email connection tests are disabled"
+
+    monkeypatch.setattr(routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(routes, "_email_feature_enabled", lambda: False)
+    with pytest.raises(routes.HTTPException) as disabled_exc:
+        await endpoint(RequestLike(), owner="alice")
+
+    assert disabled_exc.value.status_code == 403
+    assert disabled_exc.value.detail == "Email connection tests are disabled"
 
 
 def test_email_list_endpoint_uses_fake_imap_cache_tags_and_attachment_filter(monkeypatch, tmp_path):

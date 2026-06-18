@@ -3057,8 +3057,8 @@ def setup_email_routes():
         except Exception:
             return {"ok": False, "imap": {"ok": False, "error": "invalid request body"}}
 
-        if offline_mode():
-            raise HTTPException(403, "Email connection tests are disabled in offline mode")
+        if offline_mode() or not _email_feature_enabled():
+            raise HTTPException(403, "Email connection tests are disabled")
 
         # Saved-account shortcut — hydrate missing credentials from the DB row,
         # while keeping any edited form fields from the request. This lets the UI
