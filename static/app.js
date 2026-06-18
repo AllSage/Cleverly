@@ -1342,6 +1342,8 @@ function initializeEventListeners() {
 
   // Feature visibility — hide admin-disabled features
   // Use prefetched data from login page if available
+  let _featureVisibilityObserverStarted = false;
+
   function applyFeatureVisibility(features) {
     const hideSelectors = {
       web_search: [
@@ -1422,6 +1424,27 @@ function initializeEventListeners() {
     });
   }
 
+  function ensureFeatureVisibilityObserver() {
+    if (_featureVisibilityObserverStarted || !window.MutationObserver || !document.body) return;
+    _featureVisibilityObserverStarted = true;
+    let pending = false;
+    const shouldReapply = (node) => {
+      if (!node || node.nodeType !== 1) return false;
+      if (node.matches?.('[data-online-feature]')) return true;
+      return Boolean(node.querySelector?.('[data-online-feature]'));
+    };
+    const observer = new MutationObserver((mutations) => {
+      if (!window._cleverlyFeatures || pending) return;
+      if (!mutations.some(m => Array.from(m.addedNodes || []).some(shouldReapply))) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        if (window._cleverlyFeatures) applyFeatureVisibility(window._cleverlyFeatures);
+      });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
   const _prefetchedFeatures = sessionStorage.getItem('cleverly-prefetch-features');
   sessionStorage.removeItem('cleverly-prefetch-features');
   window._initFeaturesReady = (_prefetchedFeatures
@@ -1429,6 +1452,7 @@ function initializeEventListeners() {
     : fetch(`${API_BASE}/api/auth/features`, { credentials: 'same-origin' }).then(r => r.json())
   ).then(features => {
       window._cleverlyFeatures = features || {};
+      ensureFeatureVisibilityObserver();
       applyFeatureVisibility(window._cleverlyFeatures);
       // Re-apply the user's Appearance UI-vis preferences after the
       // features fetch finishes hiding things — otherwise an admin-

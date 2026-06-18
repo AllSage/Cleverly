@@ -1078,6 +1078,9 @@ def test_offline_frontend_hides_online_feature_entrypoints():
     assert '[data-settings-tab="search"]' in app_js
     assert '[data-settings-panel="search"]' in app_js
     assert '[data-online-feature="web_search"]' in app_js
+    assert "ensureFeatureVisibilityObserver" in app_js
+    assert "new MutationObserver" in app_js
+    assert "querySelector?.('[data-online-feature]')" in app_js
     assert "data-ui-key" in app_js
     assert 'data-online-feature="deep_research"' in index_html
     assert 'data-online-feature="web_search"' in index_html
