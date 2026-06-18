@@ -126,7 +126,7 @@ class FakeManager:
         return [dict(tool) for tool in self.tools]
 
 
-def _fresh_routes(monkeypatch, db, *, offline=False):
+def _fresh_routes(monkeypatch, db, *, offline=False, features=None, features_error=False):
     import routes.mcp_routes as mcp_routes
 
     mcp_routes = importlib.reload(mcp_routes)
@@ -134,6 +134,14 @@ def _fresh_routes(monkeypatch, db, *, offline=False):
     monkeypatch.setattr(mcp_routes, "SessionLocal", lambda: db)
     monkeypatch.setattr(mcp_routes, "require_admin", lambda request: None)
     monkeypatch.setattr(mcp_routes, "offline_mode", lambda: offline)
+    if features_error:
+        monkeypatch.setattr(
+            mcp_routes,
+            "load_features",
+            lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+        )
+    else:
+        monkeypatch.setattr(mcp_routes, "load_features", lambda: dict(features or {"mcp": True}))
     return mcp_routes
 
 
@@ -314,6 +322,30 @@ def test_mcp_server_crud_tools_and_offline_gates(monkeypatch, tmp_path):
         asyncio.run(_endpoint(offline_router, "/api/mcp/servers/{server_id}", "PATCH")("srv", request, is_enabled="true"))
     assert offline_enable.value.status_code == 403
 
+    disabled_routes = _fresh_routes(monkeypatch, db, features={"mcp": False})
+    disabled_router = disabled_routes.setup_mcp_routes(manager)
+    assert _endpoint(disabled_router, "/api/mcp/servers")(request) == []
+    assert _endpoint(disabled_router, "/api/mcp/tools")(request) == []
+    assert _endpoint(disabled_router, "/api/mcp/servers/{server_id}/tools")("anything", request) == []
+    with pytest.raises(HTTPException) as disabled_add:
+        asyncio.run(_endpoint(disabled_router, "/api/mcp/servers", "POST")(request, name="x", transport="stdio", command="cmd"))
+    assert disabled_add.value.status_code == 403
+    assert disabled_add.value.detail == "MCP servers are disabled"
+    with pytest.raises(HTTPException) as disabled_reconnect:
+        asyncio.run(_endpoint(disabled_router, "/api/mcp/servers/{server_id}/reconnect", "POST")("srv", request))
+    assert disabled_reconnect.value.status_code == 403
+    with pytest.raises(HTTPException) as disabled_enable:
+        asyncio.run(_endpoint(disabled_router, "/api/mcp/servers/{server_id}", "PATCH")("srv", request, is_enabled="true"))
+    assert disabled_enable.value.status_code == 403
+
+    failed_feature_routes = _fresh_routes(monkeypatch, db, features_error=True)
+    failed_feature_router = failed_feature_routes.setup_mcp_routes(manager)
+    assert _endpoint(failed_feature_router, "/api/mcp/servers")(request) == []
+    with pytest.raises(HTTPException) as failed_feature_add:
+        asyncio.run(_endpoint(failed_feature_router, "/api/mcp/servers", "POST")(request, name="x", transport="stdio", command="cmd"))
+    assert failed_feature_add.value.status_code == 403
+    assert failed_feature_add.value.detail == "MCP servers are disabled"
+
 
 def test_mcp_oauth_authorize_pages_and_helpers(monkeypatch, tmp_path):
     keys_file = tmp_path / "keys.json"
@@ -375,6 +407,20 @@ def test_mcp_oauth_authorize_pages_and_helpers(monkeypatch, tmp_path):
     with pytest.raises(HTTPException) as offline_oauth:
         _endpoint(offline_router, "/api/mcp/oauth/authorize/{server_id}")("srv1", RequestLike())
     assert offline_oauth.value.status_code == 403
+
+    disabled_routes = _fresh_routes(monkeypatch, db, features={"mcp": False})
+    disabled_router = disabled_routes.setup_mcp_routes(FakeManager())
+    with pytest.raises(HTTPException) as disabled_oauth:
+        _endpoint(disabled_router, "/api/mcp/oauth/authorize/{server_id}")("srv1", RequestLike())
+    assert disabled_oauth.value.status_code == 403
+    assert disabled_oauth.value.detail == "MCP OAuth is disabled"
+
+    failed_feature_routes = _fresh_routes(monkeypatch, db, features_error=True)
+    failed_feature_router = failed_feature_routes.setup_mcp_routes(FakeManager())
+    with pytest.raises(HTTPException) as failed_feature_oauth:
+        _endpoint(failed_feature_router, "/api/mcp/oauth/authorize/{server_id}")("srv1", RequestLike())
+    assert failed_feature_oauth.value.status_code == 403
+    assert failed_feature_oauth.value.detail == "MCP OAuth is disabled"
 
 
 def test_mcp_oauth_exchange_and_callback(monkeypatch, tmp_path):
@@ -508,3 +554,19 @@ def test_mcp_oauth_exchange_and_callback(monkeypatch, tmp_path):
             )
         )
     assert offline_exchange.value.status_code == 403
+
+    disabled_routes = _fresh_routes(monkeypatch, db, features={"mcp": False})
+    disabled_router = disabled_routes.setup_mcp_routes(manager)
+    with pytest.raises(HTTPException) as disabled_callback:
+        asyncio.run(_endpoint(disabled_router, "/api/mcp/oauth/callback")("code", "srv1", RequestLike()))
+    assert disabled_callback.value.status_code == 403
+    assert disabled_callback.value.detail == "MCP OAuth is disabled"
+    with pytest.raises(HTTPException) as disabled_exchange:
+        asyncio.run(
+            _endpoint(disabled_router, "/api/mcp/oauth/exchange/{server_id}", "POST")(
+                "srv1",
+                RequestLike(),
+                callback_url="http://localhost/callback?code=abc",
+            )
+        )
+    assert disabled_exchange.value.status_code == 403
