@@ -526,6 +526,11 @@ def test_webhook_routes_crud_and_sync_chat_paths(monkeypatch):
     with pytest.raises(HTTPException) as feature_disabled_create:
         _endpoint(router, "/api/webhooks", "POST")(RequestLike(), name="Hook", url="https://example.test", events="chat.completed")
     assert feature_disabled_create.value.status_code == 403
+    monkeypatch.setattr(webhook_routes, "load_features", lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")))
+    assert _endpoint(router, "/api/webhooks")(RequestLike()) == []
+    with pytest.raises(HTTPException) as feature_error_create:
+        _endpoint(router, "/api/webhooks", "POST")(RequestLike(), name="Hook", url="https://example.test", events="chat.completed")
+    assert feature_error_create.value.status_code == 403
     monkeypatch.setattr(webhook_routes, "load_features", lambda: {"webhooks": True, "external_model_endpoints": True})
 
     with pytest.raises(HTTPException) as missing_name:

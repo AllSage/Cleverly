@@ -132,8 +132,9 @@ def _webhooks_enabled() -> bool:
         return False
     try:
         return (load_features() or {}).get("webhooks") is not False
-    except Exception:
-        return True
+    except Exception as exc:
+        logger.warning("Webhook feature check failed; disabling webhook delivery: %s", exc)
+        return False
 
 
 class WebhookManager:
