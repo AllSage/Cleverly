@@ -1348,6 +1348,7 @@ function initializeEventListeners() {
         '#web-toggle-btn',
         '[data-settings-tab="search"]',
         '[data-settings-panel="search"]',
+        '[data-online-feature="web_search"]',
       ],
       deep_research: [
         '#research-toggle-btn',
