@@ -12,7 +12,7 @@ from core.database import SessionLocal, GalleryImage, GalleryAlbum, ModelEndpoin
 from core.database import Session as DbSession
 from src.auth_helpers import get_current_user, require_privilege
 from src.offline_policy import is_local_model_url
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 from routes.gallery_helpers import (
     GalleryPatch, _extract_exif, _image_to_dict, _owner_filter, _human_size,
@@ -35,14 +35,26 @@ def _gallery_image_path(filename: str) -> Path:
     raise HTTPException(400, "Invalid image filename")
 
 
+def _external_image_endpoint_allowed(url: str) -> bool:
+    if is_local_model_url(url):
+        return True
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("external_model_endpoints") is not False
+    except Exception as exc:
+        logger.warning("Gallery image endpoint feature check failed; disabling external endpoint: %s", exc)
+        return False
+
+
 def _ensure_offline_local_endpoint(url: str, label: str = "image endpoint") -> None:
-    if offline_mode() and not is_local_model_url(url):
-        raise HTTPException(403, f"External {label} is disabled in offline mode")
+    if not _external_image_endpoint_allowed(url):
+        raise HTTPException(403, f"External {label} is disabled")
 
 
 def _ensure_offline_local_image_url(url: str) -> None:
-    if offline_mode() and not is_local_model_url(url):
-        raise HTTPException(502, "Image endpoint returned an external image URL while offline; configure it to return b64_json.")
+    if not _external_image_endpoint_allowed(url):
+        raise HTTPException(502, "Image endpoint returned an external image URL while external endpoints are disabled; configure it to return b64_json.")
 
 
 def setup_gallery_routes() -> APIRouter:

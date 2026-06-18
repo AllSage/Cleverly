@@ -499,6 +499,7 @@ def test_gallery_offline_endpoint_guards(monkeypatch):
     import routes.gallery_routes as routes
 
     monkeypatch.setattr(routes, "offline_mode", lambda: True)
+    monkeypatch.setattr(routes, "load_features", lambda: {"external_model_endpoints": True})
     monkeypatch.setattr(routes, "is_local_model_url", lambda url: "localhost" in url)
 
     routes._ensure_offline_local_endpoint("http://localhost:8100/v1", "image endpoint")
@@ -511,6 +512,18 @@ def test_gallery_offline_endpoint_guards(monkeypatch):
     with pytest.raises(HTTPException) as image_exc:
         routes._ensure_offline_local_image_url("https://cdn.example/image.png")
     assert image_exc.value.status_code == 502
+
+    monkeypatch.setattr(routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(routes, "load_features", lambda: {"external_model_endpoints": False})
+    routes._ensure_offline_local_endpoint("http://localhost:8100/v1", "image endpoint")
+    with pytest.raises(HTTPException) as feature_exc:
+        routes._ensure_offline_local_endpoint("https://api.example/v1", "image endpoint")
+    assert feature_exc.value.status_code == 403
+
+    monkeypatch.setattr(routes, "load_features", lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")))
+    with pytest.raises(HTTPException) as fail_closed_exc:
+        routes._ensure_offline_local_endpoint("https://api.example/v1", "image endpoint")
+    assert fail_closed_exc.value.status_code == 403
 
 
 @pytest.mark.asyncio
