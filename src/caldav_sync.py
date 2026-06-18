@@ -28,6 +28,8 @@ import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
+from src.settings import offline_mode
+
 logger = logging.getLogger(__name__)
 
 # Pull window: 90 days back, 1 year forward. Keeps the REPORT cheap and
@@ -244,6 +246,12 @@ async def sync_caldav(owner: str) -> dict:
     """Pull CalDAV state into local DB for `owner`. Returns counts +
     errors. Loads credentials from the user's prefs; no-ops with a
     clear error if CalDAV isn't configured."""
+    if offline_mode():
+        return {
+            "calendars": 0, "events": 0, "deleted": 0,
+            "errors": ["CalDAV sync is disabled in offline mode"],
+        }
+
     from routes.prefs_routes import _load_for_user
 
     cfg = (_load_for_user(owner) or {}).get("caldav", {}) or {}

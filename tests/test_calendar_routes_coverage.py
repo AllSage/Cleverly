@@ -363,3 +363,20 @@ def test_calendar_routes_error_and_offline_branches(monkeypatch):
         ))
     assert exc.value.status_code == 500
     assert db.rollbacks == 1
+
+
+def test_caldav_sync_helper_blocks_offline_before_network(monkeypatch):
+    from src import caldav_sync
+
+    async def fail_to_thread(*args, **kwargs):
+        raise AssertionError("offline CalDAV sync must not enter blocking network path")
+
+    monkeypatch.setattr(caldav_sync, "offline_mode", lambda: True)
+    monkeypatch.setattr(caldav_sync.asyncio, "to_thread", fail_to_thread)
+
+    assert asyncio.run(caldav_sync.sync_caldav("alice")) == {
+        "calendars": 0,
+        "events": 0,
+        "deleted": 0,
+        "errors": ["CalDAV sync is disabled in offline mode"],
+    }
