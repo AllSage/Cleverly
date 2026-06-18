@@ -202,19 +202,25 @@ def setup_vault_routes():
     async def lock(request: Request):
         """Lock the vault (clear session from config)."""
         require_admin(request)
+        offline = offline_mode()
         cfg = _load_config()
         cfg.pop("session", None)
         cfg.pop("unlocked_at", None)
         _save_config(cfg)
-        # Also tell bw to lock
-        await _run_bw(["lock"])
+        # Also tell bw to lock when the Vault integration is enabled. In
+        # offline/sealed mode, keep this route local-only so it can clear
+        # Cleverly's stored session without launching external tooling.
+        if not offline:
+            await _run_bw(["lock"])
         return {"ok": True, "message": "Vault locked"}
 
     @router.post("/logout")
     async def logout(request: Request):
         """Log out of the Bitwarden CLI completely."""
         require_admin(request)
-        await _run_bw(["logout"])
+        offline = offline_mode()
+        if not offline:
+            await _run_bw(["logout"])
         cfg = _load_config()
         cfg.pop("session", None)
         cfg.pop("email", None)

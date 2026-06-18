@@ -978,3 +978,21 @@ def test_vault_routes_remaining_cli_and_offline_paths(monkeypatch, tmp_path):
     with pytest.raises(HTTPException) as unlock_offline:
         asyncio.run(_endpoint(router, "/api/vault/unlock", "POST")(vault_routes.VaultUnlockRequest(master_password="pw"), request))
     assert unlock_offline.value.status_code == 403
+
+    vault_routes._save_config({"session": "sealed-session", "email": "a@example.com", "unlocked_at": "then"})
+
+    async def fail_bw(*_args, **_kwargs):
+        raise AssertionError("offline lock/logout should not launch bw")
+
+    monkeypatch.setattr(vault_routes, "_run_bw", fail_bw)
+    assert asyncio.run(_endpoint(router, "/api/vault/lock", "POST")(request)) == {"ok": True, "message": "Vault locked"}
+    locked_cfg = vault_routes._load_config()
+    assert "session" not in locked_cfg
+    assert "unlocked_at" not in locked_cfg
+    assert locked_cfg["email"] == "a@example.com"
+    vault_routes._save_config({"session": "sealed-session", "email": "a@example.com", "unlocked_at": "then"})
+    assert asyncio.run(_endpoint(router, "/api/vault/logout", "POST")(request)) == {"ok": True}
+    logged_out_cfg = vault_routes._load_config()
+    assert "session" not in logged_out_cfg
+    assert "email" not in logged_out_cfg
+    assert "unlocked_at" not in logged_out_cfg
