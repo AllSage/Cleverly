@@ -307,6 +307,7 @@ class FakeDB:
             FakeDbSession(id="empty", name="Untitled", message_count=0),
             FakeDbSession(id="throw", name="hi", message_count=1),
             FakeDbSession(id="ghost", name="Nobody", created_at=old, updated_at=old, message_count=0),
+            FakeDbSession(id="bob-ghost", name="Nobody", owner="bob", created_at=old, updated_at=old, message_count=0),
             FakeDbSession(id="other", name="Other", owner="bob"),
         ]
         self.docs = [FakeDocument("s1")]
@@ -316,6 +317,7 @@ class FakeDB:
             FakeDbMessage("s1", "assistant", "reply"),
             FakeDbMessage("throw", "user", "hi"),
             FakeDbMessage("ghost", "user", "gone"),
+            FakeDbMessage("bob-ghost", "user", "private"),
         ]
         self.endpoints = [FakeModelEndpoint()]
         self.commits = 0
@@ -404,6 +406,7 @@ class FakeSessionManager:
             "empty": FakeSession("empty", "Untitled"),
             "throw": FakeSession("throw", "hi", history=[SimpleChatMessage("user", "hi")]),
             "ghost": FakeSession("ghost", "Nobody"),
+            "bob-ghost": FakeSession("bob-ghost", "Nobody", owner="bob"),
         }
         self.saved = 0
         self.deleted = []
@@ -512,6 +515,8 @@ async def test_session_lifecycle_export_archive_and_context(session_env):
     ids = {row["id"] for row in listed}
     assert "s1" in ids
     assert "ghost" not in ids
+    assert any(row.id == "bob-ghost" for row in session_env.db.sessions)
+    assert "bob-ghost" in session_env.manager.sessions
     assert listed[0]["has_documents"] is True
     assert listed[0]["has_images"] is True
 

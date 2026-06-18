@@ -91,10 +91,15 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             _purge_db = SessionLocal()
             try:
                 from core.database import ChatMessage as _DbMsg
-                _ghosts = _purge_db.query(DbSession).filter(
+                _ghost_query = _purge_db.query(DbSession).filter(
                     DbSession.name.in_(("Nobody", "Incognito")),
                     DbSession.created_at < _cutoff,
-                ).all()
+                )
+                if user:
+                    _ghost_query = _ghost_query.filter(DbSession.owner == user)
+                else:
+                    _ghost_query = _ghost_query.filter(DbSession.owner == None)
+                _ghosts = _ghost_query.all()
                 for _g in _ghosts:
                     _purge_db.query(_DbMsg).filter(_DbMsg.session_id == _g.id).delete()
                     _purge_db.delete(_g)
