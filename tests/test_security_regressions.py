@@ -1157,6 +1157,14 @@ def test_skill_test_errors_escape_exception_text():
     assert "Test failed: ' + (e.message || e)" not in skills_js
 
 
+def test_ui_escape_accepts_non_string_values():
+    ui_js = Path("static/js/ui.js").read_text(encoding="utf-8")
+
+    assert "String(s ?? '').replace" in ui_js
+    assert "return (s || '').replace" not in ui_js
+    assert "esc(res.status)" in Path("static/js/skills.js").read_text(encoding="utf-8")
+
+
 def test_chat_compaction_errors_escape_exception_text():
     renderer_js = Path("static/js/chatRenderer.js").read_text(encoding="utf-8")
 
