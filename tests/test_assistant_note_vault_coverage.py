@@ -857,6 +857,10 @@ def test_assistant_routes_remaining_error_and_status_paths(monkeypatch):
     with pytest.raises(HTTPException) as status_other_owner:
         asyncio.run(_endpoint(router, "/api/assistant/run-status/{task_id}")("task1", request))
     assert status_other_owner.value.status_code == 404
+    db.tasks[0].owner = None
+    with pytest.raises(HTTPException) as status_legacy_owner:
+        asyncio.run(_endpoint(router, "/api/assistant/run-status/{task_id}")("task1", request))
+    assert status_legacy_owner.value.status_code == 404
     db.tasks[0].owner = "alice"
     assert asyncio.run(_endpoint(router, "/api/assistant/run-status/{task_id}")("task1", request)) == {"status": "unknown"}
     db.run = TaskRun("running")

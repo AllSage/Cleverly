@@ -855,6 +855,10 @@ def test_signature_routes_list_create_delete_and_db_errors(monkeypatch):
     with pytest.raises(HTTPException) as forbidden:
         asyncio.run(_endpoint(router, "/api/signatures/{sig_id}", "DELETE")("s2", RequestLike(user="alice")))
     assert forbidden.value.status_code == 403
+    db.first = Signature(id="legacy", owner=None, name="Legacy", data_png="YQ==", width=None, height=None)
+    with pytest.raises(HTTPException) as legacy_forbidden:
+        asyncio.run(_endpoint(router, "/api/signatures/{sig_id}", "DELETE")("legacy", RequestLike(user="alice")))
+    assert legacy_forbidden.value.status_code == 403
 
     db.first = Signature(id="s3", owner="alice", name="Mine", data_png="YQ==", width=None, height=None)
     assert asyncio.run(_endpoint(router, "/api/signatures/{sig_id}", "DELETE")("s3", RequestLike(user="alice"))) == {"deleted": "s3"}

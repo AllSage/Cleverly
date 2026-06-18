@@ -197,6 +197,10 @@ def test_compare_routes_start_vote_record_history_and_delete(monkeypatch):
     db.first = Comparison(id="other", prompt="", model_a="", model_b="", endpoint_a="", endpoint_b="", owner="bob")
     with pytest.raises(HTTPException):
         _endpoint(router, "/api/compare/{comp_id}/vote", "POST")(request, comp_id="other", winner="left")
+    db.first = Comparison(id="legacy", prompt="", model_a="", model_b="", endpoint_a="", endpoint_b="", owner=None)
+    with pytest.raises(HTTPException) as legacy_vote:
+        _endpoint(router, "/api/compare/{comp_id}/vote", "POST")(request, comp_id="legacy", winner="left")
+    assert legacy_vote.value.status_code == 404
 
     record = _endpoint(router, "/api/compare/record", "POST")(
         request,
@@ -231,6 +235,10 @@ def test_compare_routes_start_vote_record_history_and_delete(monkeypatch):
     with pytest.raises(HTTPException) as delete_other:
         _endpoint(router, "/api/compare/{comp_id}", "DELETE")(request, comp_id="not-owned")
     assert delete_other.value.status_code == 404
+    db.first = Comparison(id="legacy-delete", prompt="", model_a="", model_b="", endpoint_a="", endpoint_b="", owner=None)
+    with pytest.raises(HTTPException) as delete_legacy:
+        _endpoint(router, "/api/compare/{comp_id}", "DELETE")(request, comp_id="legacy-delete")
+    assert delete_legacy.value.status_code == 404
 
 
 def test_editor_draft_routes_crud_and_error_paths(monkeypatch):
