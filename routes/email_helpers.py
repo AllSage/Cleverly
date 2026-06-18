@@ -36,9 +36,21 @@ from typing import Optional, List
 from src.auth_helpers import get_current_user
 from src.compat import getenv
 from src.secret_storage import decrypt as _decrypt
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
+
+
+def _email_disabled_reason(action: str) -> str:
+    if offline_mode():
+        return f"Email {action} is disabled in offline mode"
+    try:
+        if (load_features() or {}).get("email") is False:
+            return f"Email {action} is disabled"
+    except Exception as exc:
+        logger.warning("Email feature check failed; disabling email %s: %s", action, exc)
+        return f"Email {action} is disabled"
+    return ""
 
 
 def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message: str | bytes, timeout: int = 30) -> None:
@@ -49,8 +61,9 @@ def _send_smtp_message(cfg: dict, from_addr: str, recipients: list[str], message
     directly against 587 raises the classic "[SSL: WRONG_VERSION_NUMBER]"
     error even when credentials are correct.
     """
-    if offline_mode():
-        raise RuntimeError("Email sending is disabled in offline mode")
+    disabled_reason = _email_disabled_reason("sending")
+    if disabled_reason:
+        raise RuntimeError(disabled_reason)
     host = cfg["smtp_host"]
     port = int(cfg.get("smtp_port") or 465)
     user = cfg.get("smtp_user") or ""
@@ -634,8 +647,9 @@ def _imap_connect(account_id: str | None = None, owner: str = ""):
     # SECURITY: passing `owner` scopes the fallback config lookup so a brand
     # new user doesn't get connected against another user's default mailbox
     # when they have no account configured.
-    if offline_mode():
-        raise RuntimeError("Email polling is disabled in offline mode")
+    disabled_reason = _email_disabled_reason("polling")
+    if disabled_reason:
+        raise RuntimeError(disabled_reason)
     cfg = _get_email_config(account_id, owner=owner)
     # Connection mode:
     #   STARTTLS on → plain + upgrade

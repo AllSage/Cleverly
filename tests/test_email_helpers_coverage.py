@@ -187,6 +187,18 @@ def test_email_socket_helpers_block_offline_before_network(monkeypatch):
     with pytest.raises(RuntimeError, match="Email polling is disabled in offline mode"):
         helpers._imap_connect("acct", owner="alice")
 
+    monkeypatch.setattr(helpers, "offline_mode", lambda: False)
+    monkeypatch.setattr(helpers, "load_features", lambda: {"email": False})
+    with pytest.raises(RuntimeError, match="Email sending is disabled"):
+        helpers._send_smtp_message(
+            {"smtp_host": "smtp.example.test", "smtp_port": 465},
+            "me@example.com",
+            ["you@example.com"],
+            "body",
+        )
+    with pytest.raises(RuntimeError, match="Email polling is disabled"):
+        helpers._imap_connect("acct", owner="alice")
+
 
 def test_text_reply_style_and_auth(monkeypatch):
     helpers = _helpers()
