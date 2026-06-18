@@ -94,7 +94,11 @@ async def register_builtin_servers(mcp_manager):
     if MCP_DISABLED:
         logger.info("Built-in MCP servers disabled via CLEVERLY_DISABLE_MCP")
         return
-    features = load_features()
+    try:
+        features = load_features() or {}
+    except Exception as exc:
+        logger.warning("Built-in MCP feature check failed; disabling built-in MCP startup: %s", exc)
+        return
     if offline_mode() or features.get("mcp") is False:
         logger.info("Built-in MCP servers disabled by offline mode or feature settings")
         return
