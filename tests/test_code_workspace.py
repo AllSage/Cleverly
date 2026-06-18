@@ -146,6 +146,26 @@ def test_code_workspace_snapshots_restore_and_export(tmp_path):
     assert Path(exported["path"]).exists()
 
 
+def test_code_workspace_snapshot_restore_rejects_symlink_archive_before_clearing(tmp_path):
+    meta = cw.create_workspace("Snapshot Symlink", owner="alice", root=tmp_path)
+    cw.write_file(meta["id"], "app.txt", "safe\n", owner="alice", root=tmp_path)
+    snap = cw.create_snapshot(meta["id"], "safe snapshot", owner="alice", root=tmp_path)
+    cw.write_file(meta["id"], "app.txt", "current\n", owner="alice", root=tmp_path)
+
+    info = zipfile.ZipInfo("link")
+    info.create_system = 3
+    info.external_attr = 0o120777 << 16
+    with zipfile.ZipFile(snap["path"], "w") as zf:
+        zf.writestr(info, "../outside.txt")
+
+    with pytest.raises(cw.CodeWorkspaceError, match="symlinks"):
+        cw.restore_snapshot(meta["id"], snap["id"], owner="alice", root=tmp_path)
+    assert cw.read_file(meta["id"], "app.txt", owner="alice", root=tmp_path)["content"] == "current\n"
+
+    with pytest.raises(cw.CodeWorkspaceError, match="symlinks"):
+        cw.diff_snapshot(meta["id"], snap["id"], owner="alice", root=tmp_path)
+
+
 def test_code_workspace_worker_runner_executes_from_queue(tmp_path, monkeypatch):
     meta = cw.create_workspace("Worker Demo", owner="alice", root=tmp_path)
     monkeypatch.setenv("CODE_WORKSPACE_RUNNER", "worker")

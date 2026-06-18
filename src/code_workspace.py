@@ -443,9 +443,9 @@ def _add_extracted_bytes(total: int, amount: int) -> int:
     return total
 
 
-def _copy_extracted(src: Path, dest: Path) -> None:
+def _copy_extracted(src: Path, dest: Path, *, flatten_single_root: bool = True) -> None:
     children = [p for p in src.iterdir() if p.name not in {".DS_Store", "__MACOSX"}]
-    if len(children) == 1 and children[0].is_dir():
+    if flatten_single_root and len(children) == 1 and children[0].is_dir():
         src = children[0]
     for item in src.iterdir():
         if item.name == "__MACOSX":
@@ -455,6 +455,27 @@ def _copy_extracted(src: Path, dest: Path) -> None:
             shutil.copytree(item, target, dirs_exist_ok=True)
         else:
             shutil.copy2(item, target)
+
+
+def _zip_member_is_symlink(info: zipfile.ZipInfo) -> bool:
+    mode = (info.external_attr >> 16) & 0o170000
+    return mode == 0o120000
+
+
+def _extract_safe_zip(zip_path: Path, dest: Path) -> None:
+    extracted_bytes = 0
+    with zipfile.ZipFile(zip_path) as zf:
+        for info in zf.infolist():
+            if _zip_member_is_symlink(info):
+                raise CodeWorkspaceError("Archive symlinks are not allowed")
+            target = _archive_member_path(dest, info.filename)
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                extracted_bytes = _add_extracted_bytes(extracted_bytes, info.file_size)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as src, target.open("wb") as dst:
+                    shutil.copyfileobj(src, dst)
 
 
 def import_archive(name: str, archive_path: str | Path, *, owner: str = "", root: str | Path | None = None) -> dict[str, Any]:
@@ -472,19 +493,7 @@ def import_archive(name: str, archive_path: str | Path, *, owner: str = "", root
             lower = archive.name.lower()
             extracted_bytes = 0
             if lower.endswith(".zip"):
-                with zipfile.ZipFile(archive) as zf:
-                    for info in zf.infolist():
-                        mode = (info.external_attr >> 16) & 0o170000
-                        if mode == 0o120000:
-                            raise CodeWorkspaceError("Archive symlinks are not allowed")
-                        target = _archive_member_path(tmp, info.filename)
-                        if info.is_dir():
-                            target.mkdir(parents=True, exist_ok=True)
-                        else:
-                            extracted_bytes = _add_extracted_bytes(extracted_bytes, info.file_size)
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            with zf.open(info) as src, target.open("wb") as dst:
-                                shutil.copyfileobj(src, dst)
+                _extract_safe_zip(archive, tmp)
             elif lower.endswith((".tar", ".tar.gz", ".tgz")):
                 mode = "r:gz" if lower.endswith((".tar.gz", ".tgz")) else "r:"
                 with tarfile.open(archive, mode) as tf:
@@ -594,16 +603,11 @@ def _require_snapshot(workspace_id: str, snapshot_id: str, *, owner: str = "", r
 def restore_snapshot(workspace_id: str, snapshot_id: str, *, owner: str = "", root: str | Path | None = None) -> dict[str, Any]:
     workspace, _ = _require_workspace(workspace_id, owner=owner, root=root)
     zip_path, item = _require_snapshot(workspace_id, snapshot_id, owner=owner, root=root)
-    _clear_workspace_content(workspace)
-    with zipfile.ZipFile(zip_path) as zf:
-        for info in zf.infolist():
-            target = _archive_member_path(workspace, info.filename)
-            if info.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-            else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(info) as src, target.open("wb") as dst:
-                    shutil.copyfileobj(src, dst)
+    with tempfile.TemporaryDirectory(dir=str(workspace_root(root))) as tmp_name:
+        tmp = Path(tmp_name)
+        _extract_safe_zip(zip_path, tmp)
+        _clear_workspace_content(workspace)
+        _copy_extracted(tmp, workspace, flatten_single_root=False)
     _touch_workspace(workspace_id, owner=owner, root=root)
     return {"restored": True, "snapshot": item, "exit_code": 0}
 
@@ -617,8 +621,7 @@ def diff_snapshot(workspace_id: str, snapshot_id: str, *, owner: str = "", root:
         current_dir = tmp / "current"
         snapshot_dir.mkdir()
         current_dir.mkdir()
-        with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(snapshot_dir)
+        _extract_safe_zip(zip_path, snapshot_dir)
         for path, _stat in _iter_workspace_files(workspace, include_large=True):
             target = current_dir / path.relative_to(workspace)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -627,7 +630,6 @@ def diff_snapshot(workspace_id: str, snapshot_id: str, *, owner: str = "", root:
     if result.get("exit_code") == 1:
         result["exit_code"] = 0
     return {"snapshot": item, **result}
-
 
 def export_workspace(workspace_id: str, *, owner: str = "", root: str | Path | None = None) -> dict[str, Any]:
     base = workspace_root(root)
