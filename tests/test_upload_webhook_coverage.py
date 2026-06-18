@@ -521,6 +521,12 @@ def test_webhook_routes_crud_and_sync_chat_paths(monkeypatch):
         _endpoint(router, "/api/webhooks", "POST")(RequestLike(), name="Hook", url="https://example.test", events="chat.completed")
     assert offline_create.value.status_code == 403
     monkeypatch.setattr(webhook_routes, "offline_mode", lambda: False)
+    monkeypatch.setattr(webhook_routes, "load_features", lambda: {"webhooks": False})
+    assert _endpoint(router, "/api/webhooks")(RequestLike()) == []
+    with pytest.raises(HTTPException) as feature_disabled_create:
+        _endpoint(router, "/api/webhooks", "POST")(RequestLike(), name="Hook", url="https://example.test", events="chat.completed")
+    assert feature_disabled_create.value.status_code == 403
+    monkeypatch.setattr(webhook_routes, "load_features", lambda: {"webhooks": True, "external_model_endpoints": True})
 
     with pytest.raises(HTTPException) as missing_name:
         _endpoint(router, "/api/webhooks", "POST")(RequestLike(), name="  ", url="https://example.test", events="chat.completed")
@@ -724,6 +730,31 @@ def test_webhook_sync_chat_existing_and_direct_sessions(monkeypatch):
         asyncio.run(sync_chat(RequestLike(), SimpleNamespace(message="hi", session=None, api_key="sk", model="unknown-model", base_url=None, provider=None)))
     assert unknown_provider.value.status_code == 400
 
+    monkeypatch.setattr(webhook_routes, "offline_mode", lambda: True)
+    with pytest.raises(HTTPException) as offline_direct:
+        asyncio.run(
+            sync_chat(
+                RequestLike(token_owner="alice"),
+                SimpleNamespace(message="offline", session=None, api_key="sk-direct", model="gpt-test", base_url=None, provider=None),
+            )
+        )
+    assert offline_direct.value.status_code == 403
+    with pytest.raises(HTTPException) as offline_existing_external:
+        session_manager.sessions["external"] = Session(
+            "external",
+            owner="alice",
+            model="gpt-test",
+            endpoint_url="https://api.openai.com/v1/chat",
+        )
+        asyncio.run(
+            sync_chat(
+                RequestLike(token_owner="alice"),
+                SimpleNamespace(message="offline", session="external", api_key=None, model=None, base_url=None, provider=None),
+            )
+        )
+    assert offline_existing_external.value.status_code == 403
+    monkeypatch.setattr(webhook_routes, "offline_mode", lambda: False)
+
     direct = asyncio.run(
         sync_chat(
             RequestLike(token_owner="alice"),
@@ -824,6 +855,12 @@ def test_webhook_sync_chat_existing_and_direct_sessions(monkeypatch):
     monkeypatch.setattr(webhook_routes.httpx, "AsyncClient", DataClient)
     configured_data = asyncio.run(sync_chat(RequestLike(token_owner="alice"), SimpleNamespace(message="configured data", session=None, api_key=None, model=None, base_url=None, provider=None)))
     assert configured_data["model"] == "data-model"
+
+    monkeypatch.setattr(webhook_routes, "offline_mode", lambda: True)
+    with pytest.raises(HTTPException) as offline_configured:
+        asyncio.run(sync_chat(RequestLike(token_owner="alice"), SimpleNamespace(message="configured offline", session=None, api_key=None, model=None, base_url=None, provider=None)))
+    assert offline_configured.value.status_code == 403
+    monkeypatch.setattr(webhook_routes, "offline_mode", lambda: False)
 
     monkeypatch.setattr(webhook_routes, "SessionLocal", lambda: DB(None))
     with pytest.raises(HTTPException) as no_endpoint:

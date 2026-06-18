@@ -11,6 +11,9 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+from src.offline_policy import is_local_model_url
+from src.settings import load_features, offline_mode
+
 MAX_OUTPUT_CHARS = 10_000
 MAX_READ_CHARS = 20_000
 
@@ -26,6 +29,25 @@ def _truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
     return text
 
 logger = logging.getLogger(__name__)
+
+
+def _feature_enabled(key: str) -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get(key) is not False
+    except Exception:
+        return True
+
+
+def _external_model_endpoint_allowed(base_url: str) -> bool:
+    if is_local_model_url(base_url):
+        return True
+    return _feature_enabled("external_model_endpoints")
+
+
+def _webhooks_enabled() -> bool:
+    return _feature_enabled("webhooks")
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -1016,6 +1038,8 @@ async def do_manage_endpoints(content: str, owner: Optional[str] = None) -> Dict
     try:
         if action == "list":
             eps = db.query(ModelEndpoint).all()
+            if not _feature_enabled("external_model_endpoints"):
+                eps = [e for e in eps if _external_model_endpoint_allowed(e.base_url)]
             items = [{"id": e.id, "name": e.name, "base_url": e.base_url,
                        "is_enabled": e.is_enabled} for e in eps]
             return {"response": f"{len(items)} endpoints", "endpoints": items, "exit_code": 0}
@@ -1027,6 +1051,8 @@ async def do_manage_endpoints(content: str, owner: Optional[str] = None) -> Dict
             api_key = args.get("api_key", "")
             if not base_url:
                 return {"error": "base_url is required", "exit_code": 1}
+            if not _external_model_endpoint_allowed(base_url):
+                return {"error": "External model endpoints are disabled in offline mode", "exit_code": 1}
             eid = str(_uuid.uuid4())[:8]
             from datetime import datetime
             ep = ModelEndpoint(id=eid, name=name or base_url, base_url=base_url,
@@ -1051,6 +1077,8 @@ async def do_manage_endpoints(content: str, owner: Optional[str] = None) -> Dict
             ep = db.query(ModelEndpoint).filter(ModelEndpoint.id == eid).first()
             if not ep:
                 return {"error": f"Endpoint {eid} not found", "exit_code": 1}
+            if action == "enable" and not _external_model_endpoint_allowed(ep.base_url):
+                return {"error": "External model endpoints are disabled in offline mode", "exit_code": 1}
             ep.is_enabled = (action == "enable")
             db.commit()
             return {"response": f"Endpoint '{ep.name}' {action}d", "exit_code": 0}
@@ -1216,6 +1244,10 @@ async def do_manage_webhooks(content: str, owner: Optional[str] = None) -> Dict:
         return {"error": "Invalid JSON arguments", "exit_code": 1}
 
     action = args.get("action", "list")
+    if not _webhooks_enabled():
+        if action == "list":
+            return {"response": "0 webhooks", "webhooks": [], "exit_code": 0}
+        return {"error": "Webhooks are disabled in offline mode", "exit_code": 1}
     db = SessionLocal()
     try:
         from core.database import Webhook

@@ -238,6 +238,17 @@ def test_manage_endpoints_mcp_webhooks_and_tokens(monkeypatch):
     assert "Deleted webhook" in asyncio.run(tools.do_manage_webhooks('{"action":"delete","webhook_id":"wh1"}'))["response"]
     assert "disabled" in asyncio.run(tools.do_manage_webhooks('{"action":"disable","webhook_id":"wh1"}'))["response"]
 
+    monkeypatch.setattr(tools, "offline_mode", lambda: True)
+    assert asyncio.run(tools.do_manage_webhooks('{"action":"list"}'))["webhooks"] == []
+    assert asyncio.run(tools.do_manage_webhooks('{"action":"add","url":"https://example.test/hook"}'))["exit_code"] == 1
+    assert "External model endpoints are disabled" in asyncio.run(
+        tools.do_manage_endpoints('{"action":"add","base_url":"https://api.openai.com/v1"}')
+    )["error"]
+    assert "Added endpoint" in asyncio.run(
+        tools.do_manage_endpoints('{"action":"add","base_url":"http://localhost:11434/v1"}')
+    )["response"]
+    monkeypatch.setattr(tools, "offline_mode", lambda: False)
+
     bcrypt = types.ModuleType("bcrypt")
     bcrypt.gensalt = lambda: b"salt"
     bcrypt.hashpw = lambda value, salt: b"hashed-" + value[:4]

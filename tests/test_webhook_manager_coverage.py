@@ -233,6 +233,24 @@ async def test_fire_filters_matching_webhooks_and_schedules_delivery(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_fire_skips_when_webhooks_feature_disabled(monkeypatch):
+    db = install_db(monkeypatch, FakeDB([
+        FakeWebhook(id="a", url="https://example.test/a", secret="", events="chat.completed"),
+    ]))
+    manager = make_manager()
+    scheduled = []
+
+    monkeypatch.setattr(manager_module, "offline_mode", lambda: False)
+    monkeypatch.setattr(manager_module, "load_features", lambda: {"webhooks": False})
+    monkeypatch.setattr(asyncio, "create_task", lambda coro: scheduled.append(coro))
+
+    await manager.fire("chat.completed", {"answer": 42})
+
+    assert scheduled == []
+    assert db.closed == 0
+
+
+@pytest.mark.asyncio
 async def test_deliver_test_decrypts_and_delegates(monkeypatch):
     manager = make_manager(ApiKeyManager())
     delivered = []

@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 
 from core.database import SessionLocal, Webhook
 from src.webhook_manager import WebhookManager, validate_webhook_url, validate_events
-from src.settings import offline_mode
+from src.offline_policy import is_local_model_url
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,33 @@ MAX_MESSAGE_LEN = 32_000
 from core.middleware import require_admin as _require_admin
 
 
+def _feature_enabled(key: str) -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get(key) is not False
+    except Exception:
+        return True
+
+
+def _webhooks_enabled() -> bool:
+    return _feature_enabled("webhooks")
+
+
+def _external_endpoint_allowed(base_url: str) -> bool:
+    if is_local_model_url(base_url):
+        return True
+    return _feature_enabled("external_model_endpoints")
+
+
+def _raise_webhooks_disabled():
+    raise HTTPException(403, "Webhooks are disabled in offline mode")
+
+
+def _raise_external_endpoint_disabled():
+    raise HTTPException(403, "External chat endpoints are disabled in offline mode")
+
+
 def setup_webhook_routes(
     webhook_manager: WebhookManager,
     auth_manager,
@@ -37,7 +65,7 @@ def setup_webhook_routes(
     @router.get("/webhooks")
     def list_webhooks(request: Request):
         _require_admin(request)
-        if offline_mode():
+        if not _webhooks_enabled():
             return []
         db = SessionLocal()
         try:
@@ -69,8 +97,8 @@ def setup_webhook_routes(
         events: str = Form(""),
     ):
         _require_admin(request)
-        if offline_mode():
-            raise HTTPException(403, "Webhooks are disabled in offline mode")
+        if not _webhooks_enabled():
+            _raise_webhooks_disabled()
         name = name.strip()[:MAX_NAME_LEN]
         if not name:
             raise HTTPException(400, "Webhook name is required")
@@ -111,8 +139,8 @@ def setup_webhook_routes(
     @router.post("/webhooks/{webhook_id}/test")
     async def test_webhook(request: Request, webhook_id: str):
         _require_admin(request)
-        if offline_mode():
-            raise HTTPException(403, "Webhooks are disabled in offline mode")
+        if not _webhooks_enabled():
+            _raise_webhooks_disabled()
         db = SessionLocal()
         try:
             wh = db.query(Webhook).filter(Webhook.id == webhook_id).first()
@@ -128,8 +156,8 @@ def setup_webhook_routes(
     @router.patch("/webhooks/{webhook_id}")
     def toggle_webhook(request: Request, webhook_id: str):
         _require_admin(request)
-        if offline_mode():
-            raise HTTPException(403, "Webhooks are disabled in offline mode")
+        if not _webhooks_enabled():
+            _raise_webhooks_disabled()
         db = SessionLocal()
         try:
             wh = db.query(Webhook).filter(Webhook.id == webhook_id).first()
@@ -256,6 +284,8 @@ def setup_webhook_routes(
                     "or provider ('deepseek', 'openai', 'groq', etc.)")
 
             base_url = normalize_base(base_url)
+            if not _external_endpoint_allowed(base_url):
+                _raise_external_endpoint_disabled()
             endpoint_url = build_chat_url(base_url)
 
             if not session_manager:
@@ -284,6 +314,8 @@ def setup_webhook_routes(
                     "Pass api_key + model, or configure an endpoint in Admin.")
 
             base_url = normalize_base(ep.base_url)
+            if not _external_endpoint_allowed(base_url):
+                _raise_external_endpoint_disabled()
             endpoint_url = build_chat_url(base_url)
             model = body.model or "auto"
             api_key = ep.api_key
@@ -321,6 +353,9 @@ def setup_webhook_routes(
             session_id = sid
 
         # --- Send message and get response ---
+        if not _external_endpoint_allowed(getattr(sess, "endpoint_url", "") or ""):
+            _raise_external_endpoint_disabled()
+
         sess.add_message(ChatMessage("user", message))
 
         messages = [{"role": m.role, "content": m.content} for m in sess.history]

@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 import httpx
 
 from src.database import SessionLocal, Webhook
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +127,15 @@ def sanitize_error(error: str, max_len: int = 200) -> str:
     return cleaned[:max_len]
 
 
+def _webhooks_enabled() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("webhooks") is not False
+    except Exception:
+        return True
+
+
 class WebhookManager:
     def __init__(self, api_key_manager=None):
         # Disable redirects to prevent SSRF via redirect chains
@@ -151,7 +160,7 @@ class WebhookManager:
 
     def fire_and_forget(self, event: str, payload: dict):
         """Schedule webhook fire from any context (sync or async). Never blocks."""
-        if event not in ALLOWED_EVENTS:
+        if event not in ALLOWED_EVENTS or not _webhooks_enabled():
             return
         try:
             loop = asyncio.get_running_loop()
@@ -163,7 +172,7 @@ class WebhookManager:
 
     async def fire(self, event: str, payload: dict):
         """Fire webhooks matching the given event."""
-        if event not in ALLOWED_EVENTS:
+        if event not in ALLOWED_EVENTS or not _webhooks_enabled():
             return
         db = SessionLocal()
         try:
@@ -183,7 +192,7 @@ class WebhookManager:
 
     async def _deliver(self, webhook_id: str, url: str, secret: Optional[str], event: str, payload: dict):
         """Internal delivery. Never call directly from outside this class (use deliver_test)."""
-        if offline_mode():
+        if not _webhooks_enabled():
             logger.info("Skipping webhook %s because offline mode is enabled", webhook_id)
             return
         # Re-validate URL at delivery time in case DB was tampered with
