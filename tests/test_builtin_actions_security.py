@@ -148,20 +148,62 @@ async def test_shell_actions_block_network_commands_in_offline_mode(monkeypatch)
     monkeypatch.setattr(builtin_actions, "_run_subprocess", fake_run)
 
     assert await builtin_actions.action_run_local("alice", script="curl https://example.com") == (
-        "Network shell commands are disabled in offline mode",
+        "Network shell commands are disabled",
         False,
     )
     assert await builtin_actions.action_run_script("alice", script="echo ok", host="user@example.test") == (
-        "Remote scripts are disabled in offline mode",
+        "Remote scripts are disabled",
         False,
     )
     assert await builtin_actions.action_ssh_command("alice", command="echo ok", host="user@example.test") == (
-        "Remote shell commands are disabled in offline mode",
+        "Remote shell commands are disabled",
         False,
     )
     assert await builtin_actions.action_ssh_command("alice", command="git fetch origin", host="localhost") == (
-        "Network shell commands are disabled in offline mode",
+        "Network shell commands are disabled",
         False,
     )
 
     assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_shell_actions_block_network_when_integrations_disabled(monkeypatch):
+    from src import builtin_actions
+
+    calls = []
+
+    async def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return "ran", True
+
+    monkeypatch.setattr(builtin_actions, "offline_mode", lambda: False)
+    monkeypatch.setattr(builtin_actions, "load_features", lambda: {"network_integrations": False})
+    monkeypatch.setattr(builtin_actions, "_run_subprocess", fake_run)
+
+    assert await builtin_actions.action_run_local("alice", script="curl https://example.com") == (
+        "Network shell commands are disabled",
+        False,
+    )
+    assert await builtin_actions.action_run_script("alice", script="echo ok", host="user@example.test") == (
+        "Remote scripts are disabled",
+        False,
+    )
+    assert await builtin_actions.action_ssh_command("alice", command="echo ok", host="user@example.test") == (
+        "Remote shell commands are disabled",
+        False,
+    )
+
+    assert await builtin_actions.action_run_local("alice", script="echo ok") == ("ran", True)
+    assert len(calls) == 1
+
+    monkeypatch.setattr(
+        builtin_actions,
+        "load_features",
+        lambda: (_ for _ in ()).throw(RuntimeError("settings unavailable")),
+    )
+    assert await builtin_actions.action_run_local("alice", script="curl https://example.com") == (
+        "Network shell commands are disabled",
+        False,
+    )
+    assert len(calls) == 1

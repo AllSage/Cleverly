@@ -13,10 +13,32 @@ from typing import Tuple
 from src.auth_helpers import owner_filter
 from src.compat import getenv
 from src.offline_policy import command_uses_network
-from src.settings import offline_mode
+from src.settings import load_features, offline_mode
 from core.platform_compat import IS_WINDOWS, find_bash
 
 logger = logging.getLogger(__name__)
+
+
+def _network_integrations_allowed() -> bool:
+    if offline_mode():
+        return False
+    try:
+        return (load_features() or {}).get("network_integrations") is not False
+    except Exception as exc:
+        logger.warning("Builtin action feature check failed; disabling network integrations: %s", exc)
+        return False
+
+
+def _local_shell_allowed(script: str) -> tuple[bool, str]:
+    if command_uses_network(script) and not _network_integrations_allowed():
+        return False, "Network shell commands are disabled"
+    return True, ""
+
+
+def _remote_shell_allowed() -> tuple[bool, str]:
+    if not _network_integrations_allowed():
+        return False, "Remote shell commands are disabled"
+    return True, ""
 
 
 class TaskNoop(BaseException):
@@ -269,18 +291,19 @@ async def action_ssh_command(owner: str, command: str = "", host: str = "localho
     """Run a shell command locally or on a remote host via SSH."""
     if not command:
         return "No command specified", False
-    if offline_mode():
-        if host not in ("localhost", "127.0.0.1", "local"):
-            return "Remote shell commands are disabled in offline mode", False
-        if command_uses_network(command):
-            return "Network shell commands are disabled in offline mode", False
     if host in ("localhost", "127.0.0.1", "local"):
+        ok, reason = _local_shell_allowed(command)
+        if not ok:
+            return reason, False
         if IS_WINDOWS:
             bash = find_bash()
             if bash:
                 return await _run_subprocess([bash, "-c", command], timeout=120, label="Command")
             return await _run_subprocess(command, shell=True, timeout=120, label="Command")
         return await _run_subprocess(["bash", "-c", command], timeout=120, label="Command")
+    ok, reason = _remote_shell_allowed()
+    if not ok:
+        return reason, False
     return await _run_subprocess(
         ["ssh", "-o", "ConnectTimeout=10", host, command], timeout=120, label="Command",
     )
@@ -291,15 +314,16 @@ async def action_run_script(owner: str, script: str = "", host: str = "", **kwar
     if not script:
         return "No script specified", False
     target_host = (host or getenv("CLEVERLY_SCRIPT_HOST", "localhost") or "localhost").strip()
-    if offline_mode():
-        if target_host not in ("", "localhost", "127.0.0.1", "local"):
-            return "Remote scripts are disabled in offline mode", False
-        if command_uses_network(script):
-            return "Network shell commands are disabled in offline mode", False
     if target_host in ("", "localhost", "127.0.0.1", "local"):
+        ok, reason = _local_shell_allowed(script)
+        if not ok:
+            return reason, False
         if IS_WINDOWS and find_bash():
             return await _run_subprocess([find_bash(), "-c", script], timeout=300, label="Script")
         return await _run_subprocess(script, shell=True, timeout=300, label="Script")
+    ok, reason = _remote_shell_allowed()
+    if not ok:
+        return "Remote scripts are disabled", False
     return await _run_subprocess(["ssh", target_host, script], timeout=300, label="Script")
 
 
@@ -307,8 +331,9 @@ async def action_run_local(owner: str, script: str = "", **kwargs) -> Tuple[str,
     """Run a script locally (no SSH)."""
     if not script:
         return "No script specified", False
-    if offline_mode() and command_uses_network(script):
-        return "Network shell commands are disabled in offline mode", False
+    ok, reason = _local_shell_allowed(script)
+    if not ok:
+        return reason, False
     if IS_WINDOWS and find_bash():
         return await _run_subprocess([find_bash(), "-c", script], timeout=300, label="Script")
     return await _run_subprocess(script, shell=True, timeout=300, label="Script")
