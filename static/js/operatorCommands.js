@@ -4,7 +4,7 @@ import voiceRecorder from './voiceRecorder.js?v=20260620-voice-setup';
 
 const ACTIVITY_KEY = 'cleverly-operator-activity-v1';
 const TRUST_POLICY_KEY = 'cleverly-operator-trust-policy-v1';
-const CATALOG_VERSION = '20260621-code-run-ledger';
+const CATALOG_VERSION = '20260621-code-run-backend-ledger';
 const MAX_ACTIVITY = 80;
 const MAX_CATALOG_KEYWORDS = 24;
 const TRUST_LEVELS = ['local', 'approval', 'network', 'danger'];

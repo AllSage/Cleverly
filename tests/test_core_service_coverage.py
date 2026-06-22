@@ -614,6 +614,46 @@ def test_operator_activity_plan_audits_timeline_without_execution(tmp_path):
     assert "does not write records" in plan["approval"]["policy"]
 
 
+def test_operator_activity_store_upserts_owner_scoped_records(tmp_path):
+    from src.operator_activity import upsert_operator_activity_record
+
+    path = tmp_path / "operator_activity.json"
+    first = upsert_operator_activity_record(
+        {
+            "id": "run-1",
+            "command_id": "run-tests",
+            "title": "Code Workspace Command Passed",
+            "status": "success",
+            "stdout": "ok",
+            "events": [{"status": "success", "detail": "done"}],
+        },
+        owner="alice",
+        activity_path=path,
+    )
+    second = upsert_operator_activity_record(
+        {
+            "id": "run-1",
+            "command_id": "run-tests",
+            "title": "Code Workspace Command Failed",
+            "status": "error",
+            "stderr": "failed",
+        },
+        owner="alice",
+        activity_path=path,
+    )
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    records = data["records"]
+
+    assert first["owner"] == "alice"
+    assert second["owner"] == "alice"
+    assert len(records) == 1
+    assert records[0]["id"] == "run-1"
+    assert records[0]["status"] == "error"
+    assert records[0]["stderr"] == "failed"
+    assert records[0]["updated_at"]
+
+
 def test_operator_code_test_plan_infers_commands_without_execution(tmp_path, monkeypatch):
     from src.operator_code import run_operator_code_test_plan
 
@@ -1528,7 +1568,7 @@ def test_operator_command_text_uses_backend_route_preflight_before_local_fallbac
     assert "runTypedRoute();" in enter_block
     assert "runCommand(command.id)" not in enter_block
     assert "window.codeWorkspaceModule = codeWorkspaceModule;" in app_js
-    assert "import operatorCommands from './operatorCommands.js?v=20260621-code-run-ledger';" in code_workspace_js
+    assert "import operatorCommands from './operatorCommands.js?v=20260621-code-run-backend-ledger';" in code_workspace_js
     assert "export async function open(options = {})" in code_workspace_js
     assert "async function stageRunCommand(options = {})" in code_workspace_js
     assert "input.value = command;" in code_workspace_js
@@ -1538,6 +1578,10 @@ def test_operator_command_text_uses_backend_route_preflight_before_local_fallbac
     assert "run_command: trimmed" in code_workspace_js
     assert "stdout," in code_workspace_js
     assert "stderr," in code_workspace_js
+    assert "function syncBackendRunActivity(record)" in code_workspace_js
+    assert "operatorCommands.setBackendActivity([record, ...existing], { emit: true });" in code_workspace_js
+    assert "if (data.activity)" in code_workspace_js
+    assert "syncBackendRunActivity(data.activity);" in code_workspace_js
     assert "recordRunActivity(command, data);" in code_workspace_js
     assert "recordRunActivity(command, {}, error);" in code_workspace_js
     assert "const CODE_TEST_STAGE_ACTION_PREFIX = 'stage-code-test-command:';" in center_js
@@ -1555,6 +1599,339 @@ def test_operator_command_text_uses_backend_route_preflight_before_local_fallbac
     assert "recordCodeTestStage(row);" in center_js
     assert "command: row.command" in center_js
     assert "panel: 'run'" in center_js
+
+
+def test_code_workspace_run_endpoint_records_backend_activity(monkeypatch):
+    import routes.code_workspace_routes as code_workspace_routes
+
+    captured = {}
+
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "run_command",
+        lambda workspace_id, command, owner="", timeout_seconds=120: {
+            "stdout": "tests passed",
+            "stderr": "",
+            "exit_code": 0,
+            "runner": "worker",
+        },
+    )
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "get_workspace",
+        lambda workspace_id, owner="": {"id": workspace_id, "name": "Repo"},
+    )
+
+    def fake_upsert(record, *, owner="local", activity_path=None):
+        captured["record"] = record
+        captured["owner"] = owner
+        return {"id": "activity-1", "owner": owner, **record}
+
+    monkeypatch.setattr(code_workspace_routes, "upsert_operator_activity_record", fake_upsert)
+
+    router = code_workspace_routes.setup_code_workspace_routes()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if route.path == "/api/code-workspaces/{workspace_id}/run"
+    )
+    request = SimpleNamespace(state=SimpleNamespace(current_user="alice"))
+    result = endpoint(
+        "ws1",
+        code_workspace_routes.RunRequest(command="pytest -q", timeout_seconds=30),
+        request,
+    )
+
+    assert result["ok"] is True
+    assert result["activity"]["id"] == "activity-1"
+    assert captured["owner"] == "alice"
+    assert captured["record"]["command_id"] == "run-tests"
+    assert captured["record"]["source"] == "code-workspace-api"
+    assert captured["record"]["workspace"] == "Repo"
+    assert captured["record"]["run_command"] == "pytest -q"
+    assert captured["record"]["exit_code"] == 0
+    assert captured["record"]["runner"] == "worker"
+    assert captured["record"]["stdout"] == "tests passed"
+    assert captured["record"]["status"] == "success"
+    assert captured["record"]["events"][0]["status"] == "success"
+
+
+def test_code_workspace_run_endpoint_records_blocked_activity(monkeypatch):
+    import routes.code_workspace_routes as code_workspace_routes
+
+    captured = {}
+
+    def blocked_run(*args, **kwargs):
+        raise code_workspace_routes.code_workspace.CodeWorkspaceError("Command is blocked")
+
+    monkeypatch.setattr(code_workspace_routes.code_workspace, "run_command", blocked_run)
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "get_workspace",
+        lambda workspace_id, owner="": {"id": workspace_id, "name": "Repo"},
+    )
+
+    def fake_upsert(record, *, owner="local", activity_path=None):
+        captured["record"] = record
+        captured["owner"] = owner
+        return {"id": "activity-blocked", "owner": owner, **record}
+
+    monkeypatch.setattr(code_workspace_routes, "upsert_operator_activity_record", fake_upsert)
+
+    router = code_workspace_routes.setup_code_workspace_routes()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if route.path == "/api/code-workspaces/{workspace_id}/run"
+    )
+    request = SimpleNamespace(state=SimpleNamespace(current_user="alice"))
+
+    with pytest.raises(HTTPException) as exc:
+        endpoint(
+            "ws1",
+            code_workspace_routes.RunRequest(command="pip install package", timeout_seconds=30),
+            request,
+        )
+
+    assert exc.value.status_code == 400
+    assert captured["owner"] == "alice"
+    assert captured["record"]["title"] == "Code Workspace Command Blocked"
+    assert captured["record"]["status"] == "blocked"
+    assert captured["record"]["state"] == "error"
+    assert captured["record"]["source"] == "code-workspace-api"
+    assert captured["record"]["runner"] == "validation"
+    assert captured["record"]["stderr"] == "Command is blocked"
+    assert captured["record"]["events"][0]["status"] == "blocked"
+
+
+def test_code_workspace_agent_endpoint_records_backend_activity(monkeypatch):
+    import routes.code_workspace_routes as code_workspace_routes
+
+    captured = {}
+
+    async def fake_agent(*args, **kwargs):
+        return {
+            "ok": True,
+            "model": "llama3.2:3b",
+            "plan": "Patch file",
+            "snapshot": {"id": "snap1"},
+            "selected_paths": ["src/app.py"],
+            "proposed_diff": "diff --git a/src/app.py b/src/app.py\n",
+            "applied": False,
+            "test_result": {"stdout": "ok", "stderr": "", "exit_code": 0},
+            "steps": [{"phase": "draft", "round": 1, "exit_code": 0}],
+            "exit_code": 0,
+        }
+
+    monkeypatch.setattr(code_workspace_routes.code_workspace_agent, "run_agent", fake_agent)
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "get_workspace",
+        lambda workspace_id, owner="": {"id": workspace_id, "name": "Repo"},
+    )
+    monkeypatch.setattr(code_workspace_routes, "append_audit", lambda *args, **kwargs: None)
+
+    def fake_upsert(record, *, owner="local", activity_path=None):
+        captured["record"] = record
+        captured["owner"] = owner
+        return {"id": "agent-activity", "owner": owner, **record}
+
+    monkeypatch.setattr(code_workspace_routes, "upsert_operator_activity_record", fake_upsert)
+
+    router = code_workspace_routes.setup_code_workspace_routes()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if route.path == "/api/code-workspaces/{workspace_id}/agent"
+    )
+    request = SimpleNamespace(state=SimpleNamespace(current_user="alice"))
+    result = asyncio.run(endpoint(
+        "ws1",
+        code_workspace_routes.AgentRequest(task="Fix the failing test", selected_paths=["src/app.py"]),
+        request,
+    ))
+
+    assert result["ok"] is True
+    assert result["activity"]["id"] == "agent-activity"
+    assert captured["owner"] == "alice"
+    assert captured["record"]["title"] == "Code Workspace Agent Completed"
+    assert captured["record"]["source"] == "code-workspace-agent-api"
+    assert captured["record"]["agent_task"] == "Fix the failing test"
+    assert captured["record"]["model"] == "llama3.2:3b"
+    assert captured["record"]["selected_paths"] == ["src/app.py"]
+    assert captured["record"]["snapshot_id"] == "snap1"
+    assert captured["record"]["has_proposed_diff"] is True
+    assert captured["record"]["stdout"] == "ok"
+    assert captured["record"]["steps"][0]["phase"] == "draft"
+
+
+def test_code_workspace_agent_endpoint_records_blocked_activity(monkeypatch):
+    import routes.code_workspace_routes as code_workspace_routes
+
+    captured = {}
+
+    async def blocked_agent(*args, **kwargs):
+        raise code_workspace_routes.code_workspace.CodeWorkspaceError("Set Code Workspace model key before running the coding agent")
+
+    monkeypatch.setattr(code_workspace_routes.code_workspace_agent, "run_agent", blocked_agent)
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "get_workspace",
+        lambda workspace_id, owner="": {"id": workspace_id, "name": "Repo"},
+    )
+
+    def fake_upsert(record, *, owner="local", activity_path=None):
+        captured["record"] = record
+        captured["owner"] = owner
+        return {"id": "agent-blocked", "owner": owner, **record}
+
+    monkeypatch.setattr(code_workspace_routes, "upsert_operator_activity_record", fake_upsert)
+
+    router = code_workspace_routes.setup_code_workspace_routes()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if route.path == "/api/code-workspaces/{workspace_id}/agent"
+    )
+    request = SimpleNamespace(state=SimpleNamespace(current_user="alice"))
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(endpoint(
+            "ws1",
+            code_workspace_routes.AgentRequest(task="Fix the failing test"),
+            request,
+        ))
+
+    assert exc.value.status_code == 400
+    assert captured["owner"] == "alice"
+    assert captured["record"]["title"] == "Code Workspace Agent Blocked"
+    assert captured["record"]["status"] == "blocked"
+    assert captured["record"]["state"] == "error"
+    assert captured["record"]["source"] == "code-workspace-agent-api"
+    assert captured["record"]["stderr"] == "Set Code Workspace model key before running the coding agent"
+    assert captured["record"]["events"][0]["status"] == "blocked"
+
+
+def test_code_workspace_validate_diff_records_activity(monkeypatch):
+    import routes.code_workspace_routes as code_workspace_routes
+
+    captured = {}
+
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "create_snapshot",
+        lambda workspace_id, label, owner="": {"id": "snap1"},
+    )
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "apply_unified_diff",
+        lambda workspace_id, diff, owner="", allowed_paths=None: {"stdout": "patch ok", "stderr": "", "exit_code": 0},
+    )
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "run_command",
+        lambda workspace_id, command, owner="", timeout_seconds=120: {"stdout": "tests ok", "stderr": "", "exit_code": 0},
+    )
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "restore_snapshot",
+        lambda workspace_id, snapshot_id, owner="": {"restored": True},
+    )
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "get_workspace",
+        lambda workspace_id, owner="": {"id": workspace_id, "name": "Repo"},
+    )
+    monkeypatch.setattr(code_workspace_routes, "append_audit", lambda *args, **kwargs: None)
+
+    def fake_upsert(record, *, owner="local", activity_path=None):
+        captured["record"] = record
+        captured["owner"] = owner
+        return {"id": "validation-activity", "owner": owner, **record}
+
+    monkeypatch.setattr(code_workspace_routes, "upsert_operator_activity_record", fake_upsert)
+
+    router = code_workspace_routes.setup_code_workspace_routes()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if route.path == "/api/code-workspaces/{workspace_id}/validate-diff"
+    )
+    request = SimpleNamespace(state=SimpleNamespace(current_user="alice"))
+    result = endpoint(
+        "ws1",
+        code_workspace_routes.ValidateDiffRequest(diff="diff --git a/a b/a\n", test_command="pytest -q"),
+        request,
+    )
+
+    assert result["ok"] is True
+    assert result["valid"] is True
+    assert result["activity"]["id"] == "validation-activity"
+    assert captured["owner"] == "alice"
+    assert captured["record"]["title"] == "Code Workspace Diff Validation Passed"
+    assert captured["record"]["source"] == "code-workspace-validate-api"
+    assert captured["record"]["snapshot_id"] == "snap1"
+    assert captured["record"]["patch_exit_code"] == 0
+    assert captured["record"]["test_exit_code"] == 0
+    assert captured["record"]["stdout"] == "tests ok"
+    assert captured["record"]["valid"] is True
+
+
+def test_code_workspace_validate_diff_records_patch_failure_activity(monkeypatch):
+    import routes.code_workspace_routes as code_workspace_routes
+
+    captured = {}
+
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "create_snapshot",
+        lambda workspace_id, label, owner="": {"id": "snap1"},
+    )
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "apply_unified_diff",
+        lambda workspace_id, diff, owner="", allowed_paths=None: {"stdout": "", "stderr": "patch failed", "exit_code": 1},
+    )
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "restore_snapshot",
+        lambda workspace_id, snapshot_id, owner="": {"restored": True},
+    )
+    monkeypatch.setattr(
+        code_workspace_routes.code_workspace,
+        "get_workspace",
+        lambda workspace_id, owner="": {"id": workspace_id, "name": "Repo"},
+    )
+
+    def fake_upsert(record, *, owner="local", activity_path=None):
+        captured["record"] = record
+        captured["owner"] = owner
+        return {"id": "validation-failed", "owner": owner, **record}
+
+    monkeypatch.setattr(code_workspace_routes, "upsert_operator_activity_record", fake_upsert)
+
+    router = code_workspace_routes.setup_code_workspace_routes()
+    endpoint = next(
+        route.endpoint
+        for route in router.routes
+        if route.path == "/api/code-workspaces/{workspace_id}/validate-diff"
+    )
+    request = SimpleNamespace(state=SimpleNamespace(current_user="alice"))
+    result = endpoint(
+        "ws1",
+        code_workspace_routes.ValidateDiffRequest(diff="bad diff", test_command="pytest -q"),
+        request,
+    )
+
+    assert result["ok"] is True
+    assert result["valid"] is False
+    assert result["activity"]["id"] == "validation-failed"
+    assert captured["record"]["title"] == "Code Workspace Diff Validation Failed"
+    assert captured["record"]["status"] == "error"
+    assert captured["record"]["patch_exit_code"] == 1
+    assert captured["record"]["test_exit_code"] is None
+    assert captured["record"]["stderr"] == "patch failed"
+    assert captured["record"]["valid"] is False
 
 
 def test_operator_experience_plan_proves_goal_target_phrases_without_execution():

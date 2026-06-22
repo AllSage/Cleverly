@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from core.atomic_io import atomic_write_json
+from src.constants import DATA_DIR
 
 
 FAILURE_RE = ("fail", "failed", "error", "exception", "blocked")
@@ -28,6 +33,12 @@ RECOVERY_TERMS = (
     "train",
     "workspace",
 )
+MAX_ACTIVITY_RECORDS = 500
+MAX_ACTIVITY_EVENTS = 25
+MAX_ACTIVITY_STRING = 4000
+MAX_ACTIVITY_LIST_ITEMS = 80
+ACTIVITY_FILE = Path(DATA_DIR) / "operator_activity.json"
+_ACTIVITY_LOCK = threading.RLock()
 
 
 def _utc_now() -> str:
@@ -50,6 +61,65 @@ def _load_records(path: str | Path) -> list[dict[str, Any]]:
     else:
         source = []
     return [item for item in source if isinstance(item, dict)]
+
+
+def _trim_write_value(value: Any, *, depth: int = 0) -> Any:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value[:MAX_ACTIVITY_STRING]
+    if depth >= 6:
+        return str(value)[:MAX_ACTIVITY_STRING]
+    if isinstance(value, list):
+        return [_trim_write_value(item, depth=depth + 1) for item in value[:MAX_ACTIVITY_LIST_ITEMS]]
+    if isinstance(value, dict):
+        clean: dict[str, Any] = {}
+        for key, item in list(value.items())[:MAX_ACTIVITY_LIST_ITEMS]:
+            if isinstance(key, str):
+                clean[key[:120]] = _trim_write_value(item, depth=depth + 1)
+        return clean
+    return str(value)[:MAX_ACTIVITY_STRING]
+
+
+def _normalize_write_record(record: dict[str, Any], owner: str) -> dict[str, Any]:
+    clean = _trim_write_value(record)
+    if not isinstance(clean, dict):
+        raise ValueError("Activity record must be an object")
+    activity_id = str(clean.get("id") or clean.get("activity_id") or "").strip()
+    if not activity_id:
+        activity_id = f"op-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    now = _utc_now()
+    clean["id"] = activity_id[:160]
+    clean["owner"] = owner or "local"
+    clean.setdefault("created_at", now)
+    clean["updated_at"] = str(clean.get("updated_at") or now)
+    if isinstance(clean.get("events"), list):
+        clean["events"] = clean["events"][:MAX_ACTIVITY_EVENTS]
+    return clean
+
+
+def upsert_operator_activity_record(
+    record: dict[str, Any],
+    *,
+    owner: str = "local",
+    activity_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Write or replace one local operator activity record."""
+    path = Path(activity_path) if activity_path is not None else ACTIVITY_FILE
+    clean = _normalize_write_record(record, owner or "local")
+    with _ACTIVITY_LOCK:
+        records = [item for item in _load_records(path) if isinstance(item, dict)]
+        records = [
+            item for item in records
+            if not (
+                str(item.get("owner") or "local") == clean["owner"]
+                and str(item.get("id") or "") == clean["id"]
+            )
+        ]
+        records.insert(0, clean)
+        records.sort(key=_timestamp, reverse=True)
+        atomic_write_json(path, {"version": 1, "records": records[:MAX_ACTIVITY_RECORDS]}, indent=2)
+    return clean
 
 
 def _timestamp(record: dict[str, Any]) -> float:

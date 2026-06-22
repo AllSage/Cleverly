@@ -1,5 +1,5 @@
 import * as Modals from './modalManager.js';
-import operatorCommands from './operatorCommands.js?v=20260621-code-run-ledger';
+import operatorCommands from './operatorCommands.js?v=20260621-code-run-backend-ledger';
 import uiModule from './ui.js';
 
 const API = '/api/code-workspaces';
@@ -614,6 +614,12 @@ function recordRunActivity(command, data = {}, error = null) {
       detail: outputParts.length ? `${detail}\n${outputParts.join('\n')}` : detail,
     }],
   });
+}
+
+function syncBackendRunActivity(record) {
+  if (!record || !operatorCommands.setBackendActivity) return;
+  const existing = operatorCommands.readActivity?.(80) || [];
+  operatorCommands.setBackendActivity([record, ...existing], { emit: true });
 }
 
 function panelTitle(panel) {
@@ -1550,6 +1556,7 @@ async function applyPatch() {
       method: 'POST',
       body: JSON.stringify({ diff, test_command: command, allowed_paths: allowedPathList() }),
     });
+    syncBackendRunActivity(validation.activity);
     if (!validation.valid) {
       const test = validation.test || {};
       const patch = validation.patch || {};
@@ -1657,6 +1664,7 @@ async function validateProposedDiff() {
     method: 'POST',
     body: JSON.stringify({ diff: _pendingDiff, test_command: command, allowed_paths: allowedPathList() }),
   });
+  syncBackendRunActivity(data.activity);
   _pendingValidation = data;
   _pendingTestPassed = !!data.valid;
   renderReviewGate();
@@ -1686,7 +1694,11 @@ async function runCommand() {
     _lastRunPassed = !!command.trim() && data.exit_code === 0;
     _lastRunCommand = _lastRunPassed ? command.trim() : '';
     setOutput([data.stdout, data.stderr, `exit_code: ${data.exit_code}`].filter(Boolean).join('\n'));
-    recordRunActivity(command, data);
+    if (data.activity) {
+      syncBackendRunActivity(data.activity);
+    } else {
+      recordRunActivity(command, data);
+    }
   } catch (error) {
     _lastRunPassed = false;
     _lastRunCommand = '';
@@ -1740,6 +1752,7 @@ async function runAgent() {
     lines.push('review: proposed diff is waiting for Run Tests, then Apply or Reject');
   }
   setOutput(lines.filter(Boolean).join('\n'));
+  syncBackendRunActivity(data.activity);
   await loadTree('');
 }
 

@@ -1,6 +1,6 @@
 // Global Cleverly operator command palette.
 
-import operatorCommands from './operatorCommands.js?v=20260621-code-run-ledger';
+import operatorCommands from './operatorCommands.js?v=20260621-code-run-backend-ledger';
 
 let _initialized = false;
 let _selectedIndex = 0;

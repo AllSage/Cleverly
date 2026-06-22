@@ -722,12 +722,20 @@ Code Workspace Run panel with the matching workspace selected, but they do not
 press Run. A staged command is mirrored to `data/operator_activity.json` with
 status `staged`, the workspace metadata, and a note that no tests executed. The
 user still reviews scope, status, diff, and snapshot state before using the Code
-Workspace Run button. When the user presses Run Command, the command result is
-mirrored to `data/operator_activity.json` with the command, workspace, runner,
-exit code, and truncated stdout/stderr so Activity Details, Copy Log, retry, and
-recovery views have execution evidence. The plan does not run tests, create
+Workspace Run button. When the Code Workspace run endpoint executes a command,
+including the browser Run Command button and direct API/tool calls, the result
+is mirrored to `data/operator_activity.json` with the command, workspace,
+runner, exit code, and truncated stdout/stderr so Activity Details, Copy Log,
+retry, and recovery views have execution evidence. The plan does not run tests, create
 snapshots, apply diffs, restore snapshots, commit, install dependencies, use
-network access, or execute shell commands.
+network access, or execute shell commands. Blocked or invalid run attempts are
+also recorded as `blocked` activity before the API returns the validation error.
+Code Workspace agent runs also write operator activity with the task, model,
+selected files, snapshot id, diff/test state, and blocked/failure status without
+storing the full proposed diff in the activity ledger.
+Diff validation runs write operator activity with snapshot id, patch/test exit
+codes, truncated output, and pass/fail status before the temporary snapshot is
+restored.
 
 The Command Center Build Watch Plan uses `/api/operator/build-watch-plan` to
 inspect workspace metadata, infer candidate build/check commands, and show the

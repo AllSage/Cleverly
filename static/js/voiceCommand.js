@@ -1,6 +1,6 @@
 // Command Center voice controller: transcribe once, then route through commands.
 
-import operatorCommands from './operatorCommands.js?v=20260621-code-run-ledger';
+import operatorCommands from './operatorCommands.js?v=20260621-code-run-backend-ledger';
 import voiceRecorder from './voiceRecorder.js?v=20260620-voice-setup';
 
 let _initialized = false;

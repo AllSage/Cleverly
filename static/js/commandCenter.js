@@ -1,10 +1,10 @@
 // Cleverly Command Center: local status dashboard and tool command router.
 
-import operatorCommands from './operatorCommands.js?v=20260621-code-run-ledger';
+import operatorCommands from './operatorCommands.js?v=20260621-code-run-backend-ledger';
 import { styledConfirm, styledPrompt } from './ui.js';
-import voiceCommand from './voiceCommand.js?v=20260621-code-run-ledger';
+import voiceCommand from './voiceCommand.js?v=20260621-code-run-backend-ledger';
 
-const COMMAND_CENTER_VERSION = '20260621-code-run-ledger';
+const COMMAND_CENTER_VERSION = '20260621-code-run-backend-ledger';
 const WORKFLOW_CATALOG_VERSION = COMMAND_CENTER_VERSION;
 let _apiBase = '';
 let _initialized = false;
