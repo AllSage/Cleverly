@@ -4825,12 +4825,14 @@ async function _cmdShortcuts(args, ctx) {
   // Try to load user keybinds from settings
   let keybinds = {
     search: 'ctrl+k',
+    command_palette: 'ctrl+shift+p',
     toggle_sidebar: 'ctrl+b',
     new_session: 'ctrl+alt+n',
     star_session: 'ctrl+alt+s',
     delete_session: 'ctrl+alt+d',
     admin_panel: 'ctrl+shift+u',
     cancel: 'escape',
+    voice_command: 'alt+shift+v',
   };
 
   try {
@@ -4851,6 +4853,8 @@ async function _cmdShortcuts(args, ctx) {
 
   const entries = [
     [formatCombo(keybinds.search), 'Search conversations'],
+    [formatCombo(keybinds.command_palette), 'Command palette'],
+    [formatCombo(keybinds.voice_command), 'Voice command'],
     [formatCombo(keybinds.toggle_sidebar), 'Toggle sidebar'],
     [formatCombo(keybinds.new_session), 'New session'],
     [formatCombo(keybinds.star_session), 'Star / unstar session'],

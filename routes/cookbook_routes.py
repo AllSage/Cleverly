@@ -1842,6 +1842,26 @@ def setup_cookbook_routes() -> APIRouter:
             if _tport and not _SSH_PORT_RE.match(str(_tport)):
                 logger.warning(f"Skipping task with unsafe sshPort: {_tport!r}")
                 continue
+            stored_status = str(task.get("status") or "").strip().lower()
+            if stored_status in {"archived", "resolved", "dismissed"}:
+                results.append({
+                    "session_id": session_id,
+                    "type": task_type,
+                    "model": model.split("/")[-1] if "/" in model else model,
+                    "status": stored_status,
+                    "progress": task.get("archive_reason") or task.get("resolved_reason") or "",
+                    "phase": "",
+                    "diagnosis": None,
+                    "output_tail": task.get("output", "")[-1200:] if isinstance(task.get("output"), str) else "",
+                    "cmd": _payload.get("_cmd") or "",
+                    "tps": None,
+                    "reqs": None,
+                    "pct": None,
+                    "remote": remote or "local",
+                    "previous_status": task.get("previous_status") or "",
+                    "archived_at": task.get("archived_at") or "",
+                })
+                continue
             if task_platform == "windows" and remote:
                 # Windows: check PID file + Get-Process, read log tail
                 sd = "$env:TEMP\\cleverly-sessions"

@@ -135,6 +135,8 @@ def test_request_model_validators_cover_invalid_and_valid_values():
 
     assert MemoryAddRequest(text="remember this", category="unknown").category == "fact"
     assert MemoryAddRequest(text="remember this", category="goal").category == "goal"
+    assert MemoryAddRequest(text="remember this", category="decision").category == "decision"
+    assert MemoryAddRequest(text="remember this", category="workflow").category == "workflow"
 
 
 def test_operator_checks_route_returns_run_operator_checks(monkeypatch):

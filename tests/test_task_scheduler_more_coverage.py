@@ -577,3 +577,80 @@ async def test_check_due_and_chained_dispatch(monkeypatch):
     await scheduler._run_chained("due1")
     await scheduler._run_chained("new")
     assert "new" in dispatched
+
+
+@pytest.mark.asyncio
+async def test_policy_disabled_task_is_skipped_and_paused(monkeypatch):
+    import src.task_scheduler as ts
+
+    scheduler = _scheduler()
+    task = SimpleNamespace(
+        id="task1",
+        name="Email Mark Boundaries",
+        owner="alice",
+        status="active",
+        task_type="action",
+        action="mark_email_boundaries",
+        trigger_type="schedule",
+        trigger_event="",
+        output_target="session",
+        next_run=datetime.utcnow(),
+        last_run=None,
+    )
+    run = SimpleNamespace(
+        id="run1",
+        task_id="task1",
+        status="queued",
+        result="Queued",
+        error=None,
+        started_at=None,
+        finished_at=None,
+    )
+
+    class Query:
+        def __init__(self, row):
+            self.row = row
+
+        def filter(self, *args):
+            return self
+
+        def first(self):
+            return self.row
+
+    class DB:
+        def __init__(self):
+            self.commits = 0
+
+        def query(self, model):
+            if model is FakeScheduledTask:
+                return Query(task)
+            if model is FakeTaskRun:
+                return Query(run)
+            return Query(None)
+
+        def commit(self):
+            self.commits += 1
+
+        def close(self):
+            self.closed = True
+
+    db = DB()
+    _install_core_database(monkeypatch, lambda: db)
+    monkeypatch.setattr(
+        ts,
+        "task_feature_disabled_reason",
+        lambda values: "Email task actions are disabled in offline mode."
+        if values.get("action") == "mark_email_boundaries"
+        else None,
+    )
+
+    await scheduler._execute_task_locked("task1", "run1", release_executing=False)
+
+    assert run.status == "skipped"
+    assert run.result == "Email task actions are disabled in offline mode."
+    assert run.error is None
+    assert run.finished_at is not None
+    assert task.status == "paused"
+    assert task.next_run is None
+    assert task.last_run is not None
+    assert db.commits >= 2

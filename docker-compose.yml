@@ -49,6 +49,8 @@ services:
       # Default offline mode avoids embedding model downloads on first boot.
       # Set to "1" only after pre-seeding FASTEMBED_CACHE_PATH with the model.
       CLEVERLY_OFFLINE_EMBEDDINGS: "0"
+      # No-download lexical embedding fallback keeps RAG available while sealed.
+      CLEVERLY_HASH_EMBEDDINGS: "1"
       SEARXNG_INSTANCE: ""
       OPENAI_API_KEY: ""
       RESEARCH_LLM_ENDPOINT: ""
@@ -71,8 +73,10 @@ services:
     depends_on:
       searxng:
         condition: service_healthy
+        required: false
       chromadb:
         condition: service_started
+        required: false
       cleverly_code_worker:
         condition: service_started
     restart: unless-stopped
@@ -136,25 +140,33 @@ services:
     restart: unless-stopped
 
   chromadb:
-    image: docker.io/chromadb/chroma:latest
+    image: ${CHROMADB_IMAGE:-ghcr.io/chroma-core/chroma:latest}
     pull_policy: never
+    profiles:
+      - support
     init: true
     security_opt:
       - no-new-privileges:true
     networks:
       - offline_private
     volumes:
-      - chromadb-data:/chroma/chroma
+      - chromadb-data:/data
     environment:
       - ANONYMIZED_TELEMETRY=FALSE
     restart: unless-stopped
 
   searxng:
-    image: docker.io/searxng/searxng:latest
+    image: ${SEARXNG_IMAGE:-ghcr.io/searxng/searxng:latest}
     pull_policy: never
+    profiles:
+      - support
     init: true
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
     security_opt:
       - no-new-privileges:true
     tmpfs:
@@ -176,6 +188,7 @@ services:
         exec /usr/local/searxng/entrypoint.sh
     volumes:
       - searxng-data:/etc/searxng
+      - searxng-cache:/var/cache/searxng
       - ./config/searxng/settings.yml:/tmp/searxng-settings.yml.template:ro
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080/
@@ -191,6 +204,8 @@ services:
   ntfy:
     image: docker.io/binwiederhier/ntfy
     pull_policy: never
+    profiles:
+      - support
     init: true
     security_opt:
       - no-new-privileges:true
@@ -225,5 +240,10 @@ volumes:
   cleverly-npm-cache:
     name: cleverly-npm-cache
   searxng-data:
+    name: cleverly-searxng-data
+  searxng-cache:
+    name: cleverly-searxng-cache
   chromadb-data:
+    name: cleverly-chromadb-data
   ntfy-cache:
+    name: cleverly-ntfy-cache

@@ -250,6 +250,85 @@ def test_default_chat_uses_owned_endpoint_as_regular_user_last_resort(monkeypatc
     }
 
 
+def test_api_tokens_must_be_bound_to_owner():
+    from src.auth_helpers import require_api_scope
+
+    ok = SimpleNamespace(
+        state=SimpleNamespace(api_token=True, api_token_scopes=["chat"], api_token_owner="alice")
+    )
+    assert require_api_scope(ok, "chat") == "alice"
+
+    missing_owner = SimpleNamespace(
+        state=SimpleNamespace(api_token=True, api_token_scopes=["chat"], api_token_owner=None)
+    )
+    with pytest.raises(HTTPException) as exc:
+        require_api_scope(missing_owner, "chat")
+    assert exc.value.status_code == 403
+
+
+def test_require_admin_internal_token_requires_direct_loopback(monkeypatch):
+    import core.middleware as middleware
+
+    request = SimpleNamespace(
+        headers={
+            middleware.INTERNAL_TOOL_HEADER: middleware.INTERNAL_TOOL_TOKEN,
+            "x-forwarded-for": "203.0.113.10",
+        },
+        client=SimpleNamespace(host="127.0.0.1"),
+        state=SimpleNamespace(current_user=None),
+        app=SimpleNamespace(state=SimpleNamespace(
+            auth_manager=SimpleNamespace(is_configured=True, is_admin=lambda _user: False)
+        )),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        middleware.require_admin(request)
+    assert exc.value.status_code == 403
+
+
+def test_endpoint_resolver_first_visible_endpoint_filters_owner(monkeypatch):
+    import src.auth_helpers as auth_helpers
+    import src.endpoint_resolver as resolver
+
+    rows = [
+        SimpleNamespace(id="bob", owner="bob", is_enabled=True, model_type="chat"),
+        SimpleNamespace(id="alice", owner="alice", is_enabled=True, model_type="chat"),
+        SimpleNamespace(id="shared", owner=None, is_enabled=True, model_type="chat"),
+    ]
+
+    class Query:
+        def __init__(self, items):
+            self.rows = list(items)
+
+        def filter(self, *_conditions):
+            return self
+
+        def first(self):
+            return self.rows[0] if self.rows else None
+
+        def all(self):
+            return list(self.rows)
+
+    class DB:
+        def query(self, _model):
+            return Query(rows)
+
+        def close(self):
+            pass
+
+    def scoped_owner_filter(query, _model_cls, user, *, include_shared=True):
+        query.rows = [
+            row for row in query.rows
+            if row.owner == user or (include_shared and row.owner is None)
+        ]
+        return query
+
+    monkeypatch.setattr(resolver, "SessionLocal", lambda: DB())
+    monkeypatch.setattr(auth_helpers, "owner_filter", scoped_owner_filter)
+
+    assert resolver.first_visible_endpoint(owner="alice").id == "alice"
+
+
 def test_models_allows_auth_disabled_direct_loopback_only(monkeypatch):
     _install_model_route_import_stubs(monkeypatch)
     import routes.model_routes as model_routes

@@ -31,6 +31,7 @@ from email.mime.multipart import MIMEMultipart
 
 from src.llm_core import llm_call_async
 from src.compat import first_column
+from src.call_compat import call_with_optional_owner
 
 from routes.email_helpers import (
     _strip_think, _extract_reply, _apply_email_style_mechanics, _load_settings, _save_settings, _get_email_config,
@@ -244,9 +245,9 @@ async def _auto_summarize_pass_single(days_back: int = 1, account_id: str | None
         if auto_spam and not spam_folder:
             logger.warning("Auto-spam enabled but no Junk/Spam folder detected — will classify but not move")
 
-        url, model, headers = resolve_endpoint("utility")
+        url, model, headers = call_with_optional_owner(resolve_endpoint, "utility", owner=_acct_owner)
         if not url:
-            url, model, headers = resolve_endpoint("default")
+            url, model, headers = call_with_optional_owner(resolve_endpoint, "default", owner=_acct_owner)
         if not url or not model:
             conn.logout()
             return "No model configured"

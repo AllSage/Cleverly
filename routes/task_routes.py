@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from core.database import SessionLocal, ScheduledTask, TaskRun
 from src.auth_helpers import get_current_user
+from src.call_compat import call_with_optional_owner
 from src.task_scheduler import compute_next_run, HOUSEKEEPING_DEFAULTS
 from src.task_feature_guards import (
     action_allowed,
@@ -190,7 +191,11 @@ def _resolve_run_endpoint(db, task: ScheduledTask, run: TaskRun) -> str:
 
     try:
         from core.database import ModelEndpoint
-        eps = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()
+        from src.auth_helpers import owner_filter
+        q = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)
+        if getattr(task, "owner", None):
+            q = owner_filter(q, ModelEndpoint, task.owner)
+        eps = q.all()
         for ep in eps:
             cached = []
             if ep.cached_models:
@@ -1022,9 +1027,10 @@ def setup_task_routes(task_scheduler) -> APIRouter:
             "use cron '0 H * * 1-5'. Keep the prompt actionable and self-contained."
         )
         try:
-            url, model, headers = resolve_endpoint("utility")
+            user = _owner(request)
+            url, model, headers = call_with_optional_owner(resolve_endpoint, "utility", owner=user)
             if not url:
-                url, model, headers = resolve_endpoint("default")
+                url, model, headers = call_with_optional_owner(resolve_endpoint, "default", owner=user)
             if not (url and model):
                 return {"success": False, "message": "No model endpoint configured"}
             raw = await llm_call_async(

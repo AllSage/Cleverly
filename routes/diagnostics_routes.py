@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Form, Request
 from services.youtube.youtube_handler import extract_youtube_id, extract_transcript_async
 from core.constants import DEFAULT_HOST
 from core.middleware import require_admin
+from src.rag_singleton import get_rag_error, get_rag_manager
 from src.settings import load_features, offline_mode
 
 logger = logging.getLogger(__name__)
@@ -46,8 +47,12 @@ def setup_diagnostics_routes(
     @router.get("/api/rag/stats")
     async def get_rag_stats(request: Request) -> Dict[str, Any]:
         require_admin(request)
-        if rag_available and rag_manager:
-            return rag_manager.get_stats()
+        manager = rag_manager if rag_available and rag_manager else get_rag_manager()
+        if manager:
+            return manager.get_stats()
+        detail = get_rag_error()
+        if detail:
+            return {"error": "RAG system not available", "detail": detail}
         return {"error": "RAG system not available"}
 
     @router.get("/api/test/youtube")

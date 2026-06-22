@@ -723,8 +723,9 @@ def test_webhook_sync_chat_existing_and_direct_sessions(monkeypatch):
     assert missing_session.value.status_code == 404
 
     monkeypatch.setattr(auth_helpers, "get_current_user", lambda _request: (_ for _ in ()).throw(RuntimeError("no request user")))
-    no_user_owner_check = asyncio.run(sync_chat(RequestLike(user=None, token_owner=None), SimpleNamespace(message="hi", session="other", api_key=None, model=None, base_url=None, provider=None)))
-    assert no_user_owner_check["session_id"] == "other"
+    with pytest.raises(HTTPException) as ownerless_token:
+        asyncio.run(sync_chat(RequestLike(user=None, token_owner=None), SimpleNamespace(message="hi", session="other", api_key=None, model=None, base_url=None, provider=None)))
+    assert ownerless_token.value.status_code == 403
     monkeypatch.setattr(auth_helpers, "get_current_user", lambda request: request.state.current_user)
 
     existing = asyncio.run(sync_chat(RequestLike(token_owner="alice"), SimpleNamespace(message="hi", session="s1", api_key=None, model=None, base_url=None, provider=None)))
@@ -821,6 +822,7 @@ def test_webhook_sync_chat_existing_and_direct_sessions(monkeypatch):
 
     core_database = importlib.import_module("core.database")
     monkeypatch.setattr(core_database, "ModelEndpoint", Endpoint)
+    monkeypatch.setattr(webhook_routes, "owner_filter", lambda query, *_args, **_kwargs: query)
     monkeypatch.setattr(webhook_routes, "SessionLocal", lambda: DB(Endpoint()))
 
     class Response:

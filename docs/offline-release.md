@@ -87,8 +87,8 @@ Save the images to a portable archive:
 docker save \
   cleverly:local \
   cleverly-ollama:local \
-  docker.io/chromadb/chroma:latest \
-  docker.io/searxng/searxng:latest \
+  ghcr.io/chroma-core/chroma:latest \
+  ghcr.io/searxng/searxng:latest \
   docker.io/binwiederhier/ntfy:latest \
   -o cleverly-offline-images.tar
 ```
@@ -245,7 +245,7 @@ On Windows, the bundled doctor command runs the same practical checks:
 
 ## Chroma, RAG, and Embeddings
 
-Chroma works offline only if the `docker.io/chromadb/chroma:latest` image was
+Chroma works offline only if the `ghcr.io/chroma-core/chroma:latest` image was
 loaded before startup. If the image is missing and you use `--pull never`,
 Compose will refuse to start that service.
 

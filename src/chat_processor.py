@@ -41,6 +41,69 @@ def _content_tokens(text: str) -> list:
     return [w for w in words if len(w) >= 3 and w not in _STOPWORDS]
 
 
+def _local_document_search_query(message: str) -> str:
+    """Return the requested local-document query, or empty when not explicit."""
+    text = str(message or "").strip()
+    if not re.search(r"\b(search|find|lookup|look\s+up)\b", text, re.I):
+        return ""
+    if not re.search(r"\b(local\s+)?(documents?|docs?|files?|library)\b", text, re.I):
+        return ""
+    query = re.sub(r"^cleverly[,\s]+", "", text, flags=re.I).strip()
+    query = re.sub(r"\b(search|find|look\s+up|lookup)\b", "", query, count=1, flags=re.I).strip()
+    query = re.sub(r"\b(my\s+)?(local\s+)?(documents?|docs?|files?|library)\b", "", query, flags=re.I).strip()
+    query = re.sub(r"^(for|about|on|in|for:)\b", "", query, flags=re.I).strip(" :.-")
+    return re.sub(r"\s+", " ", query).strip()
+
+
+def _rag_search(rag_manager: Any, query: str, *, k: int, owner: Optional[str]) -> list[Dict[str, Any]]:
+    """Call old and new RAG search signatures without losing owner support."""
+    try:
+        return list(rag_manager.search(query, k=k, owner=owner) or [])
+    except TypeError as exc:
+        if "owner" not in str(exc):
+            raise
+        return list(rag_manager.search(query, k=k) or [])
+
+
+def _metadata_filename(metadata: Dict[str, Any]) -> str:
+    source = metadata.get("source") or ""
+    return metadata.get("filename") or (source.rsplit("/", 1)[-1] if source else "") or "unknown"
+
+
+def _keyword_document_results(personal_docs_manager: Any, query: str, k: int = 5) -> list[Dict[str, Any]]:
+    """Search the in-memory personal-doc index when vector search has no hit."""
+    try:
+        from src.personal_docs import tokenize
+    except Exception:
+        return []
+    query_tokens = tokenize(query)
+    if not query_tokens:
+        return []
+    scored: list[tuple[int, Dict[str, Any], int, str]] = []
+    for file_item in getattr(personal_docs_manager, "index", []) or []:
+        if not isinstance(file_item, dict):
+            continue
+        for chunk_idx, chunk in enumerate(file_item.get("chunks") or []):
+            score = len(query_tokens & tokenize(chunk))
+            if score > 0:
+                scored.append((score, file_item, chunk_idx, chunk))
+    scored.sort(key=lambda item: item[0], reverse=True)
+    results: list[Dict[str, Any]] = []
+    for score, file_item, chunk_idx, chunk in scored[:k]:
+        source = file_item.get("path") or ""
+        results.append({
+            "similarity": min(0.8, max(0.05, score / max(len(query_tokens), 1))),
+            "metadata": {
+                "filename": file_item.get("name") or _metadata_filename({"source": source}),
+                "source": source,
+                "chunk_id": chunk_idx,
+                "search_type": "keyword",
+            },
+            "document": chunk,
+        })
+    return results
+
+
 class ChatProcessor:
     def __init__(self, memory_manager, personal_docs_manager, memory_vector=None, skills_manager=None):
         self.memory_manager = memory_manager
@@ -236,32 +299,86 @@ class ChatProcessor:
             # (skills index injection moved out — see below; only fires in
             # agent mode so chat mode and incognito stay clean.)
 
-        # RAG: search if enabled and rag_manager available, inject only above threshold
+        local_doc_query = _local_document_search_query(message)
+
+        # RAG: search if enabled and rag_manager available, inject only above threshold.
+        # Explicit local-document searches are different from passive context:
+        # they should return search evidence or a clear no-match result.
         if use_rag:
             try:
                 rag_manager = getattr(self.personal_docs_manager, 'rag_manager', None)
-                if rag_manager:
-                    results = rag_manager.search(message, k=5, owner=owner)
-                    # Filter by similarity threshold
+                search_query = local_doc_query or message
+                results = _rag_search(rag_manager, search_query, k=5, owner=owner) if rag_manager else []
+                # Filter by similarity threshold for passive RAG. Explicit local
+                # search keeps returned vector results, then uses keyword
+                # fallback if vector search has no usable hit.
+                if local_doc_query:
+                    relevant = [r for r in results if r.get("document")]
+                    if not relevant:
+                        relevant = _keyword_document_results(self.personal_docs_manager, local_doc_query, k=5)
+                else:
                     relevant = [r for r in results if r.get("similarity", 0) >= self.RAG_SIMILARITY_THRESHOLD]
-                    if relevant:
-                        logger.info(f"RAG: {len(relevant)}/{len(results)} results above threshold {self.RAG_SIMILARITY_THRESHOLD}")
-                        rag_sources = [
-                            {
-                                "filename": r["metadata"].get("filename", r["metadata"].get("source", "unknown")),
-                                "snippet": r["document"][:200],
-                                "similarity": round(r.get("similarity", 0), 3)
-                            }
-                            for r in relevant
-                        ]
-                        rag_content = "Relevant documents:\n\n" + "\n\n---\n\n".join(
-                            f"[{s['filename']}]\n{r['document']}" for s, r in zip(rag_sources, relevant)
-                        )
-                        if len(rag_content) > 10000:
-                            rag_content = rag_content[:10000] + "\n[Truncated]"
-                        preface.append(untrusted_context_message("retrieved documents", rag_content))
+                if local_doc_query:
+                    preface.append({
+                        "role": "system",
+                        "content": (
+                            "The user explicitly asked Cleverly to search local documents. "
+                            "Use the local document search evidence when present. If no "
+                            "matches are present, say that no matching indexed local "
+                            "documents were found. Do not claim you cannot access local "
+                            "files; explain that only indexed local documents are searched."
+                        ),
+                    })
+                if relevant:
+                    logger.info(f"RAG: {len(relevant)}/{len(results)} local document results")
+                    rag_sources = [
+                        {
+                            "filename": _metadata_filename(r.get("metadata") or {}),
+                            "snippet": str(r.get("document") or "")[:200],
+                            "similarity": round(r.get("similarity", 0), 3)
+                        }
+                        for r in relevant
+                    ]
+                    heading = "Local document search results" if local_doc_query else "Relevant documents"
+                    rag_content = f"{heading}:\n\n" + "\n\n---\n\n".join(
+                        f"[{s['filename']}]\n{r['document']}" for s, r in zip(rag_sources, relevant)
+                    )
+                    if len(rag_content) > 10000:
+                        rag_content = rag_content[:10000] + "\n[Truncated]"
+                    preface.append(untrusted_context_message("retrieved documents", rag_content))
+                elif local_doc_query:
+                    preface.append({
+                        "role": "system",
+                        "content": (
+                            f"Local document search completed for query '{local_doc_query}', "
+                            "but no matching indexed local documents were found."
+                        ),
+                    })
             except Exception as e:
                 logger.warning(f"RAG retrieval failed: {e}")
+                if local_doc_query:
+                    fallback = _keyword_document_results(self.personal_docs_manager, local_doc_query, k=5)
+                    if fallback:
+                        rag_sources = [
+                            {
+                                "filename": _metadata_filename(r.get("metadata") or {}),
+                                "snippet": str(r.get("document") or "")[:200],
+                                "similarity": round(r.get("similarity", 0), 3),
+                            }
+                            for r in fallback
+                        ]
+                        rag_content = "Local document keyword search results:\n\n" + "\n\n---\n\n".join(
+                            f"[{s['filename']}]\n{r['document']}" for s, r in zip(rag_sources, fallback)
+                        )
+                        preface.append(untrusted_context_message("retrieved documents", rag_content))
+                    else:
+                        preface.append({
+                            "role": "system",
+                            "content": (
+                                "Local document search was requested, but vector retrieval failed "
+                                "and the local keyword index found no matches."
+                            ),
+                        })
 
         # Add web search if enabled
         web_sources = []

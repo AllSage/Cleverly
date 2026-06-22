@@ -22,6 +22,7 @@ let _browserTranscript = '';
 
 // Cached STT provider — refreshed on settings change
 let _sttProvider = 'disabled';
+let _settingsListenerBound = false;
 
 /**
  * Fetch current STT provider from server settings
@@ -74,7 +75,7 @@ function _resetRecordingUI() {
  */
 function startBrowserSTT() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) return;
+  if (!SpeechRecognition) return false;
 
   _browserTranscript = '';
   _recognition = new SpeechRecognition();
@@ -95,6 +96,7 @@ function startBrowserSTT() {
   };
 
   _recognition.start();
+  return true;
 }
 
 function stopBrowserSTT() {
@@ -145,19 +147,46 @@ function insertTranscription(text, showToast) {
   if (showToast) showToast('Transcribed');
 }
 
+async function deliverTranscription(text, provider, showToast, options = {}) {
+  const transcript = String(text || '').trim();
+  if (!transcript) return false;
+  if (typeof options.onTranscription === 'function') {
+    await options.onTranscription(transcript, { provider });
+  } else {
+    insertTranscription(transcript, showToast);
+  }
+  return true;
+}
+
+function notifyNoSpeech(showToast, options = {}) {
+  if (typeof options.onNoSpeech === 'function') {
+    options.onNoSpeech();
+  } else if (showToast) {
+    showToast('No speech detected');
+  }
+}
+
+function notifyOptionError(error, options = {}) {
+  if (typeof options.onError === 'function') {
+    try { options.onError(error); } catch (_) {}
+  }
+}
+
 /**
  * Start voice recording
  */
-export function startRecording(onFileCreated, showToast, showError) {
+export function startRecording(onFileCreated, showToast, showError, options = {}) {
   // Check for secure context (getUserMedia requires HTTPS or localhost)
   if (!window.isSecureContext) {
     if (showError) showError('Microphone requires HTTPS. Use a reverse proxy with SSL or access via localhost.');
+    notifyOptionError(new Error('Microphone requires HTTPS or localhost'), options);
     _resetRecordingUI();
     return;
   }
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     if (showError) showError('Microphone not supported in this browser.');
+    notifyOptionError(new Error('Microphone not supported in this browser'), options);
     _resetRecordingUI();
     return;
   }
@@ -183,11 +212,13 @@ export function startRecording(onFileCreated, showToast, showError) {
         if (provider === 'browser') {
           const transcript = stopBrowserSTT();
           if (transcript) {
-            insertTranscription(transcript, showToast);
+            await deliverTranscription(transcript, provider, showToast, options);
           } else {
-            if (showToast) showToast('No speech detected');
-            const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
-            if (onFileCreated) onFileCreated(audioFile);
+            notifyNoSpeech(showToast, options);
+            if (!options.requireTranscription) {
+              const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
+              if (onFileCreated) onFileCreated(audioFile);
+            }
           }
         } else if (provider === 'local' || provider.startsWith('endpoint:')) {
           // Show "Transcribing..." feedback
@@ -195,34 +226,51 @@ export function startRecording(onFileCreated, showToast, showError) {
           try {
             const transcript = await transcribeOnServer(audioBlob);
             if (transcript) {
-              insertTranscription(transcript, showToast);
+              await deliverTranscription(transcript, provider, showToast, options);
             } else {
-              if (showToast) showToast('No speech detected');
+              notifyNoSpeech(showToast, options);
             }
           } catch (e) {
             console.error('STT transcription error:', e);
+            notifyOptionError(e, options);
             if (showError) showError('Transcription failed: ' + e.message);
             // Fallback: attach as file
-            const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
-            if (onFileCreated) onFileCreated(audioFile);
+            if (!options.requireTranscription) {
+              const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
+              if (onFileCreated) onFileCreated(audioFile);
+            }
           }
         } else {
           // STT disabled — attach audio file
-          const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
-          if (onFileCreated) onFileCreated(audioFile);
+          if (options.requireTranscription) {
+            notifyNoSpeech(showToast, options);
+          } else {
+            const audioFile = new File([audioBlob], `voice-message-${Date.now()}.webm`, { type: 'audio/webm' });
+            if (onFileCreated) onFileCreated(audioFile);
+          }
         }
 
         _resetRecordingUI();
+        if (typeof options.onStop === 'function') options.onStop();
       };
+
+      // Start browser STT if that's the provider
+      if (_sttProvider === 'browser') {
+        const started = startBrowserSTT();
+        if (!started && options.requireTranscription) {
+          stream.getTracks().forEach(track => track.stop());
+          _resetRecordingUI();
+          const error = new Error('Browser speech recognition is not supported');
+          if (showError) showError(error.message);
+          notifyOptionError(error, options);
+          return;
+        }
+      }
 
       mediaRecorder.start();
       isRecording = true;
       recordingStartTime = new Date();
-
-      // Start browser STT if that's the provider
-      if (_sttProvider === 'browser') {
-        startBrowserSTT();
-      }
+      if (typeof options.onStart === 'function') options.onStart({ provider: _sttProvider });
 
       if (showToast) {
         showToast('Recording...');
@@ -239,6 +287,7 @@ export function startRecording(onFileCreated, showToast, showError) {
           showError('Microphone error: ' + error.message);
         }
       }
+      notifyOptionError(error, options);
       _resetRecordingUI();
     });
 }
@@ -267,6 +316,17 @@ export function getIsRecording() {
  */
 export function init() {
   isRecording = false;
+  if (!_settingsListenerBound) {
+    document.addEventListener('cleverly-voice-settings-changed', () => {
+      refreshSttProvider();
+    });
+    window.cleverlyVoiceRecorder = {
+      refreshSttProvider,
+      getProvider: () => _sttProvider,
+      getIsRecording,
+    };
+    _settingsListenerBound = true;
+  }
   refreshSttProvider();
 }
 

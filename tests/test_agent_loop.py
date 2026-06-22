@@ -412,8 +412,8 @@ def test_agent_loop_base_prompt_cache_is_scoped_by_owner(monkeypatch):
     )
 
     assert calls == ["alice", "bob"]
-    assert alice_messages[0]["content"] == "prompt for alice"
-    assert bob_messages[0]["content"] == "prompt for bob"
+    assert "prompt for alice" in alice_messages[0]["content"]
+    assert "prompt for bob" in bob_messages[0]["content"]
 
 
 def test_agent_loop_message_context_tool_resolution_and_append(monkeypatch):

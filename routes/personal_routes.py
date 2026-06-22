@@ -3,7 +3,7 @@
 import os
 import logging
 import uuid
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Depends
 from src.request_models import DirectoryRequest
 from core.constants import BASE_DIR, PERSONAL_DIR
@@ -47,6 +47,65 @@ def _unique_personal_upload_path(upload_dir: str, original_name: str | None) -> 
     if os.path.commonpath([file_path, upload_abs]) != upload_abs:
         raise ValueError("Unsafe upload filename")
     return file_path, filename, safe_name
+
+
+def _search_snippet(text: str, limit: int = 520) -> str:
+    snippet = " ".join(str(text or "").split())
+    if len(snippet) <= limit:
+        return snippet
+    return f"{snippet[:limit - 1].rstrip()}..."
+
+
+def _vector_search_result(result: Dict[str, Any], idx: int) -> Dict[str, Any]:
+    metadata = result.get("metadata") or {}
+    source = metadata.get("source") or ""
+    title = metadata.get("filename") or (os.path.basename(source) if source else "") or metadata.get("title") or f"Result {idx + 1}"
+    return {
+        "id": result.get("id") or f"vector-{idx}",
+        "title": title,
+        "source": source,
+        "directory": metadata.get("directory") or "",
+        "type": metadata.get("type") or "",
+        "chunk": metadata.get("chunk_id"),
+        "snippet": _search_snippet(result.get("document") or ""),
+        "score": result.get("similarity"),
+        "distance": result.get("distance"),
+        "search_type": "vector",
+    }
+
+
+def _keyword_search_results(personal_index: List[Dict[str, Any]], query: str, limit: int) -> List[Dict[str, Any]]:
+    from src.personal_docs import tokenize
+
+    query_tokens = tokenize(query)
+    if not query_tokens:
+        return []
+
+    scored = []
+    for file_item in personal_index or []:
+        for chunk_idx, chunk in enumerate(file_item.get("chunks") or []):
+            score = len(query_tokens & tokenize(chunk))
+            if score > 0:
+                scored.append((score, file_item, chunk_idx, chunk))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    results = []
+    for score, file_item, chunk_idx, chunk in scored[:limit]:
+        source = file_item.get("path") or ""
+        results.append({
+            "id": f"keyword-{len(results)}",
+            "title": file_item.get("name") or (os.path.basename(source) if source else f"Result {len(results) + 1}"),
+            "source": source,
+            "directory": file_item.get("source_dir") or "",
+            "type": os.path.splitext(source)[1].lower(),
+            "chunk": chunk_idx,
+            "snippet": _search_snippet(chunk),
+            "score": score,
+            "distance": None,
+            "search_type": "keyword",
+        })
+    return results
+
 
 def setup_personal_routes(personal_docs_manager, rag_manager, rag_available):
     """
@@ -93,6 +152,56 @@ def setup_personal_routes(personal_docs_manager, rag_manager, rag_available):
     def api_personal_reload(owner: str = Depends(require_user), _admin: None = Depends(require_admin)):
         personal_docs_manager.refresh_index()
         return {"ok": True, "count": len(personal_docs_manager.index)}
+
+    @router.get("/search")
+    def search_personal_documents(
+        request: Request,
+        q: str = Query(..., min_length=1),
+        limit: int = Query(5, ge=1, le=20),
+        owner: str = Depends(require_user),
+        _admin: None = Depends(require_admin),
+    ):
+        """Search local personal documents through RAG, then keyword fallback."""
+        query = (q or "").strip()
+        if not query:
+            raise HTTPException(400, "Search query is required")
+
+        rag = _rag()
+        vector_error = ""
+        embedding_model = ""
+        if rag:
+            try:
+                vector_results = rag.search(query, k=limit, owner=owner or None)
+                results = [_vector_search_result(result, idx) for idx, result in enumerate(vector_results or [])]
+                if results:
+                    try:
+                        embedding_model = (rag.get_stats() or {}).get("embedding_model", "")
+                    except Exception:
+                        embedding_model = ""
+                    return {
+                        "success": True,
+                        "query": query,
+                        "count": len(results),
+                        "search_type": "vector",
+                        "rag_available": True,
+                        "embedding_model": embedding_model,
+                        "results": results,
+                    }
+            except Exception as exc:
+                vector_error = str(exc)
+                logger.warning("Personal document vector search failed: %s", exc)
+
+        results = _keyword_search_results(getattr(personal_docs_manager, "index", []), query, limit)
+        return {
+            "success": True,
+            "query": query,
+            "count": len(results),
+            "search_type": "keyword" if results else "none",
+            "rag_available": bool(rag),
+            "embedding_model": embedding_model,
+            "vector_error": vector_error,
+            "results": results,
+        }
     
     @router.post("/add_directory")
     async def add_directory_to_rag(

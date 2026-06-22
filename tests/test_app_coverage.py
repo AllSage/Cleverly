@@ -61,6 +61,12 @@ def test_app_import_helpers_exception_handlers_and_html(monkeypatch, tmp_path):
 
     assert asyncio.run(app_module.get_version())["version"]
     assert asyncio.run(app_module.health_check())["status"] == "healthy"
+    health_paths = {
+        getattr(route, "path", "")
+        for route in app_module.app.routes
+        if getattr(route, "endpoint", None) is app_module.health_check
+    }
+    assert {"/health", "/api/health"} <= health_paths
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama.local/v1")
     runtime = asyncio.run(app_module.runtime_info())
     assert runtime["ollama_base_url"] == "http://ollama.local/v1"

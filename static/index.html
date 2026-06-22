@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Cleverly Chat</title>
+  <title>Cleverly Command Center</title>
   <link rel="icon" type="image/svg+xml" href="/static/cleverly-icon.svg?v=20260613">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#282c34">
@@ -214,8 +214,8 @@
       if (window.cleverlyInitMermaid) window.cleverlyInitMermaid();
     })();
   </script>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="modulepreload" href="/static/app.js">
+  <link rel="stylesheet" href="/static/style.css?v=20260621-code-run-ledger">
+  <link rel="modulepreload" href="/static/app.js?v=20260621-code-run-ledger">
   <link rel="modulepreload" href="/static/js/chat.js">
   <link rel="modulepreload" href="/static/js/ui.js">
   <link rel="modulepreload" href="/static/js/sessions.js">
@@ -978,13 +978,13 @@
     </div>
   </nav>
 
-  <main class="chat-container welcome-active" id="chat-container" role="region" aria-label="Chat area" aria-busy="false">
+  <main class="chat-container welcome-active command-center-home" id="chat-container" role="region" aria-label="Cleverly operating console" aria-busy="false">
     <div class="chat-top-bar">
       <button type="button" class="incognito-indicator" id="incognito-indicator" title="Nobody mode active — click to deactivate" style="display:none;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><line x1="8" y1="16" x2="16" y2="8"/><line x1="8" y1="8" x2="16" y2="16"/></svg></button>
-      <div class="chat-meta-overlay"><span id="current-meta">Cleverly Chat</span><span id="current-meta-count" class="chat-meta-count" aria-hidden="true"></span><span id="session-cost-display" class="session-cost-display" style="display:none;"></span><span class="export-dropdown-wrap" id="export-dropdown-wrap"><button type="button" class="export-dl-btn" id="export-dl-btn" title="More"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button><div class="export-dropdown-menu" id="export-dropdown-menu"><div class="export-dropdown-item" id="export-rename-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></span><span>Rename</span></div><div class="export-dropdown-item" id="export-copy-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span><span>Copy Chat</span></div><div class="export-dropdown-item" id="export-pdf-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15v-2h2a1.5 1.5 0 0 1 0 3H9z"/></svg></span><span>PDF</span></div><div class="export-dropdown-item" id="export-doc-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span><span>Save to Documents</span></div></div></span></div>    </div>
+      <div class="chat-meta-overlay"><span id="current-meta">Cleverly Command Center</span><span id="current-meta-count" class="chat-meta-count" aria-hidden="true"></span><span id="session-cost-display" class="session-cost-display" style="display:none;"></span><span class="export-dropdown-wrap" id="export-dropdown-wrap"><button type="button" class="export-dl-btn" id="export-dl-btn" title="More"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button><div class="export-dropdown-menu" id="export-dropdown-menu"><div class="export-dropdown-item" id="export-rename-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></span><span>Rename</span></div><div class="export-dropdown-item" id="export-copy-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span><span>Copy Chat</span></div><div class="export-dropdown-item" id="export-pdf-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15v-2h2a1.5 1.5 0 0 1 0 3H9z"/></svg></span><span>PDF</span></div><div class="export-dropdown-item" id="export-doc-btn"><span class="dropdown-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span><span>Save to Documents</span></div></div></span></div>    </div>
     <div id="welcome-screen">
       <div class="welcome-name"><span class="welcome-mark" aria-hidden="true">C</span>Cleverly</div>
-      <div class="welcome-sub" id="welcome-sub">Welcome, type /setup to get started.</div>
+      <div class="welcome-sub" id="welcome-sub">Private local AI operator.</div>
       <div class="welcome-tip" id="welcome-tip"></div>
       <div class="welcome-readiness" id="welcome-readiness" aria-live="polite"></div>
       <button type="button" class="incognito-btn" id="incognito-btn" title="Enable Nobody mode — no memory, no history saved">
@@ -1006,6 +1006,659 @@
           <span>Offline Check</span>
         </button>
       </div>
+      <section class="command-center" id="command-center" aria-label="Cleverly Command Center">
+        <div class="command-center-bar">
+          <div class="command-center-input-wrap">
+            <span class="command-center-prefix">Cleverly</span>
+            <input type="text" class="command-center-input" id="command-center-input" autocomplete="off" spellcheck="false" placeholder="Summarize today, open code, check containers">
+          </div>
+          <button type="button" class="welcome-action-btn command-center-voice" id="command-center-voice" title="Voice command" aria-label="Voice command" aria-pressed="false">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/><path d="M8 22h8"/></svg>
+            <span id="command-center-voice-status">Voice</span>
+          </button>
+          <button type="button" class="welcome-action-btn command-center-palette" id="command-center-palette" data-cc-action="open-command-palette" title="Command palette">
+            <span>Palette</span>
+          </button>
+          <button type="button" class="welcome-action-btn command-center-routes" id="command-center-routes" data-cc-action="open-capability-map" title="Capability map">
+            <span>Routes</span>
+          </button>
+          <button type="button" class="welcome-action-btn command-center-audit" id="command-center-audit" data-cc-action="open-console-readiness-audit" title="Console readiness audit">
+            <span>Audit</span>
+          </button>
+          <button type="button" class="welcome-action-btn command-center-runbook" id="command-center-runbook" data-cc-action="open-operator-runbook" title="Operator runbook">
+            <span>Plan</span>
+          </button>
+          <button type="button" class="welcome-action-btn command-center-briefing" id="command-center-briefing" data-cc-action="summarize-today" title="Today briefing">
+            <span>Brief</span>
+          </button>
+          <button type="button" class="welcome-action-btn primary command-center-run" id="command-center-run" title="Route command">
+            <span>Run</span>
+          </button>
+          <button type="button" class="welcome-action-btn command-center-refresh" id="command-center-refresh" title="Refresh status">
+            <span>Refresh</span>
+          </button>
+        </div>
+        <div class="command-route-preview" id="command-route-preview" data-state="idle" aria-live="polite">
+          <div class="command-route-main">
+            <span class="command-route-kicker" id="command-route-kicker">Route preview</span>
+            <strong id="command-route-title">Type a command to preview route</strong>
+            <span id="command-route-detail">No command selected</span>
+          </div>
+          <div class="command-route-meta">
+            <span class="operator-command-trust" id="command-route-trust" data-trust="local" data-mode="auto">local</span>
+            <span id="command-route-policy">Local-first</span>
+          </div>
+          <div class="command-route-flags" id="command-route-flags"></div>
+        </div>
+        <div class="cc-command-readiness-deck" id="cc-command-readiness-deck" aria-label="Command readiness">
+          <button type="button" class="cc-command-readiness-card" data-state="loading" data-cc-action="open-capability-map">
+            <span>Routes</span><strong>Checking</strong><em>operator layer</em>
+          </button>
+        </div>
+        <section class="command-center-targets" aria-label="Command targets">
+          <div class="cc-activity-head">
+            <div class="cc-panel-label">Command Targets</div>
+            <div class="cc-panel-detail" id="cc-targets-summary">Core operator phrases</div>
+          </div>
+          <div class="cc-target-health" id="cc-target-health" aria-label="Command target health"></div>
+          <div class="cc-target-command-list" id="cc-target-command-list">
+            <button type="button" class="cc-target-command" data-state="loading" data-cc-action="open-capability-map">
+              <span class="cc-target-top"><span class="cc-target-area">Routes</span><span class="cc-status-pill" data-state="loading">checking</span></span>
+              <strong class="cc-target-title">Checking local operator routes</strong>
+              <span class="cc-target-detail">Verifying command phrases, trust policy, and approval gates.</span>
+            </button>
+          </div>
+        </section>
+        <div class="cc-voice-ops" id="cc-voice-ops" aria-label="Voice operations">
+          <button type="button" class="cc-voice-chip" data-state="loading" data-cc-action="open-voice-preflight">
+            <span>Mic</span><strong>Checking</strong><em>input path</em>
+          </button>
+          <button type="button" class="cc-voice-chip" data-state="loading" data-cc-action="open-voice-preflight">
+            <span>STT</span><strong>Checking</strong><em>speech input</em>
+          </button>
+          <button type="button" class="cc-voice-chip" data-state="loading" data-cc-action="open-voice-preflight">
+            <span>TTS</span><strong>Checking</strong><em>speech output</em>
+          </button>
+          <button type="button" class="cc-voice-chip" data-state="loading" data-cc-action="start-voice-command">
+            <span>Route</span><strong>Checking</strong><em>command layer</em>
+          </button>
+          <button type="button" class="cc-voice-chip" data-state="loading" data-cc-action="open-offline">
+            <span>Privacy</span><strong>Checking</strong><em>voice boundary</em>
+          </button>
+          <button type="button" class="cc-voice-chip" data-state="loading" data-cc-action="open-activity-preflight">
+            <span>Activity</span><strong>Checking</strong><em>voice ledger</em>
+          </button>
+        </div>
+        <div class="command-center-grid" id="command-center-grid">
+          <article class="command-center-panel" data-cc-panel="operator">
+            <div class="cc-panel-topline">
+              <span class="cc-panel-label">Operator</span>
+              <span class="cc-state-dot" id="cc-operator-dot" data-state="loading"></span>
+            </div>
+            <div class="cc-panel-value" id="cc-offline-value">Checking</div>
+            <div class="cc-panel-detail" id="cc-offline-detail">Local readiness</div>
+            <div class="cc-system-ops" id="cc-system-ops" aria-label="System operations">
+              <button type="button" class="cc-system-chip" data-state="loading" data-cc-action="check-containers">
+                <span>Health</span><strong>Checking</strong><em>app status</em>
+              </button>
+              <button type="button" class="cc-system-chip" data-state="loading" data-cc-action="open-local-services-map">
+                <span>Services</span><strong>Checking</strong><em>local topology</em>
+              </button>
+              <button type="button" class="cc-system-chip" data-state="loading" data-cc-action="open-code-workspace-map">
+                <span>Worker</span><strong>Checking</strong><em>code worker</em>
+              </button>
+              <button type="button" class="cc-system-chip" data-state="loading" data-cc-action="open-container-repair-plan">
+                <span>Repair</span><strong>Checking</strong><em>approval gate</em>
+              </button>
+              <button type="button" class="cc-system-chip" data-state="loading" data-cc-action="open-offline">
+                <span>Egress</span><strong>Checking</strong><em>network policy</em>
+              </button>
+              <button type="button" class="cc-system-chip" data-state="loading" data-cc-action="open-activity-preflight">
+                <span>Activity</span><strong>Checking</strong><em>machine ledger</em>
+              </button>
+            </div>
+            <div class="cc-panel-actions">
+              <button type="button" class="cc-action-btn" data-cc-action="open-offline">Open</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-local-services-map">Services</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-trust-controls">Trust</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-autonomy-map">Autonomy</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-activity-preflight">Activity</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-local-data-map">Data</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-machine-preflight">Machine</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-voice-preflight">Voice</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-backup-preflight">Backup</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-recovery-map">Recovery</button>
+              <button type="button" class="cc-action-btn" data-cc-action="verify-model">Verify</button>
+            </div>
+          </article>
+          <article class="command-center-panel" data-cc-panel="queue">
+            <div class="cc-panel-topline">
+              <span class="cc-panel-label">Queue</span>
+              <span class="cc-state-dot" id="cc-queue-dot" data-state="loading"></span>
+            </div>
+            <div class="cc-panel-value" id="cc-queue-value">Checking</div>
+            <div class="cc-panel-detail" id="cc-queue-detail">Active local work</div>
+            <div class="cc-queue-ops" id="cc-queue-ops" aria-label="Queue operations">
+              <button type="button" class="cc-queue-chip" data-state="loading" data-cc-action="open-operations-queue">
+                <span>Active</span><strong>Checking</strong><em>running work</em>
+              </button>
+              <button type="button" class="cc-queue-chip" data-state="loading" data-cc-action="open-operations-queue">
+                <span>Failures</span><strong>Checking</strong><em>recovery queue</em>
+              </button>
+              <button type="button" class="cc-queue-chip" data-state="loading" data-cc-action="open-operations-queue">
+                <span>Policy</span><strong>Checking</strong><em>blocked work</em>
+              </button>
+              <button type="button" class="cc-queue-chip" data-state="loading" data-cc-action="open-model-preflight">
+                <span>AI Jobs</span><strong>Checking</strong><em>training/models</em>
+              </button>
+              <button type="button" class="cc-queue-chip" data-state="loading" data-cc-action="open-research-preflight">
+                <span>Research</span><strong>Checking</strong><em>local reports</em>
+              </button>
+              <button type="button" class="cc-queue-chip" data-state="loading" data-cc-action="open-activity-preflight">
+                <span>Ledger</span><strong>Checking</strong><em>command activity</em>
+              </button>
+            </div>
+            <div class="cc-panel-actions">
+              <button type="button" class="cc-action-btn" data-cc-action="open-operations-queue">Status</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-activity-preflight">Activity</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-tasks">Tasks</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-training">Training</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-research-preflight">Research</button>
+            </div>
+          </article>
+          <article class="command-center-panel" data-cc-panel="model">
+            <div class="cc-panel-topline">
+              <span class="cc-panel-label">Model</span>
+              <span class="cc-state-dot" id="cc-model-dot" data-state="loading"></span>
+            </div>
+            <div class="cc-panel-value" id="cc-model-value">Checking</div>
+            <div class="cc-panel-detail" id="cc-model-detail">Primary local model</div>
+            <div class="cc-model-ops" id="cc-model-ops" aria-label="Model operations">
+              <button type="button" class="cc-model-chip" data-state="loading" data-cc-action="open-model-preflight">
+                <span>Primary</span><strong>Checking</strong><em>default route</em>
+              </button>
+              <button type="button" class="cc-model-chip" data-state="loading" data-cc-action="open-model-routing-map">
+                <span>Routes</span><strong>Checking</strong><em>local/external</em>
+              </button>
+              <button type="button" class="cc-model-chip" data-state="loading" data-cc-action="open-embedding-preflight">
+                <span>RAG</span><strong>Checking</strong><em>vector context</em>
+              </button>
+              <button type="button" class="cc-model-chip" data-state="loading" data-cc-action="open-training-run-plan">
+                <span>Training</span><strong>Checking</strong><em>fine-tune jobs</em>
+              </button>
+              <button type="button" class="cc-model-chip" data-state="loading" data-cc-action="open-cookbook">
+                <span>Serving</span><strong>Checking</strong><em>cookbook jobs</em>
+              </button>
+              <button type="button" class="cc-model-chip" data-state="loading" data-cc-action="open-activity-preflight">
+                <span>Activity</span><strong>Checking</strong><em>model ledger</em>
+              </button>
+            </div>
+            <div class="cc-model-control-strip" id="cc-model-control-strip" aria-label="Model control readiness">
+              <button type="button" class="cc-model-control-card" data-state="loading" data-cc-action="open-model-creation-plan">
+                <span>Creation</span>
+                <strong>Checking plan</strong>
+                <em>datasets and jobs</em>
+              </button>
+            </div>
+            <div class="cc-panel-actions">
+              <button type="button" class="cc-action-btn" data-cc-action="open-model-preflight">Status</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-model-routing-map">Map</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-embedding-preflight">RAG</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-cookbook">Cookbook</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-training">Training</button>
+            </div>
+          </article>
+          <article class="command-center-panel" data-cc-panel="code">
+            <div class="cc-panel-topline">
+              <span class="cc-panel-label">Code</span>
+              <span class="cc-state-dot" id="cc-code-dot" data-state="loading"></span>
+            </div>
+            <div class="cc-panel-value" id="cc-code-value">Checking</div>
+            <div class="cc-panel-detail" id="cc-code-detail">Sealed workspaces</div>
+            <div class="cc-code-workbench" id="cc-code-workbench" aria-label="Code workspace status">
+              <button type="button" class="cc-code-chip" data-state="loading" data-cc-action="open-code-preflight">
+                <span>Explorer</span>
+                <strong>Checking</strong>
+                <em>workspace</em>
+              </button>
+            </div>
+            <div class="cc-code-command-deck" id="cc-code-command-deck" aria-label="Code workspace command deck">
+              <button type="button" class="cc-code-command-card" data-state="loading" data-cc-action="open-code">
+                <span>Quick Open</span>
+                <strong>Checking</strong>
+                <em>files and commands</em>
+              </button>
+            </div>
+            <div class="cc-panel-actions">
+              <button type="button" class="cc-action-btn" data-cc-action="open-code-preflight">Status</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-code-workspace-map">Map</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-code">Open</button>
+            </div>
+          </article>
+          <article class="command-center-panel" data-cc-panel="work">
+            <div class="cc-panel-topline">
+              <span class="cc-panel-label">Work</span>
+              <span class="cc-state-dot" id="cc-work-dot" data-state="loading"></span>
+            </div>
+            <div class="cc-panel-value" id="cc-work-value">Checking</div>
+            <div class="cc-panel-detail" id="cc-work-detail">Tasks and calendar</div>
+            <div class="cc-work-ops" id="cc-work-ops" aria-label="Work operations">
+              <button type="button" class="cc-work-chip" data-state="loading" data-cc-action="open-work-preflight">
+                <span>Tasks</span>
+                <strong>Checking</strong>
+                <em>scheduled work</em>
+              </button>
+              <button type="button" class="cc-work-chip" data-state="loading" data-cc-action="open-calendar">
+                <span>Calendar</span>
+                <strong>Checking</strong>
+                <em>next 7 days</em>
+              </button>
+              <button type="button" class="cc-work-chip" data-state="loading" data-cc-action="draft-task-from-note">
+                <span>Note to Task</span>
+                <strong>Checking</strong>
+                <em>latest note</em>
+              </button>
+              <button type="button" class="cc-work-chip" data-state="loading" data-cc-action="open-operations-queue">
+                <span>Runs</span>
+                <strong>Checking</strong>
+                <em>run ledger</em>
+              </button>
+              <button type="button" class="cc-work-chip" data-state="loading" data-cc-action="open-automation-preflight">
+                <span>Automation</span>
+                <strong>Checking</strong>
+                <em>local loops</em>
+              </button>
+              <button type="button" class="cc-work-chip" data-state="loading" data-cc-action="open-activity-preflight">
+                <span>Activity</span>
+                <strong>Checking</strong>
+                <em>work ledger</em>
+              </button>
+            </div>
+            <div class="cc-work-control-strip" id="cc-work-control-strip" aria-label="Work control readiness">
+              <button type="button" class="cc-work-control-card" data-state="loading" data-cc-action="open-work-preflight">
+                <span>Schedule</span>
+                <strong>Checking work</strong>
+                <em>tasks and calendar</em>
+              </button>
+            </div>
+            <div class="cc-panel-actions">
+              <button type="button" class="cc-action-btn" data-cc-action="open-work-preflight">Status</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-automation-map">Map</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-automation-preflight">Automation</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-tasks">Tasks</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-calendar">Calendar</button>
+            </div>
+          </article>
+          <article class="command-center-panel" data-cc-panel="memory">
+            <div class="cc-panel-topline">
+              <span class="cc-panel-label">Memory</span>
+              <span class="cc-state-dot" id="cc-memory-dot" data-state="loading"></span>
+            </div>
+            <div class="cc-panel-value" id="cc-memory-value">Checking</div>
+            <div class="cc-panel-detail" id="cc-memory-detail">Memory and notes</div>
+            <div class="cc-memory-ops" id="cc-memory-ops" aria-label="Memory operations">
+              <button type="button" class="cc-memory-op-chip" data-state="loading" data-cc-action="open-memory-profile">
+                <span>Memories</span><strong>Checking</strong><em>saved facts</em>
+              </button>
+              <button type="button" class="cc-memory-op-chip" data-state="loading" data-cc-action="open-memory-profile">
+                <span>Profile</span><strong>Checking</strong><em>preferences/projects</em>
+              </button>
+              <button type="button" class="cc-memory-op-chip" data-state="loading" data-cc-action="open-notes">
+                <span>Notes</span><strong>Checking</strong><em>local notes</em>
+              </button>
+              <button type="button" class="cc-memory-op-chip" data-state="loading" data-cc-action="open-memory-preflight">
+                <span>Recall</span><strong>Checking</strong><em>context toggles</em>
+              </button>
+              <button type="button" class="cc-memory-op-chip" data-state="loading" data-cc-action="seed-memory-profile">
+                <span>Seed</span><strong>Checking</strong><em>profile gaps</em>
+              </button>
+              <button type="button" class="cc-memory-op-chip" data-state="loading" data-cc-action="open-activity-preflight">
+                <span>Activity</span><strong>Checking</strong><em>memory ledger</em>
+              </button>
+            </div>
+            <div class="cc-memory-identity-strip" id="cc-memory-identity-strip" aria-label="Memory identity coverage">
+              <button type="button" class="cc-memory-identity-card" data-state="loading" data-cc-action="open-memory-profile">
+                <span>Identity</span>
+                <strong>Checking profile</strong>
+                <em>local memory</em>
+              </button>
+            </div>
+            <div class="cc-panel-actions">
+              <button type="button" class="cc-action-btn" data-cc-action="open-memory-preflight">Status</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-memory-profile">Profile</button>
+              <button type="button" class="cc-action-btn" data-cc-action="seed-memory-profile">Seed</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-memory">Memory</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-notes">Notes</button>
+            </div>
+          </article>
+          <article class="command-center-panel" data-cc-panel="library">
+            <div class="cc-panel-topline">
+              <span class="cc-panel-label">Library</span>
+              <span class="cc-state-dot" id="cc-library-dot" data-state="loading"></span>
+            </div>
+            <div class="cc-panel-value" id="cc-library-value">Checking</div>
+            <div class="cc-panel-detail" id="cc-library-detail">Documents and media</div>
+            <div class="cc-library-ops" id="cc-library-ops" aria-label="Library operations">
+              <button type="button" class="cc-library-chip" data-state="loading" data-cc-action="open-documents-preflight">
+                <span>Docs</span><strong>Checking</strong><em>local files</em>
+              </button>
+              <button type="button" class="cc-library-chip" data-state="loading" data-cc-action="search-local-documents">
+                <span>Search</span><strong>Checking</strong><em>document route</em>
+              </button>
+              <button type="button" class="cc-library-chip" data-state="loading" data-cc-action="open-embedding-preflight">
+                <span>RAG</span><strong>Checking</strong><em>vector index</em>
+              </button>
+              <button type="button" class="cc-library-chip" data-state="loading" data-cc-action="open-gallery">
+                <span>Gallery</span><strong>Checking</strong><em>media index</em>
+              </button>
+              <button type="button" class="cc-library-chip" data-state="loading" data-cc-action="open-research-preflight">
+                <span>Research</span><strong>Checking</strong><em>reports/jobs</em>
+              </button>
+              <button type="button" class="cc-library-chip" data-state="loading" data-cc-action="open-library-preflight">
+                <span>Activity</span><strong>Checking</strong><em>library ledger</em>
+              </button>
+            </div>
+            <div class="cc-library-control-strip" id="cc-library-control-strip" aria-label="Knowledge control readiness">
+              <button type="button" class="cc-library-control-card" data-state="loading" data-cc-action="open-library-preflight">
+                <span>Knowledge</span>
+                <strong>Checking library</strong>
+                <em>documents and research</em>
+              </button>
+            </div>
+            <div class="cc-panel-actions">
+              <button type="button" class="cc-action-btn" data-cc-action="open-library-preflight">Status</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-documents-preflight">Files</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-library">Library</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-gallery">Gallery</button>
+              <button type="button" class="cc-action-btn" data-cc-action="open-research-preflight">Research</button>
+            </div>
+          </article>
+        </div>
+        <section class="command-center-jobs" aria-label="Active local jobs">
+          <div class="cc-activity-head">
+            <div class="cc-panel-label">Active Jobs</div>
+            <div class="cc-panel-detail" id="cc-jobs-summary">Local work queue</div>
+          </div>
+          <div class="cc-job-health" id="cc-job-health" aria-label="Active job summary"></div>
+        </section>
+        <section class="command-center-next-actions" aria-label="Recommended next actions">
+          <div class="cc-activity-head">
+            <div class="cc-panel-label">Next Actions</div>
+            <div class="cc-panel-detail" id="cc-next-actions-summary">Recommended safe routes</div>
+          </div>
+          <div class="cc-next-action-list" id="cc-next-action-list">
+            <div class="cc-next-action-empty">Checking recommended actions</div>
+          </div>
+        </section>
+        <section class="command-center-decision-checkpoint" aria-label="Operator decision checkpoint">
+          <div class="cc-activity-head">
+            <div class="cc-panel-label">Decision Checkpoint</div>
+            <div class="cc-panel-detail" id="cc-decision-summary">Approvals, blockers, and recovery gates</div>
+          </div>
+          <div class="cc-decision-list" id="cc-decision-list">
+            <button type="button" class="cc-decision-card" data-state="loading" data-cc-action="open-activity-preflight">
+              <span>Approvals</span><strong>Checking</strong><em>command decisions</em>
+            </button>
+          </div>
+        </section>
+        <section class="command-center-posture" aria-label="Operator posture">
+          <div class="cc-activity-head">
+            <div class="cc-panel-label">Operator Posture</div>
+            <div class="cc-panel-detail" id="cc-posture-summary">Safety, autonomy, and local control</div>
+          </div>
+          <div class="cc-posture-grid" id="cc-posture-grid">
+            <button type="button" class="cc-posture-card" data-cc-action="open-offline" data-state="loading">
+              <span class="cc-posture-top"><span class="cc-posture-badge">local</span><span class="cc-status-pill" data-state="loading">checking</span></span>
+              <span class="cc-posture-title">Local posture</span>
+              <span class="cc-posture-detail">Checking offline policy and readiness</span>
+            </button>
+            <button type="button" class="cc-posture-card" data-cc-action="open-trust-controls" data-state="loading">
+              <span class="cc-posture-top"><span class="cc-posture-badge">gates</span><span class="cc-status-pill" data-state="loading">checking</span></span>
+              <span class="cc-posture-title">Approval gates</span>
+              <span class="cc-posture-detail">Checking trust policy</span>
+            </button>
+            <button type="button" class="cc-posture-card" data-cc-action="open-operations-queue" data-state="loading">
+              <span class="cc-posture-top"><span class="cc-posture-badge">queue</span><span class="cc-status-pill" data-state="loading">checking</span></span>
+              <span class="cc-posture-title">Active work</span>
+              <span class="cc-posture-detail">Checking local operations</span>
+            </button>
+            <button type="button" class="cc-posture-card" data-cc-action="open-activity-preflight" data-state="loading">
+              <span class="cc-posture-top"><span class="cc-posture-badge">ledger</span><span class="cc-status-pill" data-state="loading">checking</span></span>
+              <span class="cc-posture-title">Evidence ledger</span>
+              <span class="cc-posture-detail">Checking activity records</span>
+            </button>
+          </div>
+          <div class="cc-privacy-boundary" id="cc-privacy-boundary" aria-label="Privacy boundary">
+            <button type="button" class="cc-privacy-chip" data-cc-action="open-offline" data-state="loading">
+              <span>Offline</span><strong>Checking</strong><em>local policy</em>
+            </button>
+            <button type="button" class="cc-privacy-chip" data-cc-action="open-trust-controls" data-state="loading">
+              <span>Network</span><strong>Checking</strong><em>command gates</em>
+            </button>
+            <button type="button" class="cc-privacy-chip" data-cc-action="open-research-preflight" data-state="loading">
+              <span>Search</span><strong>Checking</strong><em>egress route</em>
+            </button>
+            <button type="button" class="cc-privacy-chip" data-cc-action="open-model-routing-map" data-state="loading">
+              <span>Models</span><strong>Checking</strong><em>external routes</em>
+            </button>
+            <button type="button" class="cc-privacy-chip" data-cc-action="open-local-data-map" data-state="loading">
+              <span>Data</span><strong>Checking</strong><em>local stores</em>
+            </button>
+          </div>
+          <div class="cc-trust-ops" id="cc-trust-ops" aria-label="Permissioned autonomy">
+            <button type="button" class="cc-trust-chip" data-state="loading" data-cc-action="open-trust-controls">
+              <span>Posture</span><strong>Checking</strong><em>trust preset</em>
+            </button>
+            <button type="button" class="cc-trust-chip" data-state="loading" data-cc-action="open-trust-controls">
+              <span>Local</span><strong>Checking</strong><em>UI routes</em>
+            </button>
+            <button type="button" class="cc-trust-chip" data-state="loading" data-cc-action="open-trust-controls">
+              <span>Approval</span><strong>Checking</strong><em>local work</em>
+            </button>
+            <button type="button" class="cc-trust-chip" data-state="loading" data-cc-action="open-trust-controls">
+              <span>Network</span><strong>Checking</strong><em>egress routes</em>
+            </button>
+            <button type="button" class="cc-trust-chip" data-state="loading" data-cc-action="open-trust-controls">
+              <span>High Risk</span><strong>Checking</strong><em>danger tier</em>
+            </button>
+            <button type="button" class="cc-trust-chip" data-state="loading" data-cc-action="open-activity-preflight">
+              <span>Decisions</span><strong>Checking</strong><em>approval ledger</em>
+            </button>
+          </div>
+          <div class="cc-backup-ops" id="cc-backup-ops" aria-label="Backup operations">
+            <button type="button" class="cc-backup-chip" data-state="loading" data-cc-action="open-backup-preflight">
+              <span>Export</span><strong>Checking</strong><em>encrypted backup</em>
+            </button>
+            <button type="button" class="cc-backup-chip" data-state="loading" data-cc-action="open-backup-preflight">
+              <span>Covered</span><strong>Checking</strong><em>portable items</em>
+            </button>
+            <button type="button" class="cc-backup-chip" data-state="loading" data-cc-action="open-local-data-map">
+              <span>Snapshot</span><strong>Checking</strong><em>full data gaps</em>
+            </button>
+            <button type="button" class="cc-backup-chip" data-state="loading" data-cc-action="open-backups">
+              <span>Restore</span><strong>Checking</strong><em>test drill</em>
+            </button>
+            <button type="button" class="cc-backup-chip" data-state="loading" data-cc-action="open-activity-preflight">
+              <span>Audit</span><strong>Checking</strong><em>backup ledger</em>
+            </button>
+            <button type="button" class="cc-backup-chip" data-state="loading" data-cc-action="open-trust-controls">
+              <span>Gate</span><strong>Checking</strong><em>export permission</em>
+            </button>
+          </div>
+        </section>
+        <section class="command-center-alerts" aria-label="Operator alerts">
+          <div class="cc-activity-head">
+            <div class="cc-panel-label">Alerts</div>
+            <div class="cc-panel-detail" id="cc-alerts-summary">Local readiness signals</div>
+          </div>
+          <div class="cc-alert-list" id="cc-alert-list">
+            <div class="cc-alert-empty">Checking local alerts</div>
+          </div>
+        </section>
+        <section class="command-center-context" aria-label="Today context">
+          <div class="cc-activity-head">
+            <div class="cc-panel-label">Today Context</div>
+            <div class="cc-panel-detail" id="cc-context-summary">Local work surface</div>
+          </div>
+          <div class="cc-today-ops-strip" id="cc-today-ops-strip" aria-label="Today operations">
+            <button type="button" class="cc-today-ops-chip" data-cc-action="summarize-today" data-state="loading">
+              <span>Briefing</span><strong>Checking</strong><em>local signals</em>
+            </button>
+            <button type="button" class="cc-today-ops-chip" data-cc-action="open-work-preflight" data-state="loading">
+              <span>Tasks</span><strong>Checking</strong><em>work queue</em>
+            </button>
+            <button type="button" class="cc-today-ops-chip" data-cc-action="open-calendar" data-state="loading">
+              <span>Calendar</span><strong>Checking</strong><em>next events</em>
+            </button>
+            <button type="button" class="cc-today-ops-chip" data-cc-action="draft-task-from-note" data-state="loading">
+              <span>Note to Task</span><strong>Checking</strong><em>latest note</em>
+            </button>
+            <button type="button" class="cc-today-ops-chip" data-cc-action="open-memory-profile" data-state="loading">
+              <span>Memory</span><strong>Checking</strong><em>profile records</em>
+            </button>
+            <button type="button" class="cc-today-ops-chip" data-cc-action="open-activity-preflight" data-state="loading">
+              <span>Activity</span><strong>Checking</strong><em>local ledger</em>
+            </button>
+          </div>
+          <div class="cc-context-grid" id="cc-context-grid">
+            <div class="cc-context-empty">Checking local context</div>
+          </div>
+        </section>
+        <section class="command-center-toolchain" aria-label="Local AI toolchain">
+          <div class="cc-activity-head">
+            <div class="cc-panel-label">Toolchain</div>
+            <div class="cc-panel-detail" id="cc-toolchain-summary">Integrated local modules</div>
+          </div>
+          <div class="cc-service-health" id="cc-service-health" aria-label="Local service health summary"></div>
+          <div class="cc-toolchain-grid" id="cc-toolchain-grid">
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">local</span><span class="cc-status-pill" data-state="loading">local</span></div>
+              <div class="cc-toolchain-title">Offline Control</div>
+              <div class="cc-toolchain-detail">Local policy, storage, egress, setup checks, backups, and verification routes.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-offline">Policy</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">ollama</span><span class="cc-status-pill" data-state="loading">model</span></div>
+              <div class="cc-toolchain-title">Ollama and primary model</div>
+              <div class="cc-toolchain-detail">Primary local model, local endpoints, model verification, and serving status.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-model-preflight">Models</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">chroma</span><span class="cc-status-pill" data-state="loading">rag</span></div>
+              <div class="cc-toolchain-title">ChromaDB and RAG</div>
+              <div class="cc-toolchain-detail">Vector context, local document retrieval, embedding path, and RAG preflight.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-embedding-preflight">RAG</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">searx</span><span class="cc-status-pill" data-state="loading">search</span></div>
+              <div class="cc-toolchain-title">SearXNG and research</div>
+              <div class="cc-toolchain-detail">Research jobs, search policy, local reports, and explicit egress boundaries.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-research-preflight">Research</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">train</span><span class="cc-status-pill" data-state="loading">lab</span></div>
+              <div class="cc-toolchain-title">Training Lab</div>
+              <div class="cc-toolchain-detail">LoRA readiness, trainable bases, datasets, jobs, and model creation plans.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-training-run-plan">Plan</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">code</span><span class="cc-status-pill" data-state="loading">work</span></div>
+              <div class="cc-toolchain-title">Code Workspace</div>
+              <div class="cc-toolchain-detail">Repo imports, snapshots, editor state, worker queue, tests, and diffs.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-code-workspace-map">Code</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">voice</span><span class="cc-status-pill" data-state="loading">i/o</span></div>
+              <div class="cc-toolchain-title">Voice I/O</div>
+              <div class="cc-toolchain-detail">Microphone path, speech-to-text, text-to-speech, privacy posture, and voice command routing.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-voice-preflight">Voice</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">work</span><span class="cc-status-pill" data-state="loading">tasks</span></div>
+              <div class="cc-toolchain-title">Tasks and Calendar</div>
+              <div class="cc-toolchain-detail">Scheduled work, task runs, calendar window, and note-to-task routes.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-work-preflight">Work</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">memory</span><span class="cc-status-pill" data-state="loading">recall</span></div>
+              <div class="cc-toolchain-title">Memory and Notes</div>
+              <div class="cc-toolchain-detail">Persistent memory, profile facts, notes, skills, and recall controls.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-memory-profile">Profile</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">library</span><span class="cc-status-pill" data-state="loading">files</span></div>
+              <div class="cc-toolchain-title">Library and Gallery</div>
+              <div class="cc-toolchain-detail">Documents, uploads, generated images, galleries, and local search indexes.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-library-preflight">Library</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">loops</span><span class="cc-status-pill" data-state="loading">auto</span></div>
+              <div class="cc-toolchain-title">Agent Loops and Automation</div>
+              <div class="cc-toolchain-detail">Repeatable local workflows, build watches, queues, and permission gates.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-automation-map">Loops</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">backup</span><span class="cc-status-pill" data-state="loading">safe</span></div>
+              <div class="cc-toolchain-title">Backups and Recovery</div>
+              <div class="cc-toolchain-detail">Encrypted export, restore drills, volume snapshots, recovery map, and evidence.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="prepare-backup">Backup</button>
+            </article>
+            <article class="cc-toolchain-card" data-state="loading">
+              <div class="cc-toolchain-top"><span class="cc-toolchain-badge">svc</span><span class="cc-status-pill" data-state="loading">docker</span></div>
+              <div class="cc-toolchain-title">Docker support services</div>
+              <div class="cc-toolchain-detail">Cleverly, worker, Ollama, ChromaDB, SearXNG, ntfy, volumes, and repair gates.</div>
+              <button type="button" class="cc-toolchain-action" data-cc-action="open-local-services-map">Services</button>
+            </article>
+          </div>
+        </section>
+        <section class="command-center-workflows" aria-label="Local workflows">
+          <div class="cc-activity-head">
+            <div class="cc-panel-label">Workflows</div>
+            <div class="cc-panel-detail" id="cc-workflows-summary">Local operator flows</div>
+          </div>
+          <div class="cc-workflow-health" id="cc-workflow-health" aria-label="Workflow health summary"></div>
+          <div class="cc-automation-ops" id="cc-automation-ops" aria-label="Automation operations">
+            <button type="button" class="cc-automation-chip" data-state="loading" data-cc-action="open-automation-map">
+              <span>Loops</span><strong>Checking</strong><em>agent loops</em>
+            </button>
+            <button type="button" class="cc-automation-chip" data-state="loading" data-cc-action="watch-build-until-green">
+              <span>Watch</span><strong>Checking</strong><em>build loop</em>
+            </button>
+            <button type="button" class="cc-automation-chip" data-state="loading" data-cc-action="open-work-preflight">
+              <span>Tasks</span><strong>Checking</strong><em>scheduled work</em>
+            </button>
+            <button type="button" class="cc-automation-chip" data-state="loading" data-cc-action="open-autonomy-map">
+              <span>Gates</span><strong>Checking</strong><em>approval posture</em>
+            </button>
+            <button type="button" class="cc-automation-chip" data-state="loading" data-cc-action="open-operations-queue">
+              <span>Queue</span><strong>Checking</strong><em>active runs</em>
+            </button>
+            <button type="button" class="cc-automation-chip" data-state="loading" data-cc-action="open-activity-preflight">
+              <span>Activity</span><strong>Checking</strong><em>automation ledger</em>
+            </button>
+          </div>
+          <div class="cc-workflow-list" id="cc-workflow-list">
+            <div class="cc-workflow-empty">Checking local workflows</div>
+          </div>
+        </section>
+        <section class="command-center-activity" aria-label="Activity timeline">
+          <div class="cc-activity-head">
+            <div class="cc-panel-label">Activity</div>
+            <div class="cc-panel-detail" id="cc-activity-summary">Recent local work</div>
+          </div>
+          <div class="cc-activity-health" id="cc-activity-health" aria-label="Activity health summary"></div>
+          <div class="cc-activity-control-strip" id="cc-activity-control-strip" aria-label="Activity evidence controls">
+            <button type="button" class="cc-activity-control-card" data-state="loading" data-cc-action="open-activity-preflight">
+              <span>Evidence</span>
+              <strong>Checking ledger</strong>
+              <em>logs and retry paths</em>
+            </button>
+          </div>
+          <div class="cc-activity-list" id="cc-activity-list">
+            <div class="cc-activity-empty">Checking local activity</div>
+          </div>
+        </section>
+      </section>
       <div id="welcome-setup" style="display:none"></div>
     </div>
     <script nonce="{{CSP_NONCE}}">
@@ -1028,7 +1681,7 @@
       var tips = mobile ? phone : desktop;
       var el = document.getElementById('welcome-tip');
       if (el) {
-        el.textContent = 'Type /setup, then choose Local models or API.';
+        el.textContent = '';
       }
       fetch('/api/version').then(function(r){return r.json()}).then(function(d){
         if (d.version) window._appVersion = d.version;
@@ -2391,13 +3044,13 @@
 <script type="module" src="/static/js/tourHints.js"></script>
 <script type="module" src="/static/js/tourAutoplay.js"></script>
 <script type="module" src="/static/js/fileHandler.js"></script>
-<script type="module" src="/static/js/voiceRecorder.js"></script>
+<script type="module" src="/static/js/voiceRecorder.js?v=20260620-voice-setup"></script>
 <script type="module" src="/static/js/models.js"></script>  <!-- This must come BEFORE app.js -->
 <script type="module" src="/static/js/rag.js"></script>
 <script type="module" src="/static/js/presets.js"></script>
 <script type="module" src="/static/js/search.js"></script>
 <script type="module" src="/static/js/spinner.js"></script>
-<script type="module" src="/static/js/tts-ai.js"></script>
+<script type="module" src="/static/js/tts-ai.js?v=20260620-voice-quiet"></script>
 <script type="module" src="/static/js/document.js"></script>
 <script type="module" src="/static/js/gallery.js"></script>
 <script type="module" src="/static/js/chatRenderer.js"></script>
@@ -2413,8 +3066,8 @@
 <script type="module" src="/static/js/settings.js"></script>
 <script type="module" src="/static/js/admin.js"></script>
 <script type="module" src="/static/js/assistant.js"></script>
-<script type="module" src="/static/app.js"></script>  <!-- app.js must be LAST -->
-<script type="module" src="/static/js/init.js"></script>
+<script type="module" src="/static/app.js?v=20260621-code-run-ledger"></script>  <!-- app.js must be LAST -->
+<script type="module" src="/static/js/init.js?v=20260621-code-run-ledger"></script>
 <script nonce="{{CSP_NONCE}}">if('serviceWorker' in navigator){navigator.serviceWorker.register('/static/sw.js').catch(()=>{});}</script>
 </body>
 </html>

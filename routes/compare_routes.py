@@ -46,10 +46,10 @@ def setup_compare_routes(session_manager: SessionManager):
         comp_id = str(uuid.uuid4())
         sid_a = str(uuid.uuid4())
         sid_b = str(uuid.uuid4())
+        user = getattr(request.state, 'current_user', None)
 
         # Create ephemeral sessions (prefixed [CMP])
         for sid, model, endpoint in [(sid_a, model_a, endpoint_a), (sid_b, model_b, endpoint_b)]:
-            user = getattr(request.state, 'current_user', None)
             session_manager.create_session(
                 session_id=sid,
                 name=f"[CMP] {model.split('/')[-1]}",
@@ -59,21 +59,26 @@ def setup_compare_routes(session_manager: SessionManager):
                 owner=user,
             )
             # Copy API key from endpoint config
-            db = SessionLocal()
+            from src.endpoint_resolver import build_headers
             try:
-                from core.database import ModelEndpoint
-                from src.endpoint_resolver import build_headers, normalize_base
-                # Find matching endpoint by URL
-                base = normalize_base(endpoint)
-                ep = db.query(ModelEndpoint).filter(
-                    ModelEndpoint.base_url == base
-                ).first()
-                if ep and ep.api_key:
-                    s = session_manager.sessions.get(sid)
-                    if s:
-                        s.headers = build_headers(ep.api_key, ep.base_url)
-            finally:
-                db.close()
+                from src.endpoint_resolver import find_visible_endpoint_by_base
+            except ImportError:
+                find_visible_endpoint_by_base = None
+            ep = find_visible_endpoint_by_base(endpoint, owner=user) if find_visible_endpoint_by_base else None
+            if ep is None:
+                try:
+                    from core.database import ModelEndpoint
+                    key_db = SessionLocal()
+                    try:
+                        ep = key_db.query(ModelEndpoint).filter(ModelEndpoint.base_url == endpoint).first()
+                    finally:
+                        key_db.close()
+                except Exception:
+                    ep = None
+            if ep and ep.api_key:
+                s = session_manager.sessions.get(sid)
+                if s:
+                    s.headers = build_headers(ep.api_key, ep.base_url)
 
         # Blind mapping: randomly assign left/right
         blind = str(is_blind).lower() == "true"

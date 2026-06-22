@@ -34,6 +34,7 @@ class VectorRAG:
         self._collection = None
         self._model = None
         self._healthy = False
+        self._last_error = ""
 
         Path(self.persist_directory).mkdir(parents=True, exist_ok=True)
         self._initialize_system()
@@ -49,6 +50,20 @@ class VectorRAG:
 
             self._model = get_embedding_client()
             if self._model is None:
+                offline = os.getenv("CLEVERLY_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}
+                offline_embeddings = os.getenv("CLEVERLY_OFFLINE_EMBEDDINGS", "").strip().lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                }
+                if offline and not offline_embeddings:
+                    raise RuntimeError(
+                        "No embedding backend available: FastEmbed is disabled in offline mode and "
+                        "local hash embeddings are disabled. Set CLEVERLY_HASH_EMBEDDINGS=1 for the "
+                        "no-download fallback, or set CLEVERLY_OFFLINE_EMBEDDINGS=1 only after "
+                        "pre-seeding the FastEmbed cache."
+                    )
                 raise RuntimeError("No embedding backend available")
             logger.info(f"Embedding: {self._model.url} model={self._model.model}")
 
@@ -61,11 +76,13 @@ class VectorRAG:
             count = self._collection.count()
             logger.info(f"VectorRAG ready ({count} docs)")
             self._healthy = True
+            self._last_error = ""
             return True
 
         except Exception as e:
             logger.error(f"VectorRAG init failed: {e}")
             self._healthy = False
+            self._last_error = str(e)
             return False
 
     def _embed(self, texts: List[str]) -> List[List[float]]:
@@ -84,6 +101,10 @@ class VectorRAG:
     def collection(self):
         """Expose the ChromaDB collection for direct access by personal_routes etc."""
         return self._collection
+
+    @property
+    def last_error(self) -> str:
+        return self._last_error
 
     # ------------------------------------------------------------------
     # Document operations

@@ -1201,7 +1201,10 @@ export function hideWelcomeScreen() {
   const ws = document.getElementById('welcome-screen');
   const cc = document.getElementById('chat-container');
   if (ws) ws.classList.add('hidden');
-  if (cc) cc.classList.remove('welcome-active');
+  if (cc) {
+    cc.classList.remove('welcome-active', 'command-center-home');
+    cc.setAttribute('aria-label', 'Chat conversation');
+  }
   // Update send button — switches from muted arrow to + Chat
   if (window._updateSendBtnIcon) setTimeout(window._updateSendBtnIcon, 50);
   const ib = document.getElementById('incognito-btn');
@@ -1211,8 +1214,17 @@ export function hideWelcomeScreen() {
 export function showWelcomeScreen() {
   const ws = document.getElementById('welcome-screen');
   const cc = document.getElementById('chat-container');
-  if (ws) ws.classList.remove('hidden');
-  if (cc) cc.classList.add('welcome-active');
+  document.body?.classList.add('welcome-ready');
+  if (ws) {
+    ws.classList.remove('hidden', 'kb-hidden');
+    ws.style.opacity = '';
+    ws.style.transform = '';
+    ws.style.transition = '';
+  }
+  if (cc) {
+    cc.classList.add('welcome-active', 'command-center-home');
+    cc.setAttribute('aria-label', 'Cleverly operating console');
+  }
   // Re-trigger the L→R clip-wipe reveal on the welcome name each time the
   // welcome screen is shown (new session, deleted last session, etc.) — without
   // this, the CSS animation only fires on initial DOM insertion.

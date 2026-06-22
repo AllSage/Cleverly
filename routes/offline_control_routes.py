@@ -560,6 +560,13 @@ def _status_payload(request: Request) -> dict[str, Any]:
         "cache_home": os.getenv("XDG_CACHE_HOME", ""),
         "hf_home": os.getenv("HF_HOME", ""),
         "fastembed_cache_path": os.getenv("FASTEMBED_CACHE_PATH", ""),
+        "offline_embeddings": _truthy(os.getenv("CLEVERLY_OFFLINE_EMBEDDINGS")),
+        "hash_embeddings": os.getenv("CLEVERLY_HASH_EMBEDDINGS", "1").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        },
         "code_workspace_runner": os.getenv("CODE_WORKSPACE_RUNNER", "worker" if _docker_like() else "in-process"),
         "code_workspace_worker_dir": os.getenv("CODE_WORKSPACE_WORKER_DIR", str(data_dir / "code-workspaces" / ".worker")),
         "platform": platform.platform(),

@@ -486,6 +486,7 @@ def test_diagnostics_routes_success_and_error_paths(monkeypatch):
     monkeypatch.setattr(diagnostics_routes, "extract_youtube_id", lambda url: "vid" if "watch" in url else None)
     monkeypatch.setattr(diagnostics_routes, "offline_mode", lambda: False)
     monkeypatch.setattr(diagnostics_routes, "load_features", lambda: {"web_fetch": True})
+    monkeypatch.setattr(diagnostics_routes, "get_rag_manager", lambda: None)
 
     async def transcript(url, video_id):
         return {"success": True, "transcript": "t" * 600}
@@ -508,6 +509,14 @@ def test_diagnostics_routes_success_and_error_paths(monkeypatch):
 
     no_rag = diagnostics_routes.setup_diagnostics_routes(None, False, Research())
     assert asyncio.run(_endpoint(no_rag, "/api/rag/stats")(request)) == {"error": "RAG system not available"}
+    monkeypatch.setattr(diagnostics_routes, "get_rag_error", lambda: "offline embeddings disabled")
+    assert asyncio.run(_endpoint(no_rag, "/api/rag/stats")(request)) == {
+        "error": "RAG system not available",
+        "detail": "offline embeddings disabled",
+    }
+    monkeypatch.setattr(diagnostics_routes, "get_rag_manager", lambda: Rag())
+    lazy_rag = diagnostics_routes.setup_diagnostics_routes(None, False, Research())
+    assert asyncio.run(_endpoint(lazy_rag, "/api/rag/stats")(request)) == {"chunks": 3}
     monkeypatch.setattr(diagnostics_routes, "offline_mode", lambda: True)
     assert asyncio.run(_endpoint(router, "/api/test/youtube")(request, url="https://youtube.com/watch?v=vid")) == {
         "error": "YouTube diagnostics are disabled in offline mode"

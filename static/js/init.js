@@ -330,6 +330,8 @@ window.addEventListener('pageshow', clearFreshComposerRestore);
       if (!_msgInput) return;
       _msgInput.addEventListener('focus', function() {
         var welcome = document.getElementById('welcome-screen');
+        var chatContainer = document.getElementById('chat-container');
+        if (chatContainer && chatContainer.classList.contains('command-center-home')) return;
         if (welcome && !welcome.classList.contains('hidden')) {
           welcome.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
           welcome.style.opacity = '0';
@@ -338,6 +340,8 @@ window.addEventListener('pageshow', clearFreshComposerRestore);
       });
       _msgInput.addEventListener('blur', function() {
         var welcome = document.getElementById('welcome-screen');
+        var chatContainer = document.getElementById('chat-container');
+        if (chatContainer && chatContainer.classList.contains('command-center-home')) return;
         if (welcome && !welcome.classList.contains('hidden')) {
           welcome.style.transition = 'opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
           welcome.style.opacity = '';

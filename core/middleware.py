@@ -17,6 +17,27 @@ from src.compat import getenv, request_header
 # same value from this module. Never persisted or exposed externally.
 INTERNAL_TOOL_TOKEN = getenv("CLEVERLY_INTERNAL_TOKEN") or secrets.token_hex(32)
 INTERNAL_TOOL_HEADER = "X-Cleverly-Internal-Token"
+_PROXY_FWD_HEADERS = (
+    "cf-connecting-ip",
+    "cf-ray",
+    "cf-visitor",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-real-ip",
+    "forwarded",
+)
+
+
+def _is_trusted_loopback(request: Request) -> bool:
+    client = getattr(request, "client", None)
+    host = (client.host if client else "") or ""
+    if host not in ("127.0.0.1", "::1", "localhost"):
+        return False
+    headers = getattr(request, "headers", {}) or {}
+    for header in _PROXY_FWD_HEADERS:
+        if request_header(headers, header):
+            return False
+    return True
 
 
 def require_admin(request: Request):
@@ -24,13 +45,12 @@ def require_admin(request: Request):
     Allows access when auth is explicitly disabled, or when the request carries
     the in-process internal-tool token used by loopback agent tools.
     """
-    # In-process bypass for tool-layer loopback calls. Two paths:
-    # (a) header-direct (caller set X-Cleverly-Internal-Token), or
-    # (b) the auth middleware already validated the token and stamped
-    #     request.state.current_user = "internal-tool".
+    # In-process bypass for tool-layer loopback calls. The raw header is only
+    # trusted on direct loopback; middleware-stamped calls have already passed
+    # the same check and may carry a real owner for attribution.
     try:
         hdr = request_header(request.headers, INTERNAL_TOOL_HEADER)
-        if hdr and secrets.compare_digest(hdr, INTERNAL_TOOL_TOKEN):
+        if hdr and secrets.compare_digest(hdr, INTERNAL_TOOL_TOKEN) and _is_trusted_loopback(request):
             return
         if getattr(request.state, "current_user", None) == "internal-tool":
             return

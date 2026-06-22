@@ -2600,6 +2600,23 @@ export function openTasks(focusId) {
 
 let _pendingFocusTaskId = null;
 
+export function openTaskDraft(draft = {}) {
+  if (!_open) {
+    openTasks();
+  }
+  setTimeout(() => {
+    const taskDraft = draft && typeof draft === 'object' ? draft : {};
+    _activeTab = 'new';
+    const modal = document.getElementById('tasks-modal');
+    modal?.querySelectorAll('.tasks-tab').forEach(btn => {
+      const on = btn.dataset.tab === 'new';
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      btn.classList.toggle('active', on);
+    });
+    _showForm(taskDraft, taskDraft.task_type || 'llm', taskDraft.trigger_type || 'schedule');
+  }, 0);
+}
+
 // Scroll to + briefly highlight a task card by id. Used by the chat
 // anchor-link delegate ([Name](#task-<id>)).
 function _focusTask(taskId) {
@@ -2701,6 +2718,6 @@ function stopNotificationPolling() {
 // Start polling on module load
 startNotificationPolling();
 
-const tasksModule = { openTasks, closeTasks, isTasksOpen, startNotificationPolling, stopNotificationPolling };
+const tasksModule = { openTasks, openTaskDraft, closeTasks, isTasksOpen, startNotificationPolling, stopNotificationPolling };
 export default tasksModule;
 window.tasksModule = tasksModule;

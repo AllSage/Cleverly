@@ -430,6 +430,10 @@ export function isOpen() {
   return _open && !modal()?.classList.contains('hidden');
 }
 
+export function getLoops() {
+  return LOOPS.slice();
+}
+
 export { LOOPS, loopPrompt };
 
-export default { open, close, isOpen, loopPrompt };
+export default { open, close, isOpen, loopPrompt, getLoops };

@@ -3,9 +3,9 @@
 // ============================================
 
 const _defaultKeybinds = {
-  search: 'ctrl+k', toggle_sidebar: 'ctrl+alt+b', new_session: 'ctrl+alt+n',
+  search: 'ctrl+k', command_palette: 'ctrl+shift+p', toggle_sidebar: 'ctrl+alt+b', new_session: 'ctrl+alt+n',
   fav_session: 'ctrl+alt+f', delete_session: 'ctrl+alt+d',
-  cancel: 'escape', tts: 'alt+shift+t',
+  cancel: 'escape', tts: 'alt+shift+t', voice_command: 'alt+shift+v',
   incognito: 'ctrl+alt+i', settings: 'ctrl+,', focus_input: 'ctrl+/',
   // Open-tool shortcuts (Calendar bound by default; rest unbound).
   open_calendar: 'ctrl+alt+c', open_compare: '', open_cookbook: '',
@@ -37,6 +37,7 @@ function _matchesCombo(e, combo) {
  * @param {Object} modules.adminModule
  * @param {Object} modules.settingsModule
  * @param {Object} modules.searchChatModule
+ * @param {Object} modules.commandPaletteModule
  * @param {Function} modules._closeCompareIfActive
  * @param {Function} modules._deactivateIncognito
  * @param {string} modules.API_BASE
@@ -44,7 +45,7 @@ function _matchesCombo(e, combo) {
 export function initKeyboardShortcuts(modules) {
   const {
     el, Storage, sessionModule, uiModule, chatModule,
-    adminModule, settingsModule, searchChatModule,
+    adminModule, settingsModule, searchChatModule, commandPaletteModule,
     _closeCompareIfActive, _deactivateIncognito, API_BASE
   } = modules;
 
@@ -146,6 +147,13 @@ export function initKeyboardShortcuts(modules) {
       }
       return;
     }
+    if (_matchesCombo(e, kb.command_palette)) {
+      e.preventDefault();
+      if (commandPaletteModule) {
+        commandPaletteModule.isOpen() ? commandPaletteModule.close() : commandPaletteModule.open();
+      }
+      return;
+    }
     if (_matchesCombo(e, kb.toggle_sidebar)) {
       e.preventDefault();
       var sb = document.getElementById('sidebar');
@@ -168,6 +176,15 @@ export function initKeyboardShortcuts(modules) {
       for (var i = allAI.length - 1; i >= 0; i--) {
         var ttsBtn = allAI[i].querySelector('.ai-tts-button');
         if (ttsBtn) { ttsBtn.click(); return; }
+      }
+      return;
+    }
+    if (_matchesCombo(e, kb.voice_command)) {
+      e.preventDefault();
+      try {
+        window.cleverlyVoiceCommand?.toggle?.();
+      } catch (err) {
+        console.error('Voice command shortcut failed:', err);
       }
       return;
     }
@@ -206,7 +223,7 @@ export function initKeyboardShortcuts(modules) {
           } else {
             sessionModule.setCurrentSessionId(null);
             el('chat-history').innerHTML = '';
-            el('current-meta').textContent = 'Cleverly Chat';
+            el('current-meta').textContent = 'Cleverly Command Center';
             Storage.remove('lastSessionId');
             if (chatModule && chatModule.showWelcomeScreen) chatModule.showWelcomeScreen();
           }

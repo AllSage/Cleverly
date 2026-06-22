@@ -13,6 +13,7 @@ from core.database import Session as DbSession
 from src.auth_helpers import get_current_user, require_privilege
 from src.offline_policy import is_local_model_url
 from src.settings import load_features, offline_mode
+from src.endpoint_resolver import first_visible_endpoint, find_visible_endpoint_by_base
 
 from routes.gallery_helpers import (
     GalleryPatch, _extract_exif, _image_to_dict, _owner_filter, _human_size,
@@ -275,7 +276,7 @@ def setup_gallery_routes() -> APIRouter:
         """AI upscale using img2img with the diffusion server."""
         import base64, httpx
 
-        require_privilege(request, "can_generate_images")
+        user = require_privilege(request, "can_generate_images")
         form = await request.form()
         file = form.get("image")
         if not file: raise HTTPException(400, "No image")
@@ -285,11 +286,7 @@ def setup_gallery_routes() -> APIRouter:
         b64 = base64.b64encode(image_bytes).decode()
 
         # Find image endpoint
-        db = SessionLocal()
-        try:
-            ep = db.query(ModelEndpoint).filter(ModelEndpoint.model_type == "image", ModelEndpoint.is_enabled == True).first()
-        finally:
-            db.close()
+        ep = first_visible_endpoint(user, model_type="image")
 
         if not ep:
             raise HTTPException(400, "No image generation endpoint configured. Add one in Settings → Add Models.")
@@ -319,7 +316,7 @@ def setup_gallery_routes() -> APIRouter:
         """Style transfer using img2img with the diffusion server."""
         import base64, httpx
 
-        require_privilege(request, "can_generate_images")
+        user = require_privilege(request, "can_generate_images")
         form = await request.form()
         file = form.get("image")
         prompt = form.get("prompt", "")
@@ -329,11 +326,7 @@ def setup_gallery_routes() -> APIRouter:
         image_bytes = await file.read()
         b64 = base64.b64encode(image_bytes).decode()
 
-        db = SessionLocal()
-        try:
-            ep = db.query(ModelEndpoint).filter(ModelEndpoint.model_type == "image", ModelEndpoint.is_enabled == True).first()
-        finally:
-            db.close()
+        ep = first_visible_endpoint(user, model_type="image")
 
         if not ep:
             raise HTTPException(400, "No image generation endpoint configured.")
@@ -960,45 +953,27 @@ def setup_gallery_routes() -> APIRouter:
         the request for /v1/images/edits (multipart, inverted mask). Otherwise
         proxy through to a self-hosted diffusion server's /v1/images/inpaint."""
         import httpx
-        require_privilege(request, "can_generate_images")
+        user = require_privilege(request, "can_generate_images")
         body = await request.json()
         # Use endpoint from request body (editor dropdown) or fall back to DB lookup
         base = (body.pop("_endpoint", "") or "").rstrip("/")
         chosen_model = (body.pop("_model", "") or "").strip()
         api_key = None
         if not base:
-            db = SessionLocal()
-            try:
-                eps = db.query(ModelEndpoint).filter(
-                    ModelEndpoint.is_enabled == True,
-                    ModelEndpoint.model_type == "image",
-                ).all()
-                if not eps:
-                    raise HTTPException(400, "No image generation endpoint configured. Serve a diffusion model via Cookbook first.")
-                base = eps[0].base_url.rstrip("/")
-                api_key = eps[0].api_key
-            finally:
-                db.close()
+            ep = first_visible_endpoint(user, model_type="image")
+            if not ep:
+                raise HTTPException(400, "No image generation endpoint configured. Serve a diffusion model via Cookbook first.")
+            base = ep.base_url.rstrip("/")
+            api_key = ep.api_key
         else:
             # Pull api_key from the matching DB row so OpenAI auth works.
             # Users may have stored base_url with/without /v1 suffix and with/without
             # trailing slash, so compare normalized forms.
-            def _norm_url(u: str) -> str:
-                if not u:
-                    return u
-                u = u.rstrip("/")
-                if u.endswith("/v1"):
-                    u = u[:-3]
-                return u
-            _target = _norm_url(base)
-            db = SessionLocal()
-            try:
-                for ep in db.query(ModelEndpoint).all():
-                    if _norm_url(ep.base_url) == _target:
-                        api_key = ep.api_key
-                        break
-            finally:
-                db.close()
+            ep = find_visible_endpoint_by_base(base, owner=user, model_type="image")
+            if not ep:
+                raise HTTPException(404, "Image endpoint not found or unavailable")
+            base = ep.base_url.rstrip("/")
+            api_key = ep.api_key
 
         if not base.endswith("/v1"):
             base += "/v1"
@@ -1150,7 +1125,7 @@ def setup_gallery_routes() -> APIRouter:
         you get edge blending + lighting unification while keeping the
         composition recognisable."""
         import httpx, base64 as _b64
-        require_privilege(request, "can_generate_images")
+        user = require_privilege(request, "can_generate_images")
         body = await request.json()
 
         image_b64 = body.get("image")
@@ -1163,27 +1138,17 @@ def setup_gallery_routes() -> APIRouter:
         base = endpoint
         api_key = None
         if not base:
-            db = SessionLocal()
-            try:
-                eps = db.query(ModelEndpoint).filter(
-                    ModelEndpoint.is_enabled == True,
-                    ModelEndpoint.model_type == "image",
-                ).all()
-                if not eps:
-                    raise HTTPException(400, "No image generation endpoint configured.")
-                base = eps[0].base_url.rstrip("/")
-                api_key = eps[0].api_key
-            finally:
-                db.close()
+            ep = first_visible_endpoint(user, model_type="image")
+            if not ep:
+                raise HTTPException(400, "No image generation endpoint configured.")
+            base = ep.base_url.rstrip("/")
+            api_key = ep.api_key
         else:
-            db = SessionLocal()
-            try:
-                for ep in db.query(ModelEndpoint).all():
-                    if ep.base_url.rstrip("/").rstrip("/v1") == base.rstrip("/v1"):
-                        api_key = ep.api_key
-                        break
-            finally:
-                db.close()
+            ep = find_visible_endpoint_by_base(base, owner=user, model_type="image")
+            if not ep:
+                raise HTTPException(404, "Image endpoint not found or unavailable")
+            base = ep.base_url.rstrip("/")
+            api_key = ep.api_key
 
         if not base.endswith("/v1"):
             base += "/v1"

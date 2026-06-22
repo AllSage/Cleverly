@@ -560,7 +560,7 @@ export async function refreshModels(force = false) {
     } else {
       // Configured installs should feel ready, not stuck in onboarding.
       const welcomeSub = document.getElementById('welcome-sub');
-      if (welcomeSub) welcomeSub.textContent = 'Your workspace. Your models. Your data.';
+      if (welcomeSub) welcomeSub.textContent = 'Your console. Your models. Your data.';
       const welcomeTip = document.getElementById('welcome-tip');
       if (welcomeTip) {
         const tips = window.innerWidth <= 768

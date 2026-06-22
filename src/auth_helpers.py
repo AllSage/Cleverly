@@ -34,7 +34,22 @@ def _is_direct_loopback(request: Request) -> bool:
 
 def get_current_user(request: Request) -> Optional[str]:
     """Get current username from request state (set by auth middleware)."""
+    if getattr(request.state, "api_token", False):
+        return getattr(request.state, "api_token_owner", None) or getattr(request.state, "current_user", None)
     return getattr(request.state, 'current_user', None)
+
+
+def require_api_scope(request: Request, scope: str) -> str:
+    """Require a bearer API token with `scope` and return its owning user."""
+    if not getattr(request.state, "api_token", False):
+        raise HTTPException(403, "This endpoint requires an API token")
+    scopes = set(getattr(request.state, "api_token_scopes", []) or [])
+    if scope not in scopes:
+        raise HTTPException(403, f"API token is not scoped for {scope}")
+    owner = getattr(request.state, "api_token_owner", None)
+    if not owner:
+        raise HTTPException(403, "API token is not bound to a user")
+    return owner
 
 
 def require_user(request: Request) -> str:

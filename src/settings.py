@@ -200,6 +200,7 @@ _PER_USER_KEYS = {
     "default_endpoint_id", "default_model", "default_model_fallbacks",
     "utility_endpoint_id", "utility_model", "utility_model_fallbacks",
     "research_endpoint_id", "research_model",
+    "code_workspace_model_key",
 }
 
 
@@ -220,6 +221,39 @@ def get_user_setting(key: str, owner: str = "", default: Any = None) -> Any:
         except Exception:
             pass
     return get_setting(key, default)
+
+
+def get_effective_code_workspace_model_key(owner: str = "") -> str:
+    """Return the explicit Code Workspace model key, or the local model route
+    Cleverly already uses for default/utility work.
+
+    The returned form may include an endpoint hint (`model@endpoint_id`) so
+    Code Workspace can resolve the same endpoint selected in settings even when
+    multiple local endpoints are enabled.
+    """
+    settings = load_settings()
+    explicit = (get_user_setting(
+        "code_workspace_model_key",
+        owner or "",
+        settings.get("code_workspace_model_key", ""),
+    ) or "").strip()
+    if explicit:
+        return explicit
+
+    for prefix in ("default", "utility"):
+        endpoint_id = (get_user_setting(
+            f"{prefix}_endpoint_id",
+            owner or "",
+            settings.get(f"{prefix}_endpoint_id", ""),
+        ) or "").strip()
+        model = (get_user_setting(
+            f"{prefix}_model",
+            owner or "",
+            settings.get(f"{prefix}_model", ""),
+        ) or "").strip()
+        if model:
+            return f"{model}@{endpoint_id}" if endpoint_id else model
+    return ""
 
 
 # ── Features (data/features.json) ──

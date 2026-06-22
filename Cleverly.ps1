@@ -38,6 +38,29 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
+function Import-LocalEnv([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = ([string]$line).Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) { continue }
+        $idx = $trimmed.IndexOf("=")
+        if ($idx -le 0) { continue }
+        $name = $trimmed.Substring(0, $idx).Trim()
+        if ($name -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { continue }
+        if ([Environment]::GetEnvironmentVariable($name, "Process")) { continue }
+        $value = $trimmed.Substring($idx + 1).Trim()
+        if (
+            ($value.StartsWith('"') -and $value.EndsWith('"')) -or
+            ($value.StartsWith("'") -and $value.EndsWith("'"))
+        ) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        Set-Item -Path ("Env:" + $name) -Value $value
+    }
+}
+
+Import-LocalEnv ".env"
+
 $PrimaryModelFile = "data\cleverly-primary-model.json"
 $ModelProfiles = @(
     @{

@@ -75,7 +75,11 @@ def _clear_orphaned_session_endpoint(sess) -> bool:
         return False
     db = SessionLocal()
     try:
-        endpoints = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()
+        query = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)
+        if getattr(sess, "owner", None):
+            from src.auth_helpers import owner_filter
+            query = owner_filter(query, ModelEndpoint, sess.owner)
+        endpoints = query.all()
         for ep in endpoints:
             if _session_url_matches_endpoint(sess.endpoint_url or "", ep.base_url or ""):
                 return False
@@ -643,11 +647,15 @@ def setup_chat_routes(
                     _ep_base = _nb(sess.endpoint_url)
                     _db = SessionLocal()
                     try:
-                        _is_image_model = _db.query(ModelEndpoint).filter(
+                        _image_q = _db.query(ModelEndpoint).filter(
                             ModelEndpoint.model_type == "image",
                             ModelEndpoint.is_enabled == True,
                             ModelEndpoint.base_url.contains(_ep_base.split("://")[-1].split("/")[0]),
-                        ).first() is not None
+                        )
+                        if getattr(sess, "owner", None):
+                            from src.auth_helpers import owner_filter
+                            _image_q = owner_filter(_image_q, ModelEndpoint, sess.owner)
+                        _is_image_model = _image_q.first() is not None
                     finally:
                         _db.close()
                 except Exception:

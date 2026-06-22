@@ -674,9 +674,12 @@ export async function refreshWelcomeReadiness() {
   return refreshBadge();
 }
 
-export async function open() {
+export async function open(options = {}) {
   ensureStyles();
   wireModal();
+  if (options?.tab) {
+    _tab = options.tab;
+  }
   modal()?.classList.remove('hidden');
   _open = true;
   render();

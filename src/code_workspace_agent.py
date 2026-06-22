@@ -12,7 +12,7 @@ from src import code_workspace
 from src.endpoint_resolver import build_chat_url, build_headers, normalize_base
 from src.llm_core import llm_call_async
 from src.offline_policy import is_local_model_url
-from src.settings import get_setting, load_features, offline_mode
+from src.settings import get_effective_code_workspace_model_key, load_features, offline_mode
 
 
 MAX_CONTEXT_CHARS = 80_000
@@ -54,7 +54,10 @@ def resolve_model_key(model_key: str, owner: str = "") -> tuple[str, str, dict[s
         endpoints = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()
         candidates: list[ModelEndpoint] = []
         for ep in endpoints:
-            if endpoint_hint and endpoint_hint.lower() not in (ep.name or "").lower():
+            endpoint_needle = endpoint_hint.lower()
+            endpoint_name = (ep.name or "").lower()
+            endpoint_id = (ep.id or "").lower()
+            if endpoint_hint and endpoint_needle not in endpoint_name and endpoint_needle not in endpoint_id:
                 continue
             ep_owner = getattr(ep, "owner", None)
             if owner and ep_owner and ep_owner != owner:
@@ -249,7 +252,7 @@ async def run_agent(
     task = (task or "").strip()
     if not task:
         raise code_workspace.CodeWorkspaceError("Agent task is required")
-    key = (model_key or get_setting("code_workspace_model_key", "") or "").strip()
+    key = (model_key or get_effective_code_workspace_model_key(owner=owner) or "").strip()
     url, model, headers = resolve_model_key(key, owner=owner)
 
     snapshot = code_workspace.create_snapshot(workspace_id, "Before agent run", owner=owner, root=root)

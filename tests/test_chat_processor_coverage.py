@@ -181,3 +181,60 @@ def test_build_context_preface_truncates_rag_and_handles_skill_index_failure(mon
     assert "[Truncated]" in joined
     assert rag_sources[0]["filename"] == "huge.txt"
     assert web_sources == []
+
+
+def test_build_context_preface_explicit_local_doc_search_uses_query_and_keyword_fallback(monkeypatch):
+    import src.chat_processor as cp
+
+    personal = SimpleNamespace(
+        rag_manager=RagManager([]),
+        index=[
+            {
+                "name": "operator-console.md",
+                "path": "/app/data/personal_docs/operator-console.md",
+                "chunks": ["The operator console routes local document search through the Library and RAG index."],
+            }
+        ],
+    )
+    processor = cp.ChatProcessor(MemoryManager([]), personal)
+    monkeypatch.setattr(cp, "extract_urls", lambda message: [])
+
+    preface, rag_sources, web_sources = processor.build_context_preface(
+        "Cleverly, search my local documents for operator console",
+        session=SimpleNamespace(),
+        use_rag=True,
+        use_memory=False,
+        use_web=False,
+        owner="alice",
+    )
+
+    joined = "\n".join(item["content"] for item in preface)
+    assert personal.rag_manager.call == ("operator console", 5, "alice")
+    assert "The user explicitly asked Cleverly to search local documents" in joined
+    assert "Local document search results" in joined
+    assert "operator-console.md" in joined
+    assert rag_sources[0]["filename"] == "operator-console.md"
+    assert rag_sources[0]["similarity"] > 0
+    assert web_sources == []
+
+
+def test_build_context_preface_explicit_local_doc_search_reports_no_matches(monkeypatch):
+    import src.chat_processor as cp
+
+    personal = SimpleNamespace(rag_manager=None, index=[])
+    processor = cp.ChatProcessor(MemoryManager([]), personal)
+    monkeypatch.setattr(cp, "extract_urls", lambda message: [])
+
+    preface, rag_sources, web_sources = processor.build_context_preface(
+        "Search my local documents for missing topic",
+        session=SimpleNamespace(),
+        use_rag=True,
+        use_memory=False,
+        use_web=False,
+    )
+
+    joined = "\n".join(item["content"] for item in preface)
+    assert "no matching indexed local documents were found" in joined
+    assert "Do not claim you cannot access local files" in joined
+    assert rag_sources == []
+    assert web_sources == []

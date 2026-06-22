@@ -12,6 +12,7 @@ from core.models import ChatMessage
 from src.request_models import SessionResponse
 from core.database import Session as DbSession, SessionLocal, Document, GalleryImage
 from src.auth_helpers import get_current_user
+from src.call_compat import call_with_optional_owner
 
 
 def _verify_session_owner(request: Request, session_id: str):
@@ -45,23 +46,23 @@ def _attachment_header(filename: str, fallback: str) -> str:
     return f'attachment; filename="{_safe_export_filename(filename, fallback)}"'
 
 
-def _pick_endpoint_for_sort():
+def _pick_endpoint_for_sort(owner: str = None):
     """Pick model endpoint for auto-sort LLM call — uses utility endpoint setting, falls back to default."""
     from src.endpoint_resolver import resolve_endpoint
     # Try utility endpoint first (what the user configured for background tasks)
-    url, model, headers = resolve_endpoint("utility")
+    url, model, headers = call_with_optional_owner(resolve_endpoint, "utility", owner=owner)
     if url and model:
         return url, model, headers
     # Fall back to task endpoint
     try:
         from src.task_endpoint import resolve_task_endpoint
-        url, model, headers = resolve_task_endpoint()
+        url, model, headers = resolve_task_endpoint(owner=owner)
         if url and model:
             return url, model, headers
     except Exception:
         pass
     # Fall back to default
-    url, model, headers = resolve_endpoint("default")
+    url, model, headers = call_with_optional_owner(resolve_endpoint, "default", owner=owner)
     if url and model:
         return url, model, headers
     return None, None, None
@@ -189,11 +190,24 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         endpoint_id: str = Form(""),
     ):
         skip_val = str(skip_validation).lower() == "true"
+        user = get_current_user(request)
+        model_to_use = model
+
+        resolved_endpoint = None
+        validation_headers = {"Authorization": f"Bearer {api_key.strip()}"} if api_key.strip() else None
+        if endpoint_id and endpoint_id.strip():
+            from src.endpoint_resolver import resolve_endpoint_by_id
+            resolved_endpoint = resolve_endpoint_by_id(endpoint_id.strip(), model, owner=user)
+            if not resolved_endpoint:
+                raise HTTPException(400, "Model endpoint not found or not available to this user")
+            resolved_url, resolved_model, _resolved_headers = resolved_endpoint
+            endpoint_url = resolved_url
+            validation_headers = _resolved_headers
+            if not model_to_use:
+                model_to_use = resolved_model
 
         if not endpoint_url and not skip_val:
             raise HTTPException(400, "endpoint_url is required (choose from /api/models)")
-
-        model_to_use = model
 
         if skip_val:
             # skip_validation = trust the caller and do NOT probe /v1/models.
@@ -204,7 +218,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         elif not model_to_use:
             from src.llm_core import list_model_ids
             ids = list_model_ids(endpoint_url, timeout=REQUEST_TIMEOUT,
-                                 headers={"Authorization": f"Bearer {api_key}"} if api_key.strip() else None)
+                                 headers=validation_headers)
             if not ids:
                 raise HTTPException(400, "Cannot reach /v1/models")
             # Default to the first CHAT model — endpoints often list embedding/
@@ -219,7 +233,7 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
             import os as _os
             req_base = _os.path.basename(model_to_use.rstrip("/"))
             avail = list_model_ids(endpoint_url, timeout=REQUEST_TIMEOUT,
-                                   headers={"Authorization": f"Bearer {api_key}"} if api_key.strip() else None)
+                                   headers=validation_headers)
             if not avail:
                 raise HTTPException(400, "Cannot reach /v1/models")
             if model_to_use not in avail:
@@ -234,7 +248,6 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                 model_to_use = found
         
         sid = str(uuid.uuid4())
-        user = get_current_user(request)
         session = session_manager.create_session(
             session_id=sid,
             name=name or "",
@@ -246,17 +259,10 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         # Set auth headers for custom API-key endpoints
         resolved_key = api_key.strip() if api_key else ""
         resolved_base = endpoint_url
-        if not resolved_key and endpoint_id and endpoint_id.strip():
-            from core.database import ModelEndpoint
-            _db = SessionLocal()
-            try:
-                ep = _db.query(ModelEndpoint).filter(ModelEndpoint.id == endpoint_id.strip()).first()
-                if ep and ep.api_key:
-                    resolved_key = ep.api_key
-                    resolved_base = ep.base_url
-            finally:
-                _db.close()
-        if resolved_key:
+        if resolved_endpoint and not resolved_key:
+            session.headers = resolved_endpoint[2]
+            session_manager.save_sessions()
+        elif resolved_key:
             from src.endpoint_resolver import build_headers
             session.headers = build_headers(resolved_key, resolved_base)
             session_manager.save_sessions()
@@ -305,27 +311,18 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
                 db.close()
         # Switch model/endpoint mid-session
         if model is not None and endpoint_url is not None:
+            resolved_endpoint = None
             if endpoint_id:
-                from core.database import ModelEndpoint
-                _db = SessionLocal()
-                try:
-                    ep = _db.query(ModelEndpoint).filter(ModelEndpoint.id == endpoint_id).first()
-                    if not ep:
-                        raise HTTPException(400, "Model endpoint no longer exists")
-                finally:
-                    _db.close()
+                from src.endpoint_resolver import resolve_endpoint_by_id
+                resolved_endpoint = resolve_endpoint_by_id(endpoint_id, model, owner=get_current_user(request))
+                if not resolved_endpoint:
+                    raise HTTPException(400, "Model endpoint no longer exists or is not available to this user")
+                endpoint_url, model, _resolved_headers = resolved_endpoint
             session.model = model
             session.endpoint_url = endpoint_url
             # Update auth headers from the endpoint's stored API key
-            if endpoint_id:
-                _db = SessionLocal()
-                try:
-                    ep = _db.query(ModelEndpoint).filter(ModelEndpoint.id == endpoint_id).first()
-                    if ep and ep.api_key:
-                        from src.endpoint_resolver import build_headers
-                        session.headers = build_headers(ep.api_key, ep.base_url)
-                finally:
-                    _db.close()
+            if resolved_endpoint:
+                session.headers = resolved_endpoint[2]
             # Persist to DB
             db = SessionLocal()
             try:
@@ -745,7 +742,8 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
         from src.endpoint_resolver import resolve_endpoint
         from src.llm_core import llm_call_async
 
-        url, model, headers = resolve_endpoint("utility")
+        user = get_current_user(request)
+        url, model, headers = call_with_optional_owner(resolve_endpoint, "utility", owner=user)
         if not url or not model:
             url, model, headers = session.endpoint_url, session.model, session.headers
         if not url or not model:
@@ -945,9 +943,9 @@ def setup_session_routes(session_manager: SessionManager, config: dict, webhook_
 
         # Pick an endpoint — prefer admin-configured task endpoint
         from src.task_endpoint import resolve_task_endpoint
-        url, model, headers = resolve_task_endpoint()
+        url, model, headers = resolve_task_endpoint(owner=user)
         if not url:
-            url, model, headers = _pick_endpoint_for_sort()
+            url, model, headers = _pick_endpoint_for_sort(owner=user)
         if not url:
             raise HTTPException(503, "No available model endpoint for auto-sort")
 

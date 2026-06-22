@@ -206,7 +206,7 @@ HOUSEKEEPING_DEFAULTS = {
     "draft_email_replies":  {"name": "Email AI Auto Reply",      "schedule": "cron",  "scheduled_time": None,    "cron_expression": "0 */2 * * *", "ship_paused": True, "legacy_names": ["Tidy Email (Replies)", "AI Auto Reply"]},
     "extract_email_events": {"name": "Email Calendar Events",    "schedule": "cron",  "scheduled_time": None,    "cron_expression": "0 */1 * * *", "ship_paused": True, "legacy_names": ["Email → Calendar Events"]},
     "classify_events":      {"name": "Calendar Classify Events", "schedule": "cron",  "scheduled_time": None,    "cron_expression": "0 6,18 * * *", "ship_paused": True, "legacy_names": ["Classify Calendar Events"]},
-    "mark_email_boundaries": {"name": "Email Mark Boundaries",   "schedule": "cron",  "scheduled_time": None,    "cron_expression": "0 */2 * * *", "legacy_names": ["Mark Email Boundaries"]},
+    "mark_email_boundaries": {"name": "Email Mark Boundaries",   "schedule": "cron",  "scheduled_time": None,    "cron_expression": "0 */2 * * *", "ship_paused": True, "legacy_names": ["Mark Email Boundaries"]},
     "check_email_urgency":   {"name": "Email Tags",               "schedule": "cron",  "scheduled_time": None,    "cron_expression": "0 * * * *", "ship_paused": True, "old_cron_expressions": ["*/15 * * * *"], "legacy_names": ["Email Triage", "Urgent Email"]},
     "audit_skills":          {"name": "Skills Audit",             "trigger_type": "event", "trigger_event": "skill_added", "trigger_count": 5, "schedule": None, "scheduled_time": None, "cron_expression": None, "legacy_names": ["Audit Skills"]},
 }
@@ -298,6 +298,69 @@ class TaskScheduler:
         self._pending_notifications = keep
         return take
 
+    @staticmethod
+    def _task_policy_values(task) -> dict:
+        return {
+            "task_type": getattr(task, "task_type", "llm") or "llm",
+            "action": getattr(task, "action", "") or "",
+            "trigger_type": getattr(task, "trigger_type", "schedule") or "schedule",
+            "trigger_event": getattr(task, "trigger_event", "") or "",
+            "output_target": getattr(task, "output_target", "session") or "session",
+        }
+
+    def _task_policy_disabled_reason(self, task) -> str | None:
+        return task_feature_disabled_reason(self._task_policy_values(task))
+
+    def _pause_policy_disabled_task(self, task, reason: str, run=None) -> None:
+        """Record an offline-policy skip and pause the task until re-enabled."""
+        now = datetime.utcnow()
+        if run is not None:
+            run.status = "skipped"
+            run.result = reason
+            run.error = None
+            run.finished_at = now
+        task.last_run = now
+        task.status = "paused"
+        task.next_run = None
+
+    def _normalize_policy_disabled_tasks(self, db, owner: str | None = None) -> tuple[int, int]:
+        """Pause active policy-disabled tasks and convert matching old errors."""
+        from core.database import ScheduledTask, TaskRun
+
+        query = db.query(ScheduledTask)
+        if owner is not None:
+            query = query.filter(ScheduledTask.owner == owner)
+        paused = 0
+        normalized_runs = 0
+        for task in query.all():
+            reason = self._task_policy_disabled_reason(task)
+            if not reason:
+                continue
+            if getattr(task, "status", None) == "active":
+                task.status = "paused"
+                task.next_run = None
+                paused += 1
+            runs = db.query(TaskRun).filter(
+                TaskRun.task_id == task.id,
+                TaskRun.status == "error",
+            ).all()
+            for run in runs:
+                text = f"{getattr(run, 'error', '') or ''} {getattr(run, 'result', '') or ''}"
+                if reason not in text and "disabled in offline mode" not in text:
+                    continue
+                current_result = (getattr(run, "result", "") or "").strip()
+                run.status = "skipped"
+                run.result = (
+                    current_result
+                    if current_result and not current_result.startswith("Starting")
+                    else reason
+                )
+                run.error = None
+                if getattr(run, "finished_at", None) is None:
+                    run.finished_at = datetime.utcnow()
+                normalized_runs += 1
+        return paused, normalized_runs
+
     async def start(self):
         # On startup, mark any leftover "running" task_runs as errored. Without
         # this, a server crash leaves rows stuck running indefinitely and the
@@ -321,6 +384,14 @@ class TaskScheduler:
                         r.finished_at = now
                     db.commit()
                     logger.info(f"Cleared {len(stale)} stale task_runs from previous run")
+                paused, normalized = self._normalize_policy_disabled_tasks(db)
+                if paused or normalized:
+                    db.commit()
+                    logger.info(
+                        "Policy-disabled tasks normalized on startup: paused=%s runs=%s",
+                        paused,
+                        normalized,
+                    )
             finally:
                 db.close()
         except Exception as e:
@@ -615,15 +686,12 @@ class TaskScheduler:
                 db.commit()
 
             task_type = task.task_type or "llm"
-            disabled_reason = task_feature_disabled_reason({
-                "task_type": task_type,
-                "action": getattr(task, "action", "") or "",
-                "trigger_type": getattr(task, "trigger_type", "schedule") or "schedule",
-                "trigger_event": getattr(task, "trigger_event", "") or "",
-                "output_target": getattr(task, "output_target", "session") or "session",
-            })
+            disabled_reason = self._task_policy_disabled_reason(task)
             if disabled_reason:
-                raise RuntimeError(disabled_reason)
+                self._pause_policy_disabled_task(task, disabled_reason, run=run)
+                db.commit()
+                logger.info("Task '%s' paused by feature policy: %s", task.name, disabled_reason)
+                return
 
             from src.builtin_actions import TaskDeferred, TaskNoop
 
@@ -1504,17 +1572,10 @@ class TaskScheduler:
         # Resolve headers from the endpoint's API key
         headers = {}
         try:
-            from core.database import SessionLocal, ModelEndpoint
-            from src.endpoint_resolver import normalize_base, build_headers
-            db2 = SessionLocal()
-            try:
-                eps = db2.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()
-                for ep in eps:
-                    if normalize_base(ep.base_url) in endpoint_url or endpoint_url in normalize_base(ep.base_url):
-                        headers = build_headers(ep.api_key, normalize_base(ep.base_url))
-                        break
-            finally:
-                db2.close()
+            from src.endpoint_resolver import normalize_base, build_headers, find_visible_endpoint_by_base
+            ep = find_visible_endpoint_by_base(endpoint_url, owner=task.owner)
+            if ep:
+                headers = build_headers(ep.api_key, normalize_base(ep.base_url))
         except Exception:
             pass
         full_text = ""
@@ -1529,7 +1590,7 @@ class TaskScheduler:
         # chat uses but with the utility list (`utility_model_fallbacks`).
         try:
             from src.endpoint_resolver import resolve_utility_fallback_candidates
-            _task_fallbacks = resolve_utility_fallback_candidates()
+            _task_fallbacks = resolve_utility_fallback_candidates(owner=task.owner)
         except Exception:
             _task_fallbacks = []
         async for event_str in stream_agent_loop(
@@ -1609,6 +1670,7 @@ class TaskScheduler:
                     endpoint_url or None,
                     model or None,
                     None,
+                    owner=task.owner,
                 )
                 endpoint_url = ep_url or endpoint_url
                 model = ep_model or model
@@ -1625,14 +1687,10 @@ class TaskScheduler:
         # Resolve headers
         headers = {}
         try:
-            from core.database import ModelEndpoint
-            from src.endpoint_resolver import normalize_base, build_headers
-            db2 = db
-            eps = db2.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all()
-            for ep in eps:
-                if normalize_base(ep.base_url) in endpoint_url or endpoint_url in normalize_base(ep.base_url):
-                    headers = build_headers(ep.api_key, normalize_base(ep.base_url))
-                    break
+            from src.endpoint_resolver import normalize_base, build_headers, find_visible_endpoint_by_base
+            ep = find_visible_endpoint_by_base(endpoint_url, owner=task.owner)
+            if ep:
+                headers = build_headers(ep.api_key, normalize_base(ep.base_url))
         except Exception:
             pass
 
@@ -2044,11 +2102,12 @@ class TaskScheduler:
                 )
                 db.add(task)
                 seeded.append(action)
-            if seeded or renamed or removed_dupes or retired_count:
+            policy_paused, policy_runs = self._normalize_policy_disabled_tasks(db, owner=owner)
+            if seeded or renamed or removed_dupes or retired_count or policy_paused or policy_runs:
                 db.commit()
                 logger.info(
-                    "Housekeeping defaults for %s: seeded=%s renamed=%s deduped=%s retired=%s",
-                    owner, seeded, sorted(set(renamed)), sorted(set(removed_dupes)), retired_count,
+                    "Housekeeping defaults for %s: seeded=%s renamed=%s deduped=%s retired=%s policy_paused=%s policy_runs=%s",
+                    owner, seeded, sorted(set(renamed)), sorted(set(removed_dupes)), retired_count, policy_paused, policy_runs,
                 )
         except Exception as e:
             logger.warning(f"Failed to create default tasks: {e}")

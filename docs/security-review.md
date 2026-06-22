@@ -13,7 +13,7 @@ Canonical threat model: [threat-model.md](threat-model.md).
 
 ## Security Objective
 
-Cleverly is intended to run as a private local AI workspace. The hardened target
+Cleverly is intended to run as a private local AI operating console. The hardened target
 profile is:
 
 - UI reachable only through `127.0.0.1`.

@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 rag_instance = None
 _last_attempt = 0.0
+_last_error = ""
 _RETRY_INTERVAL = 30  # seconds between re-init attempts
 
 
@@ -27,7 +28,7 @@ def get_rag_manager():
     That compat issue is resolved in current pinned versions
     (chromadb 1.5.x + pydantic 2.13.x), so the real initializer is back.
     """
-    global rag_instance, _last_attempt
+    global rag_instance, _last_attempt, _last_error
 
     if rag_instance is not None:
         return rag_instance
@@ -46,16 +47,25 @@ def get_rag_manager():
 
         rag_instance = VectorRAG(persist_directory=persist_dir)
         if not rag_instance.healthy:
+            _last_error = getattr(rag_instance, "last_error", "") or "VectorRAG is not healthy"
             logger.warning("VectorRAG created but not healthy, will retry later")
             rag_instance = None
         else:
+            _last_error = ""
             logger.info("Initialized VectorRAG with ChromaDB")
 
     except ImportError as e:
         logger.warning(f"VectorRAG not available: {e}")
+        _last_error = str(e)
         rag_instance = None
     except Exception as e:
         logger.error(f"Failed to initialize RAG: {e}")
+        _last_error = str(e)
         rag_instance = None
 
     return rag_instance
+
+
+def get_rag_error() -> str:
+    """Return the most recent lazy RAG initialization error, if any."""
+    return _last_error

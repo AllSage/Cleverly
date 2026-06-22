@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from src.model_context import get_context_length, estimate_tokens
 from src.llm_core import llm_call_async
 from src.endpoint_resolver import resolve_endpoint
+from src.call_compat import call_with_optional_owner
 from core.models import ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -239,6 +240,7 @@ async def maybe_compact(
     model: str,
     messages: List[Dict],
     headers: Optional[Dict] = None,
+    owner: Optional[str] = None,
 ) -> tuple:
     """Check context usage and compact if above threshold.
 
@@ -285,7 +287,9 @@ async def maybe_compact(
     )
 
     # Use utility model if configured, otherwise fall back to session model
-    util_url, util_model, util_headers = resolve_endpoint("utility")
+    util_url, util_model, util_headers = call_with_optional_owner(
+        resolve_endpoint, "utility", owner=owner or getattr(session, "owner", None)
+    )
     compact_url = util_url or endpoint_url
     compact_model = util_model or model
     compact_headers = util_headers if util_url else headers

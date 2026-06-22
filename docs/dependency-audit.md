@@ -2,13 +2,14 @@
 
 Cleverly keeps two dependency files:
 
-- `requirements.txt`: portable Python install input.
-- `requirements.lock`: audit snapshot generated from the current development
-  virtual environment with `python -m pip freeze --all`.
+- `requirements.txt`: direct Python dependency input.
+- `requirements.lock`: constraints/audit snapshot generated from the current
+  development virtual environment with `python -m pip freeze --all`.
 
-The lock file is intentionally not the only install path because some packages
-resolve to platform-specific wheels. Use it to compare a prepared offline image
-against the reviewed environment.
+The lock file is used as a constraints file for Docker and reproducible native
+development installs. It is not the only install input because some dependency
+resolution still needs to stay platform-aware. Use it to compare a prepared
+offline image against the reviewed environment.
 
 ## Generate The Local SBOM
 
@@ -41,7 +42,7 @@ For stricter air-gap prep, build a wheelhouse on a connected machine:
 
 ```powershell
 python -m pip download -r requirements.txt -d dist\wheelhouse
-python -m pip install --no-index --find-links dist\wheelhouse -r requirements.txt
+python -m pip install --no-index --find-links dist\wheelhouse -r requirements.txt -c requirements.lock
 ```
 
 Copy `dist\wheelhouse` with the Docker image bundle. Do not let the offline

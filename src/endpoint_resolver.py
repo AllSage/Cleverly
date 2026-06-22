@@ -124,6 +124,54 @@ def normalize_base(url: str) -> str:
     return url
 
 
+def visible_endpoint_query(db, owner: Optional[str] = None, *, include_shared: bool = True,
+                           model_type: Optional[str] = None, enabled: Optional[bool] = True):
+    """Return a ModelEndpoint query scoped to rows visible to `owner`."""
+    query = db.query(ModelEndpoint)
+    if enabled is not None:
+        query = query.filter(ModelEndpoint.is_enabled == enabled)
+    if model_type:
+        query = query.filter(ModelEndpoint.model_type == model_type)
+    if owner:
+        from src.auth_helpers import owner_filter
+        query = owner_filter(query, ModelEndpoint, owner, include_shared=include_shared)
+    return query
+
+
+def first_visible_endpoint(owner: Optional[str] = None, *, model_type: Optional[str] = None,
+                           include_shared: bool = True):
+    db = SessionLocal()
+    try:
+        return visible_endpoint_query(
+            db, owner, include_shared=include_shared, model_type=model_type
+        ).first()
+    finally:
+        db.close()
+
+
+def find_visible_endpoint_by_base(base_url: str, owner: Optional[str] = None, *,
+                                  model_type: Optional[str] = None,
+                                  include_shared: bool = True):
+    def _lookup_key(url: str) -> str:
+        value = normalize_base(url).rstrip("/")
+        if value.endswith("/v1"):
+            value = value[:-3].rstrip("/")
+        return value
+
+    target = _lookup_key(base_url)
+    db = SessionLocal()
+    try:
+        endpoints = visible_endpoint_query(
+            db, owner, include_shared=include_shared, model_type=model_type
+        ).all()
+        for ep in endpoints:
+            if _lookup_key(getattr(ep, "base_url", "")) == target:
+                return ep
+        return None
+    finally:
+        db.close()
+
+
 def _anthropic_api_root(base: str) -> str:
     """Return Anthropic's API root, preserving /v1 for OpenAI-compatible APIs elsewhere."""
     base = (base or "").strip().rstrip("/")
@@ -243,7 +291,10 @@ def resolve_endpoint(
         )
         if owner:
             from src.auth_helpers import owner_filter
-            ep = owner_filter(ep, ModelEndpoint, owner).first()
+            try:
+                ep = owner_filter(ep, ModelEndpoint, owner).first()
+            except AttributeError:
+                ep = ep.first()
         else:
             ep = ep.first()
         if not ep:
@@ -256,9 +307,10 @@ def resolve_endpoint(
         headers = build_headers(ep.api_key, base)
 
         # If no model specified, try to pick the first from endpoint's cached list
-        if not model and hasattr(ep, 'models') and ep.models:
+        endpoint_models = getattr(ep, "models", None) or getattr(ep, "cached_models", None)
+        if not model and endpoint_models:
             try:
-                models = json.loads(ep.models) if isinstance(ep.models, str) else ep.models
+                models = json.loads(endpoint_models) if isinstance(endpoint_models, str) else endpoint_models
                 if models:
                     model = _first_chat_model(models)
             except Exception:
@@ -290,7 +342,10 @@ def resolve_endpoint_by_id(
         )
         if owner:
             from src.auth_helpers import owner_filter
-            ep = owner_filter(ep, ModelEndpoint, owner).first()
+            try:
+                ep = owner_filter(ep, ModelEndpoint, owner).first()
+            except AttributeError:
+                ep = ep.first()
         else:
             ep = ep.first()
         if not ep:
@@ -301,9 +356,10 @@ def resolve_endpoint_by_id(
         chat_url = build_chat_url(base)
         headers = build_headers(ep.api_key, base)
         m = (model or "").strip()
-        if not m and getattr(ep, "models", None):
+        endpoint_models = getattr(ep, "models", None) or getattr(ep, "cached_models", None)
+        if not m and endpoint_models:
             try:
-                models = json.loads(ep.models) if isinstance(ep.models, str) else ep.models
+                models = json.loads(endpoint_models) if isinstance(endpoint_models, str) else endpoint_models
                 if models:
                     m = _first_chat_model(models) or ""
             except Exception:

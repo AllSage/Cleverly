@@ -1717,7 +1717,11 @@ async def do_manage_settings(content: str, owner: Optional[str] = None) -> Dict:
             if not wanted_slug:
                 return None
             best = None
-            for ep in db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).all():
+            query = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)
+            if owner:
+                from src.auth_helpers import owner_filter
+                query = owner_filter(query, ModelEndpoint, owner)
+            for ep in query.all():
                 raw_models = []
                 try:
                     raw_models = _json.loads(ep.cached_models or "[]") or []

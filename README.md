@@ -1,30 +1,176 @@
 # Cleverly
 
-Self-hosted AI workspace for chat, agents, documents, research, model serving,
-email, calendar, notes, tasks, memory, and local tools.
+Local AI operating console for models, agents, tools, documents, research,
+memory, automations, and sealed Docker operations.
 
 ![Cleverly](docs/cleverly-icon.svg)
 
-Cleverly is a local-first interface for the kind of work people normally split
-across ChatGPT, Claude, model servers, notes, documents, email, and task tools.
-It runs on your hardware, with your data.
+Cleverly is a local-first control plane for the work people normally split
+across ChatGPT, Claude, model servers, notes, documents, email, calendars,
+task tools, shell sessions, and admin scripts. It runs on your hardware, keeps
+your data under your control, and gives you one console for model setup, agent
+workflows, knowledge, automation, and offline verification.
 
-## Features
+## Operating Console Pillars
 
-- **Chat**: local models and API providers, including Ollama, OpenAI-compatible endpoints, OpenRouter, and OpenAI.
-- **Agent tools**: MCP, web, files, shell, skills, memory, and task workflows.
-- **Code Workspace**: import a local repo archive, edit files, apply diffs, run offline test/build commands, inspect git status/diff, and commit changes inside the sealed Docker data volume.
-- **Agent Loops**: bundled offline workflow templates for tests, builds, security checks, docs sync, model onboarding, and release smoke runs.
-- **Cookbook**: hardware-aware model recommendations, downloads, and serving via vLLM, llama.cpp, and related engines.
-- **Training Lab**: offline-only starter text training with local datasets and saved model artifacts.
-- **Deep Research**: multi-step source gathering and synthesis into visual reports.
-- **Compare**: blind side-by-side model comparison and synthesis.
-- **Documents**: multi-tab editor with markdown, HTML, CSV, syntax highlighting, AI edits, and suggestions.
-- **Memory / Skills**: persistent memory and reusable skills with ChromaDB and fastembed.
-- **Email**: IMAP/SMTP inbox with AI triage, reminders, tags, summaries, and reply drafts.
-- **Notes & Tasks**: notes, reminders, todos, scheduled tasks, ntfy/browser/email notification channels, and local response-complete alerts.
-- **Calendar**: local-first calendar with CalDAV sync and `.ics` import/export.
-- **Mobile / PWA**: responsive interface with installable app behavior.
+- **Models**: local models and API providers, including Ollama, OpenAI-compatible endpoints, OpenRouter, OpenAI, hardware-aware recommendations, downloads, and serving through vLLM, llama.cpp, and related engines.
+- **Agents and tools**: chat, autonomous agents, MCP, web, files, shell, skills, memory, task workflows, and bundled Agent Loops for tests, builds, security checks, docs sync, model onboarding, and release smoke runs.
+- **Code operations**: import a local repo archive, edit files, apply diffs, run offline test/build commands, inspect git status/diff, and commit changes inside the sealed Docker data volume.
+- **Knowledge and research**: persistent memory, reusable skills, ChromaDB/fastembed vector search, personal documents, Deep Research reports, and blind side-by-side model comparison.
+- **Documents and daily work**: multi-tab documents with markdown, HTML, CSV, syntax highlighting, AI edits, suggestions, notes, todos, reminders, email triage, calendar sync, and `.ics` import/export.
+- **Automation and notifications**: scheduled tasks, ntfy/browser/email notification channels, local response-complete alerts, webhooks when enabled, and background utility-model jobs.
+- **Offline operations**: Docker sealed mode, explicit network break-glass controls, support-service profiles, backup/vault tooling, setup checks, and operator verification before sensitive work.
+- **Labs and mobility**: Training Lab for offline starter text training, local datasets and saved model artifacts, plus a responsive installable PWA interface.
+
+The Command Center dashboard includes a Toolchain band that inventories the
+integrated local modules: Offline Control, Ollama, ChromaDB/RAG, SearXNG
+research, Training Lab, Code Workspace, Voice I/O, Tasks, Calendar, Memory,
+Notes, Library, Gallery, Agent Loops, backups, recovery, and Docker support
+services. The operator API also exposes read-only command route proof through
+`/api/operator/route` and `/api/operator/routes`, a read-only service repair
+plan through `/api/operator/repair-plan`, and a read-only note-to-task draft
+through `/api/operator/note-task-draft`. Change Brief evidence is available
+through `/api/operator/change-brief`, and backup verification evidence is
+available through `/api/operator/backup-plan`. Activity timeline coverage is
+available through `/api/operator/activity-plan`, Code test execution evidence is
+available through `/api/operator/code-test-plan`, repeated build-watch evidence
+is available through `/api/operator/build-watch-plan`, local document search
+evidence is available through `/api/operator/document-search-plan`, and local
+training run evidence is available through `/api/operator/training-plan`, and
+Voice I/O readiness evidence is available through `/api/operator/voice-plan`.
+Permissioned-autonomy evidence is available through
+`/api/operator/autonomy-plan`, and unified-memory evidence is available through
+`/api/operator/memory-plan`. Workday/scheduling evidence is available through
+`/api/operator/workday-plan`, and local model operation evidence is available
+through `/api/operator/model-ops-plan`. File operation evidence is available
+through `/api/operator/file-ops-plan`, and runtime resource evidence is
+available through `/api/operator/runtime-plan`, Command Center
+situational-awareness evidence is available through
+`/api/operator/console-plan`, local toolchain integration evidence is available
+through `/api/operator/toolchain-plan`, safety-boundary evidence is available
+through `/api/operator/safety-plan`, operating-console goal readiness evidence
+is available through `/api/operator/goal-plan`, and backend target-experience
+proof is available through `/api/operator/experience-plan`, so
+target phrases, container repair requests, local note handoffs, backup
+preparation, activity/retry reviews, code test requests, build-watch requests,
+local document search requests, training requests, voice/text command requests,
+memory/profile requests, "summarize today" requests, and
+"what changed since yesterday" summaries can be
+audited against persisted local catalogs, activity records, workspace metadata,
+data paths, backup gates, candidate test/build commands, document index/RAG
+metadata, training dataset/artifact ledgers, local memory/profile coverage, and
+current service probes without executing anything.
+Typed, palette, and voice command text use `/api/operator/route` as a
+backend read-only route preflight before the browser executes a local command.
+The Command Center and global Command Palette route previews also check that
+backend route after a short debounce, so visible route proof, trust mode, and
+approval requirement match what the typed command path will use.
+In the Command Palette, pressing Enter routes the typed text through the
+backend preflight; clicking a specific command row intentionally executes that
+chosen command under the same trust controls.
+If the backend route catalog is unavailable, stale, unauthenticated, or returns
+no selected command, the browser falls back to its local matcher and then chat.
+The repair plan lists suggested host Docker commands as evidence only; restarts,
+starts, pulls, deletes, network use, and host filesystem changes still require
+explicit approval. The note-to-task endpoint returns a draft payload only;
+saving or scheduling still happens from the Tasks review form. The backup plan
+endpoint returns scope, evidence, and approval rows only; encrypted export,
+restore drill, full snapshots, tarball verification, restore, uploads, moves,
+and deletion stay behind explicit user actions. The activity-plan endpoint
+audits status/result/log coverage, trust tags, retryable routes, failures,
+pending work, recovery prompts, and timeline data paths only; it does not write
+or delete records, retry commands, approve actions, restore data, restart
+services, run shell commands, or use network access. The code-test endpoint returns
+workspace inventory and candidate commands only; snapshots, test runs, diffs,
+restores, commits, and shell execution stay in Code Workspace controls.
+The training-plan endpoint returns dataset, artifact, route, dependency, job,
+and data-location evidence only; dataset creation, tiny-model training, LoRA
+jobs, model pulls, endpoint changes, artifact writes, network access, and job
+approval stay in Training Lab controls.
+The voice-plan endpoint returns provider, permission, route, API gate, and data
+path evidence only; it does not start the microphone, record audio, upload
+audio, transcribe audio, synthesize speech, speak audio, change STT/TTS
+settings, run shell commands, or use network access.
+The autonomy-plan endpoint returns trust policy, command catalog, workflow
+route, approval gate, activity decision, retry evidence, and data-path rows
+only; it does not route commands, approve commands, retry commands, start
+workflows, change trust policy, delete activity, run shell commands, modify
+files, or use network access.
+The memory-plan endpoint returns memory/profile coverage, recall toggle, API
+gate, write-boundary, and data-path rows only; it does not add memories, import
+files, extract memories, tidy or audit memories with a model, pin memories,
+update memories, delete memories, edit notes, run automation, run shell
+commands, or use network access.
+The workday-plan endpoint returns task, task-run, calendar, note, briefing,
+API-gate, and data-path rows only; it does not create tasks, update tasks, run
+tasks, create calendar events, sync calendars, edit notes, send notifications,
+start automation, run shell commands, or use network access.
+The model-ops-plan endpoint returns primary-model, endpoint, local model,
+training, fine-tune, Ollama, API-gate, and data-path rows only; it does not set
+or auto-select the primary model, register or delete endpoints, pull or
+download models, start serving, benchmark models, start training or
+fine-tuning, change settings, run shell commands, or use network access.
+The file-ops-plan endpoint returns app-owned file roots, shallow file metadata,
+sensitive-path flags, API gates, backup requirements, and data-path rows only;
+it does not read file contents, write files, copy files, move files, delete
+files, upload files, import files, index files, export files, restore files,
+run shell commands, or use network access.
+The runtime-plan endpoint returns Docker/native mode, offline posture, runtime
+limits, memory/process counters, disk-capacity rows for app/cache/model/job
+roots, heavy-job gates, API gates, and data-path rows only; it does not run
+shell commands, read file contents, write files, delete files, start jobs,
+download models, pull images, restart services, or use network access.
+The console-plan endpoint returns Command Center section coverage, entry-point,
+data-feed, API-gate, guard-rail, and data-path rows only; it does not route
+commands, execute commands, approve actions, start workflows, start jobs, run
+shell commands, write files, restart services, train models, export data,
+delete records, or use network access.
+The toolchain-plan endpoint returns module wiring, command entry-point, API-feed,
+data-path, local/support-service, network-capability, and guard-rail rows only;
+it does not route commands, execute commands, approve actions, start workflows,
+start jobs, run shell commands, write files, restart services, train models,
+download models, query web search, export data, delete records, or use network
+access.
+The safety-plan endpoint returns destructive, network, credential, filesystem,
+and shell boundary rows with trust-policy, command-gate, API-gate, data-path,
+and activity-ledger evidence only; it does not route commands, execute commands,
+approve actions, start workflows, start jobs, run shell commands, write files,
+restart services, train models, query web search, read credentials, export data,
+delete records, or use network access.
+The goal-plan endpoint returns operating-console principle, definition-of-done,
+evidence, API-gate, guard-rail, and data-path rows only; it does not route
+commands, execute commands, approve actions, start workflows, start jobs, run
+shell commands, write files, restart services, train models, query web search,
+read credentials, export data, delete records, or use network access.
+The experience-plan endpoint returns target phrase, command route, approval
+gate, entry-point, API-gate, and data-path rows only; it does not route
+commands, execute commands, start workflows, start jobs, run shell commands,
+write files, restart services, approve actions, or use network access.
+The build-watch endpoint returns workspace inventory, candidate build commands,
+loop limits, route IDs, API gates, and evidence rows only; loop starts, build
+runs, file edits, snapshot create/restore, dependency installs, network fetches,
+commits, and shell execution stay behind Code Workspace and Agent Loop approval
+controls.
+The document-search endpoint returns personal document index counts, RAG
+readiness, route proof, API gates, and data paths only; it does not run a query,
+read result snippets, reload indexes, add directories, rebuild RAG, use web
+search, or modify files.
+
+Local document search is also routed through the local Library/RAG index. When
+you ask Cleverly to search local documents from chat, voice, or Command Center,
+it searches indexed personal documents first, falls back to the local keyword
+index, and reports a no-match result instead of claiming it has no local access.
+The Command Center Local Document Search modal uses
+`/api/operator/document-search-plan` before a query so the local index,
+`/api/personal/search` route, RAG/keyword fallback, and safety boundaries are
+visible before retrieval starts.
+
+Voice I/O includes an approval-gated browser voice setup route that enables
+browser STT/TTS locally; microphone access still requires the browser's own
+permission prompt when voice starts. Voice configuration is stored in
+`data/settings.json`, generated local TTS cache files live under
+`data/tts_cache/`, and browser speech recognition/synthesis stays in the
+browser unless local or endpoint providers are explicitly selected.
 
 In Docker offline/sealed mode, internet-dependent actions such as web research,
 external model endpoints, Cookbook downloads, email/calendar sync, webhooks, and
@@ -42,8 +188,9 @@ Default behavior:
   auto-picks a model from detected GPU memory, seals data into Docker volumes,
   and starts Cleverly.
 - There is no hidden cloud model default. If no model is explicitly set during
-  connected setup, Cleverly chooses a local Ollama model from the hardware table
-  below.
+  connected setup, Cleverly chooses a local Ollama model from the launcher's
+  hardware profiles. See [docs/model-onboarding.md](docs/model-onboarding.md)
+  for the current model choices.
 
 ### Runtime Modes
 
@@ -218,17 +365,27 @@ cd Cleverly
 
 Open `http://127.0.0.1:7000`.
 
-Manual Compose is also supported for development, but the hardened Compose file
-uses `pull_policy: never` for support services so runtime startup cannot pull
-from the internet. On a fresh connected machine, pull those support images
-first, then build/start:
+Manual Compose is also supported for development. The default Compose startup
+builds and starts the core app, worker, and local proxy without requiring
+optional support images:
 
 ```bash
 git clone https://github.com/AllSage/Cleverly.git
 cd Cleverly
 cp .env.example .env
-docker compose pull chromadb searxng ntfy
 docker compose up -d --build
+```
+
+ChromaDB, SearXNG, and ntfy are optional support services in the `support`
+profile. The hardened Compose file uses `pull_policy: never` for those services
+so runtime startup cannot pull from the internet. On a fresh connected machine,
+pull those images first, then enable the profile:
+
+```bash
+docker pull ghcr.io/chroma-core/chroma:latest
+docker pull ghcr.io/searxng/searxng:latest
+docker pull docker.io/binwiederhier/ntfy:latest
+docker compose --profile support up -d --build
 ```
 
 Docker uses the Compose stack name `cleverly` and Docker named volumes for app
@@ -280,6 +437,18 @@ To check a local install without downloading anything:
 
 ```powershell
 .\Cleverly.ps1 doctor -FineTune
+```
+
+For development verification from an already-prepared checkout:
+
+```powershell
+.\scripts\dev-verify.ps1
+```
+
+On a connected development machine that still needs Python dependencies:
+
+```powershell
+.\scripts\dev-verify.ps1 -Install
 ```
 
 ### Choose And Pull A Local Model
@@ -428,7 +597,7 @@ git clone https://github.com/AllSage/Cleverly.git
 cd Cleverly
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt -c requirements.lock
 python setup.py
 CLEVERLY_OFFLINE=1 python -m uvicorn app:app --host 127.0.0.1 --port 7000
 ```
@@ -452,7 +621,7 @@ Manual setup:
 ```powershell
 python -m venv venv
 venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements.txt -c requirements.lock
 python setup.py
 $env:CLEVERLY_OFFLINE='1'
 $env:APP_BIND='127.0.0.1'
@@ -489,6 +658,12 @@ pasted local text and writes datasets/artifacts under `./data/training`; it does
 not download datasets or call model endpoints. Advanced LoRA fine-tuning works
 only when its optional dependencies and a trainable local model directory are
 already baked into the image.
+
+The Command Center Training Run Plan uses `/api/operator/training-plan` to
+inspect local datasets, starter artifacts, fine-tune dependency state, job
+ledgers, route metadata, and data paths before any run. It is evidence-only: it
+does not create datasets, start tiny training, start LoRA jobs, pull models,
+change model endpoints, write artifacts, use network access, or approve jobs.
 
 External AI/security references are tracked as
 [study packs](docs/external-agent-study-packs.md) only. Cleverly does not pull
@@ -539,13 +714,35 @@ the app through the sealed Docker data volume. Native/development runs use the
 in-process runner unless `CODE_WORKSPACE_RUNNER=worker` is set and the worker is
 started manually.
 
+The Command Center Code Test Plan uses `/api/operator/code-test-plan` to inspect
+workspace metadata and common local test config files such as `package.json`,
+`pyproject.toml`, `pytest.ini`, `go.mod`, and `Cargo.toml`. It suggests commands
+as evidence only. Candidate command rows can stage a detected command in the
+Code Workspace Run panel with the matching workspace selected, but they do not
+press Run. A staged command is mirrored to `data/operator_activity.json` with
+status `staged`, the workspace metadata, and a note that no tests executed. The
+user still reviews scope, status, diff, and snapshot state before using the Code
+Workspace Run button. When the user presses Run Command, the command result is
+mirrored to `data/operator_activity.json` with the command, workspace, runner,
+exit code, and truncated stdout/stderr so Activity Details, Copy Log, retry, and
+recovery views have execution evidence. The plan does not run tests, create
+snapshots, apply diffs, restore snapshots, commit, install dependencies, use
+network access, or execute shell commands.
+
+The Command Center Build Watch Plan uses `/api/operator/build-watch-plan` to
+inspect workspace metadata, infer candidate build/check commands, and show the
+Build Until Green loop approval gates. It does not start loops, run builds, edit
+files, create or restore snapshots, install dependencies, use network access,
+commit, or execute shell commands.
+
 ## Docker Notes
 
 `Cleverly.ps1 start` starts the offline app, bundled Ollama, networkless code
-worker, and local proxy with `--pull never`. Manual full Compose can also start
-ChromaDB, SearXNG, and ntfy when those support images are prepared. Those
-support services and the bundled Ollama overlays use `pull_policy: never`, so a
-missing image fails closed instead of pulling from the internet during runtime.
+worker, and local proxy with `--pull never`. Manual default Compose starts only
+the core app, worker, and proxy. ChromaDB, SearXNG, and ntfy are available in
+the optional `support` profile when those images are prepared. Those support
+services and the bundled Ollama overlays use `pull_policy: never`, so a missing
+image fails closed instead of pulling from the internet during runtime.
 Cleverly and bundled services run on an internal-only Docker network by default.
 Only the proxy publishes a host port, and it binds to `127.0.0.1`.
 
@@ -598,7 +795,7 @@ docker compose logs cleverly | grep -E 'ChromaDB|MemoryVectorStore|DEGRADED'
 
 ## Security Notes
 
-Cleverly is a self-hosted workspace with powerful local tools: shell access,
+Cleverly is a local AI operating console with powerful local tools: shell access,
 file uploads, model downloads, web research, email/calendar integrations, API
 tokens, and webhooks. Treat it like an admin console.
 
@@ -610,7 +807,7 @@ tokens, and webhooks. Treat it like an admin console.
 - Rotate any API keys or tokens that were ever pasted into shared chats, screenshots, demos, or logs.
 - Prefer binding manual development runs to `127.0.0.1`; bind to `0.0.0.0` only when you intentionally want LAN/reverse-proxy access.
 - Check the admin-only operator page at `http://127.0.0.1:7000/operator` before loading sensitive data.
-- Review dependency changes with [docs/dependency-audit.md](docs/dependency-audit.md); `requirements.lock` is an audit snapshot, while `requirements.txt` remains the portable install input.
+- Review dependency changes with [docs/dependency-audit.md](docs/dependency-audit.md); `requirements.txt` remains the direct dependency input, while Docker and reproducible native installs use `requirements.lock` as constraints.
 
 For HTTPS, put a TLS-terminating reverse proxy in front. Minimal Caddy example:
 
@@ -648,6 +845,8 @@ for deployment-level defaults and secrets you want present before first boot.
 | `CLEVERLY_ALLOW_NETWORK` | unset | Break-glass token; must equal `I_ACCEPT_NETWORK_RISK` to bypass Docker/app offline startup guards |
 | `CLEVERLY_DISABLE_OFFLINE_POLICY` | unset | Development-only bypass for the app-level strict offline startup policy |
 | `CLEVERLY_OFFLINE_EMBEDDINGS` | `0` in Docker | Allow local FastEmbed only after its cache is pre-seeded |
+| `CLEVERLY_HASH_EMBEDDINGS` | `1` in Docker | Enable no-download local hash embeddings when FastEmbed is unavailable or disabled |
+| `CLEVERLY_HASH_EMBEDDING_DIM` | `384` | Dimension for the no-download local hash embedding fallback |
 | `CLEVERLY_HOST_DATA` | unset | Set to `1` only to make `Cleverly.ps1` use visible `./data` and `./logs` bind mounts |
 | `CODE_WORKSPACE_DIR` | unset | Optional override for sealed code workspace storage; defaults to `DATA_DIR/code-workspaces` |
 | `CODE_WORKSPACE_RUNNER` | `worker` in Docker | Use the networkless worker sidecar for Code Workspace commands; native runs default to in-process |
@@ -685,10 +884,81 @@ docs/       landing page and preview media
 
 ## Data
 
-With the Docker launcher, user data lives in Docker named volumes by default.
-With `-HostData` or native runs, user data lives in `data/` and is gitignored:
-`app.db`, `memory.json`, `presets.json`, uploads, personal docs, ChromaDB data,
-and settings.
+By default, the Docker launcher uses Docker-managed named volumes. With
+`-HostData` or native runs, the same app data is written under the repository's
+gitignored `data/` and `logs/` folders.
+
+In the app, open **Command Center -> Operator -> Data** or run the
+`Open Local Data Map` command to see the same locations grouped by sealed
+Docker volumes, host/native mirrors, app files, and backup/privacy boundaries.
+
+Default sealed Docker volumes:
+
+| Volume | Mounted path | Stores |
+|---|---|---|
+| `cleverly-data` | `/app/data` | SQLite DB, auth/settings/features JSON, sessions, memories, presets, skills, uploads, generated images, personal docs, research reports, tasks, training data, search caches, Code Workspace state, vault config, and other app runtime state |
+| `cleverly-logs` | `/app/logs` | Application logs |
+| `cleverly-ssh` | `/app/.ssh` | Cookbook remote-server SSH identity |
+| `cleverly-cache` | `/app/.cache` | General runtime cache for browser/MCP helpers and package caches |
+| `cleverly-huggingface` | `/app/.cache/huggingface` | Hugging Face model/cache data used inside Docker |
+| `cleverly-local` | `/app/.local` | Cookbook-installed local Python CLIs/packages |
+| `cleverly-npm-cache` | `/app/.npm` | npm/npx cache for optional MCP helpers |
+| `cleverly-ollama` | `/root/.ollama` | Bundled Ollama model store when using sealed Ollama overlay |
+| `cleverly-chromadb-data` | `/data` | ChromaDB vector store service data |
+| `cleverly-searxng-data` | `/etc/searxng` | SearXNG runtime config, including generated secret |
+| `cleverly-searxng-cache` | `/var/cache/searxng` | SearXNG persistent cache data |
+| `cleverly-ntfy-cache` | `/var/cache/ntfy` | ntfy cache |
+
+Host-data overlay and native paths:
+
+| Host path | Container/native path | Stores |
+|---|---|---|
+| `./data` | `/app/data` or native `data/` | Main app runtime data |
+| `./logs` | `/app/logs` or native `logs/` | Application logs |
+| `./data/ssh` | `/app/.ssh` | Cookbook SSH identity |
+| `./data/cache` | `/app/.cache` and `XDG_CACHE_HOME=/app/data/cache` | General cache and FastEmbed cache root |
+| `./data/cache/fastembed` | `/app/data/cache/fastembed` | FastEmbed model cache when pre-seeded; the hash embedding fallback writes no model cache |
+| `./data/huggingface` | `/app/.cache/huggingface` | Hugging Face cache/model files |
+| `./data/local` | `/app/.local` | Local package installs used by Cookbook |
+| `./data/npm-cache` | `/app/.npm` | npm/npx cache |
+| `./data/ollama` | `/root/.ollama` | Bundled Ollama model store for connected prep/offline transfer |
+
+Important files and subdirectories under `data/` include:
+
+| Path | Stores |
+|---|---|
+| `data/app.db` | Main SQLite database for chat/session records, tasks, task runs, calendars, calendar events, notes, memories, documents, model endpoints, and related local app tables |
+| `data/auth.json` | Users, password hashes, privileges, and auth settings |
+| `data/settings.json` / `data/features.json` | App settings and feature flags |
+| `data/user_prefs.json` | Per-user preferences, UI settings, and the Command Center operator profile |
+| `data/sessions.json` | Session metadata cache used by the session manager |
+| `data/operator_activity.json` | Durable Command Center/operator activity ledger for command status, trust tags, logs, retry evidence, and recovery notes |
+| `data/operator_policy.json` | Owner-scoped Command Center trust policy for local, approval, network, and high-risk command tiers |
+| `data/operator_commands.json` | Owner-scoped sanitized command catalog published by the browser command layer for backend readiness, route proof, and audit visibility |
+| `data/operator_workflows.json` | Owner-scoped sanitized Agent Loop and workflow route catalog published by Command Center for automation readiness, backend target-phrase proof, and handoff evidence |
+| `data/memory.json`, `data/memory_doc.md`, `data/skills`, `data/skills.json` | Memory and skill data |
+| `data/uploads`, `data/generated_images`, `data/gallery`, `data/gallery_uploads` | Uploaded and generated media |
+| `data/personal_docs`, `data/personal_docs/index`, `data/chroma` | Personal documents and local vector indexes for native/local modes |
+| `data/deep_research` | Deep Research job outputs and reports |
+| `data/code-workspaces` / `data/code-workspaces/workspaces.json` | Code Workspace imports, metadata index, snapshots, worker queue, outputs, and Change Brief workspace evidence |
+| `data/training` | Training Lab root for local datasets, starter artifacts, fine-tune jobs, adapters, and base-model directories |
+| `data/training/datasets` | Saved local text datasets used by tiny starter training and LoRA jobs |
+| `data/training/artifacts` | Tiny local starter model artifacts and metadata |
+| `data/training/finetune/jobs` | Fine-tune job ledgers, logs, status, and result metadata |
+| `data/training/finetune/adapters` | Local LoRA adapter outputs |
+| `data/training/finetune/base-models` | HF-format base model directories used for local LoRA fine-tuning |
+| `data/models`, `data/huggingface` | Local model artifacts and Hugging Face-compatible model/cache files |
+| `data/search` | Search/content cache and analytics |
+| `data/vault.json`, `data/.app_key` | Vault session/config and local encryption key material |
+| `data/cleverly-primary-model.json` | Launcher-selected primary Ollama model manifest |
+
+The optional full data-directory snapshot CLI is `scripts/cleverly-backup`.
+By default it writes snapshot tarballs under `backups/`; `restore` is
+destructive and is not part of the default Backup Verification Plan.
+
+Do not commit `data/`, `logs/`, `.env`, generated backups, exported workspaces,
+or Docker volume contents. Sealed Docker volumes are storage isolation, not
+encryption; a host or Docker administrator can still inspect them.
 
 ## License
 

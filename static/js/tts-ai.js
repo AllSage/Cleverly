@@ -10,6 +10,8 @@ class AITTSManager {
         this.browserVoice = '';
         this.playbackSpeed = 1;
         this._provider = 'disabled';
+        this.status = 'disabled';
+        this.statusDetail = 'Text-only mode';
         this.autoPlay = false;
         this.cache = new Map(); // Client-side audio cache
 
@@ -28,40 +30,64 @@ class AITTSManager {
         this.checkAvailability();
     }
 
+    _setDisabled(detail = 'Text-only mode') {
+        this.available = false;
+        this.useBrowserTTS = false;
+        this.browserVoice = '';
+        this._provider = 'disabled';
+        this.status = 'disabled';
+        this.statusDetail = detail;
+    }
+
     async checkAvailability() {
         try {
             // Check user setting first — if TTS is disabled in settings, don't show buttons
             try {
                 const settingsRes = await fetch('/api/auth/settings', { credentials: 'same-origin' });
                 const settings = await settingsRes.json();
-                if (settings.tts_enabled === false) {
-                    this.available = false;
-                    this._provider = 'disabled';
+                if (settings.tts_enabled === false || !settings.tts_provider || settings.tts_provider === 'disabled') {
+                    this._setDisabled(settings.tts_enabled === false ? 'Disabled in settings' : 'No TTS provider selected');
                     return;
                 }
             } catch {}
 
             const response = await fetch('/api/tts/stats');
             const stats = await response.json();
+            if (!response.ok) {
+                throw new Error(stats?.detail?.message || stats?.error || response.statusText || 'TTS stats unavailable');
+            }
+            if (!stats.provider || stats.provider === 'disabled') {
+                this._setDisabled('No TTS provider selected');
+                return;
+            }
             this.available = stats.available && stats.ready;
             this.playbackSpeed = stats.speed || 1;
             this._provider = stats.provider || 'disabled';
+            this.status = this.available ? 'ready' : 'unavailable';
+            this.statusDetail = this.available ? 'Ready' : 'Configured provider is unavailable';
 
             if (stats.provider === 'browser') {
                 this.useBrowserTTS = true;
                 this.browserVoice = stats.voice || '';
                 this.available = 'speechSynthesis' in window;
                 if (!this.available) {
+                    this.status = 'unavailable';
+                    this.statusDetail = 'Browser speechSynthesis is not supported';
                     console.warn('TTS: browser mode selected but speechSynthesis not supported');
+                } else {
+                    this.status = 'ready';
+                    this.statusDetail = 'Browser speechSynthesis ready';
                 }
             } else if (this.available) {
                 this.useBrowserTTS = false;
             } else {
-                console.warn('TTS: not available');
+                console.warn(`TTS: configured provider "${stats.provider}" is not available`);
             }
         } catch (error) {
             console.error('Failed to check TTS availability:', error);
             this.available = false;
+            this.status = 'error';
+            this.statusDetail = error?.message || 'Failed to check TTS availability';
         }
     }
 
@@ -454,6 +480,9 @@ class AITTSManager {
 
 // Create global AI TTS manager instance
 window.aiTTSManager = new AITTSManager();
+window.addEventListener('cleverly-voice-settings-changed', () => {
+    window.aiTTSManager?.checkAvailability?.();
+});
 
 // Function to add AI TTS button to a message element's action bar
 export function addAITTSButton(messageElement, text) {

@@ -520,7 +520,8 @@ def setup_history_routes(session_manager) -> APIRouter:
             )
 
             # Use utility model if available
-            util_url, util_model, util_headers = resolve_endpoint("utility")
+            from src.auth_helpers import get_current_user
+            util_url, util_model, util_headers = resolve_endpoint("utility", owner=get_current_user(request))
             compact_url = util_url or session.endpoint_url
             compact_model = util_model or session.model
             compact_headers = util_headers if util_url else session.headers

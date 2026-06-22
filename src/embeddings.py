@@ -5,14 +5,17 @@ Embedding clients for RAG and memory vector search.
 
 Priority order:
   1. HTTP API (Ollama / vLLM / llama.cpp) — set EMBEDDING_URL in .env
-  2. Local fastembed (ONNX, ~50MB) — zero config fallback
+  2. Local fastembed (ONNX, ~50MB) — semantic local fallback
+  3. Local hash embeddings — no-download lexical fallback
 
 Set EMBEDDING_URL in .env, e.g.:
   EMBEDDING_URL=http://localhost:11434/v1/embeddings   (ollama)
   EMBEDDING_URL=http://localhost:8000/v1/embeddings    (vllm / llama.cpp)
 """
 
+import hashlib
 import os
+import re
 
 # Windows: force HuggingFace/fastembed to COPY model files rather than symlink
 # them. On a network-share/UNC cache dir Windows can't follow HF's symlinks
@@ -35,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "all-minilm:l6-v2"
 _DEFAULT_FASTEMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+_DEFAULT_HASH_EMBEDDING_DIM = 384
 
 
 class EmbeddingClient:
@@ -185,6 +189,53 @@ class FastEmbedClient:
         return vecs
 
 
+class HashEmbeddingClient:
+    """No-download local embedding fallback using stable lexical feature hashing.
+
+    This is intentionally lightweight. It keeps RAG and vector-backed memory
+    usable in sealed/offline Docker installs where FastEmbed has not been
+    pre-seeded yet. FastEmbed or a local embedding endpoint should still be
+    preferred for semantic quality once configured.
+    """
+
+    def __init__(self, dimension: Optional[int] = None):
+        raw_dim = os.getenv("CLEVERLY_HASH_EMBEDDING_DIM", "")
+        try:
+            configured_dim = int(raw_dim) if raw_dim else _DEFAULT_HASH_EMBEDDING_DIM
+        except ValueError:
+            configured_dim = _DEFAULT_HASH_EMBEDDING_DIM
+        self._dim = max(32, dimension or configured_dim)
+        self.model = f"local-hash-{self._dim}"
+        self.url = "local://hash"
+
+    def get_sentence_embedding_dimension(self) -> int:
+        return self._dim
+
+    def encode(
+        self, texts: List[str], normalize_embeddings: bool = True
+    ) -> np.ndarray:
+        """Encode texts as deterministic signed hashed token vectors."""
+        if not texts:
+            return np.array([], dtype="float32")
+
+        vecs = np.zeros((len(texts), self._dim), dtype="float32")
+        for row, text in enumerate(texts):
+            tokens = re.findall(r"[A-Za-z0-9_]+", str(text or "").lower())
+            features = tokens + [f"{a}_{b}" for a, b in zip(tokens, tokens[1:])]
+            for token in features:
+                digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+                bucket = int.from_bytes(digest[:4], "little") % self._dim
+                sign = 1.0 if digest[4] & 1 else -1.0
+                vecs[row, bucket] += sign
+
+        if normalize_embeddings and vecs.size > 0:
+            norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+            norms = np.where(norms == 0, 1, norms)
+            vecs = vecs / norms
+
+        return vecs
+
+
 def _load_persisted_endpoint() -> dict:
     """Load the custom embedding endpoint saved from the admin panel."""
     try:
@@ -209,6 +260,15 @@ def _truthy(value: str | None) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _hash_embeddings_enabled() -> bool:
+    return os.getenv("CLEVERLY_HASH_EMBEDDINGS", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
 def reset_http_embed_state():
     """Clear the 'HTTP embedding endpoint is down' latch so the next
     get_embedding_client() re-probes. Call this when the embedding endpoint
@@ -231,18 +291,31 @@ def _external_embedding_endpoint_allowed(url: str) -> bool:
         return False
 
 
+def _hash_embedding_client(reason: str):
+    if not _hash_embeddings_enabled():
+        logger.warning("%s; local hash embeddings disabled", reason)
+        return None
+    client = HashEmbeddingClient()
+    logger.warning(
+        "%s; using no-download local hash embeddings (%sd). "
+        "Pre-seed FastEmbed or configure a local embedding endpoint for better semantic retrieval.",
+        reason,
+        client.get_sentence_embedding_dimension(),
+    )
+    return client
+
+
 def get_embedding_client():
-    """Factory: try HTTP API first, fall back to local fastembed."""
+    """Factory: try HTTP API, then FastEmbed, then no-download hash fallback."""
     global _http_embed_down
     offline = _truthy(os.getenv("CLEVERLY_OFFLINE")) or offline_mode()
     offline_embeddings = _truthy(os.getenv("CLEVERLY_OFFLINE_EMBEDDINGS"))
 
     if offline and not offline_embeddings:
-        logger.warning(
-            "Offline mode: embeddings disabled to avoid model downloads. "
-            "Set CLEVERLY_OFFLINE_EMBEDDINGS=1 only after pre-seeding the FastEmbed cache."
+        return _hash_embedding_client(
+            "Offline mode: FastEmbed is disabled to avoid model downloads. "
+            "Set CLEVERLY_OFFLINE_EMBEDDINGS=1 only after pre-seeding the FastEmbed cache"
         )
-        return None
 
     # Check for a persisted custom endpoint (saved from admin panel)
     persisted = _load_persisted_endpoint()
@@ -281,4 +354,4 @@ def get_embedding_client():
     except Exception as e:
         logger.error(f"FastEmbed init failed: {e}")
 
-    return None
+    return _hash_embedding_client("No HTTP or FastEmbed embedding backend available")

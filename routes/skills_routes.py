@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from services.memory.skills import SkillsManager
 from src.auth_helpers import get_current_user
+from src.call_compat import call_with_optional_owner
 from core.middleware import require_admin
 
 logger = logging.getLogger(__name__)
@@ -976,7 +977,7 @@ async def _run_audit_all_job(key, skills_manager, names, url, model, headers, te
         job.pop("task", None)
 
 
-def _resolve_audit_models():
+def _resolve_audit_models(owner=None):
     """Resolve (url, model, headers, teacher) for an audit run from Settings.
 
     Worker = Utility model (falling back to Default, normalized to a served
@@ -985,7 +986,7 @@ def _resolve_audit_models():
     ValueError if no worker model.
     """
     from src.endpoint_resolver import resolve_endpoint
-    url, model, headers = resolve_endpoint("utility")
+    url, model, headers = call_with_optional_owner(resolve_endpoint, "utility", owner=owner)
     if not url or not model:
         raise ValueError("No model configured — set a Default or Utility model in Settings.")
     try:
@@ -1029,7 +1030,7 @@ async def run_scheduled_skill_audit(skills_manager: SkillsManager,
         return {"status": "running", "skipped": True}
 
     try:
-        url, model, headers, teacher = _resolve_audit_models()
+        url, model, headers, teacher = call_with_optional_owner(_resolve_audit_models, owner=owner)
     except ValueError as e:
         logger.info(f"Scheduled skill audit skipped — {e}")
         return {"status": "skipped", "reason": str(e)}
@@ -1280,7 +1281,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
 
         # Prefer the configured DEFAULT (→ Utility) model — not the current chat
         # session's model. Fall back to the caller's session model only if unset.
-        url, model, headers = resolve_endpoint("default")
+        url, model, headers = call_with_optional_owner(resolve_endpoint, "default", owner=user)
         if not url or not model:
             url = url or ((body.get("endpoint_url") or "").strip() or None)
             model = model or ((body.get("model") or "").strip() or None)
@@ -1360,7 +1361,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
 
         # Worker model (Default, normalized) + optional teacher — shared resolver.
         try:
-            url, model, headers, teacher = _resolve_audit_models()
+            url, model, headers, teacher = call_with_optional_owner(_resolve_audit_models, owner=user)
         except ValueError as e:
             raise HTTPException(400, str(e))
 

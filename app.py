@@ -67,7 +67,7 @@ CLEVERLY_OFFLINE = _truthy(getenv("CLEVERLY_OFFLINE", ""))
 # ========= APP =========
 app = FastAPI(
     title="Cleverly",
-    description="Self-hosted AI workspace with chat, memory, research, documents, and local tools",
+    description="Local AI operating console for models, agents, tools, documents, research, memory, automation, and sealed Docker operations",
     version="1.0.0",
 )
 
@@ -156,6 +156,7 @@ if AUTH_ENABLED:
         "/api/auth/features",
         "/api/auth/settings",
         "/api/auth/integrations/presets",
+        "/health",
         "/api/health",
         "/api/version",
         "/favicon.ico",
@@ -181,6 +182,7 @@ if AUTH_ENABLED:
     app.state.invalidate_token_cache = _token_cache_invalidate
     app.state._token_cache = _token_cache
     app.state._token_cache_dirty = True
+    API_TOKEN_ALLOWED_PATHS = {"/api/v1/chat"}
 
     def _refresh_token_cache():
         """Rebuild the prefix→[(id,hash)] map from the DB."""
@@ -287,6 +289,11 @@ if AUTH_ENABLED:
                             matched_scopes = scopes or []
                             break
                     if matched_id:
+                        if path not in API_TOKEN_ALLOWED_PATHS:
+                            return JSONResponse(
+                                status_code=403,
+                                content={"error": "API token is not allowed for this endpoint"},
+                            )
                         # Update last_used_at off the hot path. Doing it
                         # inline used to keep the request open across an
                         # extra commit; do it fire-and-forget instead.
@@ -306,8 +313,9 @@ if AUTH_ENABLED:
                                 pass
                         _asyncio.create_task(_touch_last_used(matched_id))
                         # Keep bearer-token callers out of normal cookie/user
-                        # routes. API-aware routes can read api_token_owner.
-                        request.state.current_user = "api"
+                        # routes. API-aware routes receive the token owner as
+                        # current_user for normal owner-scoped helpers.
+                        request.state.current_user = matched_owner or "api"
                         request.state.api_token = True
                         request.state.api_token_id = matched_id
                         request.state.api_token_owner = matched_owner
@@ -463,6 +471,8 @@ research_handler  = components["research_handler"]
 chat_handler      = components["chat_handler"]
 model_discovery   = components["model_discovery"]
 skills_manager    = components["skills_manager"]
+app.state.rag_manager = rag_manager
+app.state.personal_docs_manager = personal_docs_mgr
 
 # TTS
 from services.tts import get_tts_service
@@ -697,11 +707,15 @@ app.include_router(setup_contacts_routes())
 # ========= ROUTES (kept in app.py) =========
 
 def _serve_html_with_nonce(request: Request, file_path: str) -> HTMLResponse:
-    """Read an HTML file and inject the CSP nonce into inline <script> tags."""
+    """Read an HTML file and inject the CSP nonce into script tags."""
     with open(file_path, "r", encoding="utf-8") as f:
         html = f.read()
     nonce = getattr(request.state, "csp_nonce", "")
     html = html.replace("{{CSP_NONCE}}", nonce)
+    if nonce:
+        import re
+
+        html = re.sub(r"<script(?![^>]*\bnonce=)", f'<script nonce="{nonce}"', html)
     return HTMLResponse(html)
 
 @app.get("/")
@@ -795,6 +809,7 @@ async def get_version():
     from core.constants import APP_VERSION
     return {"version": APP_VERSION}
 
+@app.get("/health")
 @app.get("/api/health")
 async def health_check() -> Dict[str, str]:
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}

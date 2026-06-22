@@ -20,7 +20,13 @@ def endpoint(router, path: str, method: str | None = None):
 
 class PersonalDocs:
     def __init__(self):
-        self.index = [{"name": "doc.txt", "size": 3, "path": "docs/doc.txt"}]
+        self.index = [{
+            "name": "doc.txt",
+            "size": 3,
+            "path": "docs/doc.txt",
+            "source_dir": "docs",
+            "chunks": ["private local model notes", "calendar unrelated"],
+        }]
         self.directories = ["docs"]
         self.added = []
         self.removed = []
@@ -53,15 +59,27 @@ class PersonalDocs:
 
 
 class Rag:
-    def __init__(self, *, index_result=None, remove_raises=False, delete_raises=False, add_results=None):
+    def __init__(
+        self,
+        *,
+        index_result=None,
+        remove_raises=False,
+        delete_raises=False,
+        add_results=None,
+        search_results=None,
+        search_raises=False,
+    ):
         self.index_result = index_result or {"success": True, "indexed_count": 2, "failed_count": 1}
         self.remove_raises = remove_raises
         self.delete_raises = delete_raises
         self.add_results = list(add_results) if add_results is not None else [True]
+        self.search_results = search_results
+        self.search_raises = search_raises
         self.indexed = []
         self.removed = []
         self.deleted = []
         self.documents = []
+        self.searches = []
 
     def index_personal_documents(self, directory, owner=None):
         self.indexed.append((directory, owner))
@@ -84,6 +102,15 @@ class Rag:
     def add_document(self, chunk, metadata):
         self.documents.append((chunk, metadata))
         return self.add_results.pop(0) if self.add_results else True
+
+    def search(self, query, k=5, owner=None):
+        self.searches.append((query, k, owner))
+        if self.search_raises:
+            raise RuntimeError("vector failed")
+        return list(self.search_results or [])
+
+    def get_stats(self):
+        return {"embedding_model": "local-hash-384 @ local://hash"}
 
 
 class Upload:
@@ -150,6 +177,48 @@ def test_personal_list_and_reload(monkeypatch, tmp_path):
     reloaded = endpoint(router, "/api/personal/reload", "POST")(owner="alice", _admin=None)
     assert reloaded == {"ok": True, "count": 1}
     assert docs.refreshes == 1
+
+
+def test_personal_search_vector_keyword_and_errors(monkeypatch, tmp_path):
+    vector_hit = {
+        "id": "doc-1",
+        "document": "private vector result about local models",
+        "metadata": {
+            "source": "/docs/private.txt",
+            "filename": "private.txt",
+            "directory": "/docs",
+            "type": ".txt",
+            "chunk_id": 2,
+        },
+        "similarity": 0.92,
+        "distance": 0.08,
+    }
+    rag = Rag(search_results=[vector_hit])
+    router, _docs, _personal_dir, _uploads_dir = setup_router(monkeypatch, tmp_path, rag)
+    handler = endpoint(router, "/api/personal/search", "GET")
+
+    result = handler(Request(), q="local models", limit=3, owner="alice", _admin=None)
+
+    assert result["search_type"] == "vector"
+    assert result["embedding_model"] == "local-hash-384 @ local://hash"
+    assert result["results"][0]["title"] == "private.txt"
+    assert result["results"][0]["search_type"] == "vector"
+    assert rag.searches == [("local models", 3, "alice")]
+
+    monkeypatch.setattr(personal_routes, "get_rag_manager", lambda: Rag(search_results=[]))
+    keyword = handler(Request(), q="model", limit=5, owner="alice", _admin=None)
+    assert keyword["search_type"] == "keyword"
+    assert keyword["results"][0]["title"] == "doc.txt"
+    assert keyword["results"][0]["search_type"] == "keyword"
+
+    monkeypatch.setattr(personal_routes, "get_rag_manager", lambda: Rag(search_raises=True))
+    fallback = handler(Request(), q="private", limit=5, owner="alice", _admin=None)
+    assert fallback["search_type"] == "keyword"
+    assert fallback["vector_error"] == "vector failed"
+
+    with pytest.raises(HTTPException) as empty:
+        handler(Request(), q="   ", limit=5, owner="alice", _admin=None)
+    assert empty.value.status_code == 400
 
 
 @pytest.mark.asyncio

@@ -37,9 +37,11 @@ WORKDIR /app
 RUN if ! getent group "${PGID}" >/dev/null 2>&1; then groupadd -g "${PGID}" cleverly; fi \
     && if ! getent passwd "${PUID}" >/dev/null 2>&1; then useradd -u "${PUID}" -g "${PGID}" -M -s /usr/sbin/nologin -d /app cleverly; fi
 
-# Install Python deps first for better layer caching.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python deps first for better layer caching. requirements.lock is a
+# constraints snapshot, so Docker builds do not float transitive dependencies
+# while still avoiding platform-specific packages that are not direct deps.
+COPY requirements.txt requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.txt -c requirements.lock
 
 # Copy app code.
 COPY . .

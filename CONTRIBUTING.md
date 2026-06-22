@@ -41,6 +41,13 @@ python -m py_compile app.py routes/*.py src/*.py
 node --check static/js/<file-you-changed>.js
 ```
 
+On Windows, the repo also includes a convenience verifier:
+
+```powershell
+.\scripts\dev-verify.ps1
+.\scripts\dev-verify.ps1 -Install
+```
+
 For Docker-related changes:
 
 ```bash

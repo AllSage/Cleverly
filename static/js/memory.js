@@ -16,7 +16,7 @@ let selectMode = false;
 let selectedIds = new Set();
 
 
-const MEMORY_CATEGORIES = ['fact', 'identity', 'preference', 'contact', 'project', 'goal', 'task'];
+const MEMORY_CATEGORIES = ['fact', 'identity', 'preference', 'contact', 'project', 'goal', 'decision', 'workflow', 'task'];
 
 let _memoryDragWired = false;
 function _wireMemoryDrag() {

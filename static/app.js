@@ -17,7 +17,7 @@ import markdownModule from './js/markdown.js';
 import chatRenderer from './js/chatRenderer.js';
 import sessionModule from './js/sessions.js';
 import memoryModule from './js/memory.js';
-import voiceRecorderModule from './js/voiceRecorder.js';
+import voiceRecorderModule from './js/voiceRecorder.js?v=20260620-voice-setup';
 import censorModule from './js/censor.js';
 import galleryModule from './js/gallery.js';
 import tasksModule from './js/tasks.js';
@@ -37,14 +37,16 @@ import themeModule from './js/theme.js';
 // unversioned so this can't recur.
 import cookbookModule from './js/cookbook.js';
 import trainingLabModule from './js/trainingLab.js';
-import codeWorkspaceModule from './js/codeWorkspace.js';
+import codeWorkspaceModule from './js/codeWorkspace.js?v=20260621-code-run-ledger';
 import offlineControlModule from './js/offlineControl.js';
+import commandCenterModule from './js/commandCenter.js?v=20260621-code-run-ledger';
+import commandPaletteModule from './js/commandPalette.js?v=20260621-code-run-ledger';
 import setupWizardModule from './js/setupWizard.js';
 import tutorialsModule from './js/tutorials.js';
 import agentLoopsModule from './js/agentLoops.js';
 import groupModule from './js/group.js';
 import * as researchPanelModule from './js/research/panel.js';
-import ttsModule from './js/tts-ai.js';
+import ttsModule from './js/tts-ai.js?v=20260620-voice-quiet';
 import spinnerModule from './js/spinner.js';
 import { initKeyboardShortcuts } from './js/keyboard-shortcuts.js';
 import { initSidebarLayout, syncRailSide } from './js/sidebar-layout.js';
@@ -57,6 +59,7 @@ window.uiModule = uiModule;
 window.adminModule = adminModule;
 window.cookbookModule = cookbookModule;
 window.trainingLabModule = trainingLabModule;
+window.codeWorkspaceModule = codeWorkspaceModule;
 window.offlineControlModule = offlineControlModule;
 window.setupWizardModule = setupWizardModule;
 window.tutorialsModule = tutorialsModule;
@@ -341,7 +344,7 @@ function initializeEventListeners() {
       e.stopPropagation();
       exportMenu.classList.remove('open');
       const meta = sessionModule.getSessions().find(s => s.id === sessionModule.getCurrentSessionId());
-      const sessionName = meta ? meta.name : 'Cleverly Chat';
+      const sessionName = meta ? meta.name : 'Cleverly Command Center';
       const originalTitle = document.title;
       document.title = sessionName;
       const chatHistory = document.getElementById('chat-history');
@@ -500,6 +503,10 @@ function initializeEventListeners() {
 
       if (searchChatModule && searchChatModule.isOpen()) {
         searchChatModule.closeSearch();
+        return;
+      }
+      if (commandPaletteModule && commandPaletteModule.isOpen()) {
+        commandPaletteModule.close();
         return;
       }
 
@@ -3395,7 +3402,7 @@ function initializeEventListeners() {
   // Keyboard shortcuts (extracted to js/keyboard-shortcuts.js)
   initKeyboardShortcuts({
     el, Storage, sessionModule, uiModule, chatModule,
-    adminModule, settingsModule, searchChatModule,
+    adminModule, settingsModule, searchChatModule, commandPaletteModule,
     _closeCompareIfActive, _deactivateIncognito, API_BASE
   });
   
@@ -3462,6 +3469,12 @@ function startCleverlyApp() {
   // Initialize search chat module
   if (searchChatModule) {
     searchChatModule.init(API_BASE);
+  }
+  if (commandPaletteModule) {
+    commandPaletteModule.init(API_BASE);
+  }
+  if (commandCenterModule) {
+    commandCenterModule.init(API_BASE);
   }
 
   // Search buttons — icon rail + sidebar
@@ -3922,7 +3935,7 @@ function startCleverlyApp() {
     const hasModels = modelsBox && modelsBox.querySelector('.models-row');
     if (!hasModels) {
       const tip = document.getElementById('welcome-tip');
-      if (tip) tip.textContent = 'Open Setup to register a local model before using sensitive data.';
+      if (tip) tip.textContent = 'Open Setup to register a local model and verify the console before sensitive work.';
       const setupBtn = document.getElementById('welcome-setup-btn');
       if (setupBtn) setupBtn.classList.add('attention');
       if (setupWizardModule && setupWizardModule.shouldShowSetupPrompt && setupWizardModule.shouldShowSetupPrompt()) {

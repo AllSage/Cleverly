@@ -13,6 +13,7 @@ from core.database import SessionLocal, Webhook
 from src.webhook_manager import WebhookManager, validate_webhook_url, validate_events
 from src.offline_policy import is_local_model_url
 from src.settings import load_features, offline_mode
+from src.auth_helpers import require_api_scope, owner_filter
 
 logger = logging.getLogger(__name__)
 
@@ -232,12 +233,7 @@ def setup_webhook_routes(
 
     @router.post("/v1/chat")
     async def sync_chat(request: Request, body: SyncChatRequest):
-        if not getattr(request.state, "api_token", False):
-            raise HTTPException(403, "This endpoint requires an API token")
-        scopes = set(getattr(request.state, "api_token_scopes", []) or [])
-        if "chat" not in scopes:
-            raise HTTPException(403, "API token is not scoped for chat")
-        token_owner = getattr(request.state, "api_token_owner", None)
+        token_owner = require_api_scope(request, "chat")
 
         from core.models import ChatMessage
         from src.llm_core import llm_call_async
@@ -261,13 +257,8 @@ def setup_webhook_routes(
             # this any token holder could resume any user's chat by passing its
             # ID. The token's user is on request.state.user (set by API-token
             # middleware); fall back to require_user if not present.
-            try:
-                from src.auth_helpers import get_current_user as _gcu
-                _tok_user = token_owner or getattr(request.state, "user", None) or _gcu(request)
-            except Exception:
-                _tok_user = None
             _sess_owner = getattr(sess, "owner", None)
-            if _tok_user and _sess_owner and _sess_owner != _tok_user:
+            if _sess_owner and _sess_owner != token_owner:
                 raise HTTPException(404, "Session not found")
 
         # --- Case 2: Direct API key + model (no pre-configured endpoint needed) ---
@@ -305,7 +296,9 @@ def setup_webhook_routes(
         if not sess:
             db = SessionLocal()
             try:
-                ep = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True).first()
+                q = db.query(ModelEndpoint).filter(ModelEndpoint.is_enabled == True)
+                q = owner_filter(q, ModelEndpoint, token_owner)
+                ep = q.first()
             finally:
                 db.close()
 

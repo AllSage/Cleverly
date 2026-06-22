@@ -14,6 +14,7 @@ def test_tts_load_settings_lazy_kokoro_and_unknown_provider(monkeypatch, tmp_pat
     service = tts_service.TTSService(cache_dir=str(tmp_path / "tts"))
     loaded = service._load_settings()
     assert loaded == {
+        "tts_enabled": True,
         "tts_provider": "browser",
         "tts_model": "tts-1",
         "tts_voice": "alloy",

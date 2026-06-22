@@ -18,6 +18,8 @@ EMBED_ENV_KEYS = [
     "LLM_HOST",
     "CLEVERLY_OFFLINE",
     "CLEVERLY_OFFLINE_EMBEDDINGS",
+    "CLEVERLY_HASH_EMBEDDINGS",
+    "CLEVERLY_HASH_EMBEDDING_DIM",
 ]
 
 
@@ -240,17 +242,46 @@ def test_truthy_and_reset_http_embed_state():
     assert emb._http_embed_down is False
 
 
+def test_hash_embedding_client_is_stable_normalized_and_configurable(monkeypatch):
+    monkeypatch.setenv("CLEVERLY_HASH_EMBEDDING_DIM", "64")
+
+    client = emb.HashEmbeddingClient()
+    empty = client.encode([])
+    first = client.encode(["alpha beta", "alpha gamma"])
+    second = client.encode(["alpha beta", "alpha gamma"])
+
+    assert client.url == "local://hash"
+    assert client.model == "local-hash-64"
+    assert empty.dtype == np.float32
+    assert empty.size == 0
+    assert first.shape == (2, 64)
+    assert np.allclose(first, second)
+    assert np.allclose(np.linalg.norm(first, axis=1), [1.0, 1.0])
+    assert client.get_sentence_embedding_dimension() == 64
+
+
 def test_get_embedding_client_offline_disabled(monkeypatch):
     monkeypatch.setenv("CLEVERLY_OFFLINE", "1")
     monkeypatch.delenv("CLEVERLY_OFFLINE_EMBEDDINGS", raising=False)
 
-    assert emb.get_embedding_client() is None
+    client = emb.get_embedding_client()
+
+    assert isinstance(client, emb.HashEmbeddingClient)
+    assert client.url == "local://hash"
 
 
 def test_get_embedding_client_settings_offline_disabled(monkeypatch):
     monkeypatch.delenv("CLEVERLY_OFFLINE", raising=False)
     monkeypatch.delenv("CLEVERLY_OFFLINE_EMBEDDINGS", raising=False)
     monkeypatch.setattr(emb, "offline_mode", lambda: True)
+
+    assert isinstance(emb.get_embedding_client(), emb.HashEmbeddingClient)
+
+
+def test_get_embedding_client_offline_hash_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("CLEVERLY_OFFLINE", "1")
+    monkeypatch.setenv("CLEVERLY_HASH_EMBEDDINGS", "0")
+    monkeypatch.delenv("CLEVERLY_OFFLINE_EMBEDDINGS", raising=False)
 
     assert emb.get_embedding_client() is None
 
@@ -385,7 +416,7 @@ def test_get_embedding_client_offline_embeddings_skip_http_and_fastembed_errors(
     monkeypatch.delenv("CLEVERLY_OFFLINE", raising=False)
     emb._http_embed_down = True
     monkeypatch.setattr(emb, "FastEmbedClient", lambda: (_ for _ in ()).throw(ImportError("missing")))
-    assert emb.get_embedding_client() is None
+    assert isinstance(emb.get_embedding_client(), emb.HashEmbeddingClient)
 
     monkeypatch.setattr(emb, "FastEmbedClient", lambda: (_ for _ in ()).throw(RuntimeError("broken")))
-    assert emb.get_embedding_client() is None
+    assert isinstance(emb.get_embedding_client(), emb.HashEmbeddingClient)
