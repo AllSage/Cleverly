@@ -181,8 +181,8 @@ body.bg-pattern-sparkles {
       flex-shrink: 0;
       position: relative;
       z-index: 2;
-      padding: 5px 0 0;
-      min-height: 25px;
+      padding: 8px 0 0;
+      min-height: 38px;
       box-sizing: border-box;
     }
     .chat-top-bar::after {
@@ -1721,12 +1721,12 @@ body.bg-pattern-sparkles {
       flex:1;
       display:flex;
       flex-direction:column;
-      padding:20px 16px 0;
+      padding:36px 16px 0;
       overflow:hidden;
       position:relative;
       min-height:0;
       min-width:0;
-      margin-top:12px;
+      margin-top:18px;
       margin-bottom: 0;
     }
     .chat-meta { font-size:12px; color:color-mix(in srgb, var(--fg) 60%, transparent); margin-bottom:6px; }
@@ -7114,9 +7114,9 @@ body.bg-pattern-sparkles {
     @media (max-width:768px){
       .box { max-height:none; }
       .chat-container {
-        padding: calc(58px + env(safe-area-inset-top, 0px)) 10px 10px;
+        padding: calc(84px + env(safe-area-inset-top, 0px)) 10px 10px;
         flex:1;
-        margin-top:10px;
+        margin-top:12px;
         min-height:0;
       }
       .scroll-nav-btn { width:44px; height:44px; font-size:14px; margin-bottom:0; }
