@@ -295,6 +295,20 @@ def test_operator_repair_plan_is_read_only_and_approval_gated(monkeypatch):
     assert plan["summary"]["state"] == "error"
     assert plan["summary"]["required_issues"] == 1
     assert plan["approval"]["required"] is True
+    assert plan["approval_packet"]["approval_required"] is True
+    assert plan["approval_packet"]["required_affected_count"] == 1
+    assert plan["approval_packet"]["optional_affected_count"] == 1
+    assert plan["approval_packet"]["executes"] is False
+    assert plan["approval_packet"]["writes"] is False
+    assert plan["approval_packet"]["uses_network"] is False
+    assert plan["approval_packet"]["affected_services"][0]["id"] == "data-dir"
+    assert any(
+        command["approval_required"] is True
+        and "docker compose up" in command["command"]
+        for command in plan["approval_packet"]["candidate_host_commands"]
+    )
+    assert any(item["id"] == "verify-data-boundary" for item in plan["approval_packet"]["preflight_checklist"])
+    assert "pull images" in plan["approval_packet"]["disallowed_actions"]
     assert plan["paths"]["data"] == "/app/data"
     assert all(step["executes"] is False for step in plan["steps"])
     assert all(command["executes"] is False for command in plan["host_commands"])
@@ -477,6 +491,16 @@ def test_operator_backup_plan_is_read_only_and_approval_gated(tmp_path):
     assert plan["summary"]["restores_data"] is False
     assert plan["summary"]["runs_shell"] is False
     assert plan["summary"]["requires_export_approval"] is True
+    assert plan["verification_packet"]["approval_required"] is True
+    assert plan["verification_packet"]["executes"] is False
+    assert plan["verification_packet"]["writes"] is False
+    assert plan["verification_packet"]["restores_data"] is False
+    assert plan["verification_packet"]["runs_shell"] is False
+    assert plan["verification_packet"]["uses_network"] is False
+    assert any(item["id"] == "encrypted-export" for item in plan["verification_packet"]["expected_artifacts"])
+    assert any(item["id"] == "restore-dry-run" for item in plan["verification_packet"]["verification_checks"])
+    assert "snapshot verify command succeeds" in plan["verification_packet"]["pass_criteria"]
+    assert "store backup passwords in activity logs" in plan["verification_packet"]["disallowed_actions"]
     assert all(row["executes"] is False for row in plan["sequence_rows"])
     assert all(row["executes"] is False for row in plan["host_commands"])
     assert "python scripts/cleverly-backup snapshot --pretty" in commands
@@ -818,15 +842,19 @@ def test_operator_document_search_plan_is_read_only_and_local_first(tmp_path):
     assert plan["summary"]["indexes_files"] is False
     assert plan["summary"]["changes_files"] is False
     assert plan["summary"]["uses_network"] is False
+    assert plan["summary"]["activity_metadata_only"] is True
     assert plan["summary"]["route_command_id"] == "search-local-documents"
+    evidence_titles = {row["title"] for row in plan["evidence_rows"]}
     assert "/api/personal/search" in api_paths
     assert "/api/personal/reload" in api_paths
     assert all(row["executes"] is False for row in plan["route_rows"])
     assert all(row["executes"] is False for row in plan["guard_rows"])
     assert all(row["executes"] is False for row in plan["api_actions"])
     assert any(row["requires_approval"] is True for row in plan["guard_rows"])
+    assert "Search activity ledger" in evidence_titles
     assert "does not run a query" in plan["approval"]["policy"]
     assert plan["paths"]["personal_docs"] == str(personal_dir)
+    assert plan["paths"]["activity"] == "data/operator_activity.json"
 
 
 def test_operator_voice_plan_is_read_only_and_permission_gated(tmp_path):
@@ -1425,8 +1453,27 @@ def test_operator_briefing_snapshot_builds_headlines(monkeypatch):
     assert snapshot["owner"] == "alice"
     assert snapshot["sections"]["tasks"]["due_today"] == 1
     assert snapshot["sections"]["workflows"]["ready_count"] == 9
+    assert snapshot["summary"]["read_only"] is True
+    assert snapshot["summary"]["due_today_count"] == 1
+    assert snapshot["summary"]["workflow_count"] == 9
+    assert snapshot["summary"]["writes_activity"] is False
+    assert snapshot["summary"]["runs_shell"] is False
+    assert snapshot["summary"]["uses_network"] is False
     titles = {row["title"] for row in snapshot["headline_rows"]}
     assert {"Tasks", "Calendar", "Automation routes", "Models and training"} <= titles
+    overview_titles = {row["title"] for row in snapshot["overview_rows"]}
+    action_titles = {row["title"] for row in snapshot["action_rows"]}
+    risk_titles = {row["title"] for row in snapshot["risk_rows"]}
+    source_paths = {row["path"] for row in snapshot["data_source_rows"]}
+    api_paths = {row["path"] for row in snapshot["api_actions"]}
+    assert "Today operating picture" in overview_titles
+    assert "Review today's work" in action_titles
+    assert "Read-only briefing" in risk_titles
+    assert "data/operator_activity.json" in source_paths
+    assert "/api/operator/briefing" in api_paths
+    assert all(row["executes"] is False for row in snapshot["api_actions"])
+    assert snapshot["approval"]["required"] is False
+    assert "does not write activity" in snapshot["approval"]["policy"]
 
 
 def test_operator_command_router_proves_approval_gated_target_route():
@@ -1553,6 +1600,23 @@ def test_operator_command_text_uses_backend_route_preflight_before_local_fallbac
     assert "function recordActivity(record = {})" in commands_js
     assert "mirrorActivityRecord(activity);" in commands_js
     assert "recordActivity," in commands_js
+    assert "function backendBriefingRows" in center_js
+    assert "operatorBriefing.overview_rows" in center_js
+    assert "operatorBriefing.action_rows" in center_js
+    assert "Backend suggested actions" in center_js
+    assert "Backend Guardrails:" in center_js
+    assert "function operatorRepairApprovalPacketRows" in center_js
+    assert "approval_packet" in center_js
+    assert "Approval packet" in center_js
+    assert "candidate_host_commands" in center_js
+    assert "function backupVerificationPacketRows" in center_js
+    assert "verification_packet" in center_js
+    assert "Verification packet" in center_js
+    assert "expected_artifacts" in center_js
+    assert "function recordLocalDocumentSearchActivity" in center_js
+    assert "privacy_note: 'Result snippets are not stored in the activity ledger.'" in center_js
+    assert "recordLocalDocumentSearchActivity(cleanQuery, data);" in center_js
+    assert "recordLocalDocumentSearchActivity(cleanQuery, {}, error);" in center_js
     assert "function renderCommandRoutePreviewState(value, backendRoute = null)" in center_js
     assert "operatorCommands.backendRouteText(value, { source: 'dashboard-preview'" in center_js
     assert "root.dataset.routeSource = backendSelected ? 'backend'" in center_js

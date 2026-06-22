@@ -4165,6 +4165,17 @@ async function copyOperatorRunbook() {
   }
 }
 
+function backendBriefingRows(items, fallbackBadge = 'local', fallbackAction = 'summarize-today') {
+  return asArray(items).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || fallbackBadge,
+    title: row.title || row.id || 'Briefing evidence',
+    detail: row.detail || row.path || '',
+    action: row.action || row.action_id || row.actionId || fallbackAction,
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+  }));
+}
+
 function briefingSnapshot(snapshot) {
   const offline = readData(snapshot, 'offline') || {};
   const primary = readData(snapshot, 'primary') || {};
@@ -4265,7 +4276,7 @@ function briefingSnapshot(snapshot) {
   ];
   const backendRows = asArray(operatorBriefing.headline_rows).slice(0, 8).map(row => ({
     state: row.state || 'warn',
-    badge: 'local',
+    badge: row.badge || 'local',
     title: row.title || 'Briefing evidence',
     detail: row.detail || '',
     action: row.action || 'summarize-today',
@@ -4281,6 +4292,12 @@ function briefingSnapshot(snapshot) {
       owner: operatorBriefing.owner || '',
       generatedAt: operatorBriefing.generated_at || '',
       rows: backendRows,
+      overviewRows: backendBriefingRows(operatorBriefing.overview_rows, 'sum'),
+      actionRows: backendBriefingRows(operatorBriefing.action_rows, 'next'),
+      riskRows: backendBriefingRows(operatorBriefing.risk_rows, 'gate', 'open-trust-controls'),
+      dataSourceRows: backendBriefingRows(operatorBriefing.data_source_rows, 'data', 'open-local-data-map'),
+      summary: operatorBriefing.summary || {},
+      apiActions: asArray(operatorBriefing.api_actions),
       paths: operatorBriefing.paths || {},
       error: readError(snapshot, 'operatorBriefing'),
     },
@@ -5049,6 +5066,12 @@ function briefingText(snapshot) {
     'Backend Briefing Evidence:',
     ...(data.backend.rows.length ? data.backend.rows.map(item => `- [${item.state}] ${item.title}: ${item.detail}`) : [`- ${data.backend.ok ? 'No backend briefing rows visible' : `Unavailable: ${data.backend.error || 'not loaded'}`}`]),
     '',
+    'Backend Operating Overview:',
+    ...(data.backend.overviewRows.length ? data.backend.overviewRows.map(item => `- [${item.state}] ${item.title}: ${item.detail}`) : ['- No backend overview rows visible']),
+    '',
+    'Backend Suggested Actions:',
+    ...(data.backend.actionRows.length ? data.backend.actionRows.map(item => `- [${item.state}] ${item.title}: ${item.detail}`) : ['- No backend action rows visible']),
+    '',
     'Operator Agenda:',
     ...(data.agendaRows.length ? data.agendaRows.map(item => `- [${item.state}] ${item.title}: ${item.detail}`) : ['- No operator agenda items right now']),
     '',
@@ -5074,6 +5097,12 @@ function briefingText(snapshot) {
     '',
     'Recent Activity:',
     ...(data.activity.length ? data.activity.map(item => `- ${item.title}: ${item.detail}`) : ['- No recent local activity visible']),
+    '',
+    'Backend Data Sources:',
+    ...(data.backend.dataSourceRows.length ? data.backend.dataSourceRows.map(item => `- [${item.state}] ${item.title}: ${item.detail}`) : ['- No backend data source rows visible']),
+    '',
+    'Backend Guardrails:',
+    ...(data.backend.riskRows.length ? data.backend.riskRows.map(item => `- [${item.state}] ${item.title}: ${item.detail}`) : ['- No backend guardrail rows visible']),
   ];
   return lines.join('\n');
 }
@@ -5689,6 +5718,14 @@ function renderTodayBriefing(snapshot) {
         <div class="cc-briefing-section-title">Backend briefing evidence</div>
         ${briefingList(data.backend.rows, data.backend.ok ? 'No backend briefing rows visible' : `Backend briefing unavailable: ${data.backend.error || 'not loaded'}`)}
       </section>
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Backend operating overview</div>
+        ${briefingList(data.backend.overviewRows, 'No backend overview rows visible')}
+      </section>
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Backend suggested actions</div>
+        ${briefingList(data.backend.actionRows, 'No backend action rows visible')}
+      </section>
       <section class="cc-briefing-section" data-brief-section="agenda">
         <div class="cc-briefing-section-title">Operator agenda</div>
         ${briefingList(data.agendaRows, 'No operator agenda items right now')}
@@ -5724,6 +5761,14 @@ function renderTodayBriefing(snapshot) {
       <section class="cc-briefing-section">
         <div class="cc-briefing-section-title">Activity</div>
         ${briefingList(data.activity, 'No recent local activity visible')}
+      </section>
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Backend data sources</div>
+        ${briefingList(data.backend.dataSourceRows, 'No backend data source rows visible')}
+      </section>
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Backend guardrails</div>
+        ${briefingList(data.backend.riskRows, 'No backend guardrail rows visible')}
       </section>
     </div>
   `;
@@ -10326,6 +10371,76 @@ async function copyBackupPreflight() {
   }
 }
 
+function backupVerificationPacketRows(backendPlan = {}) {
+  const packet = backendPlan.verification_packet || {};
+  const summaryRows = packet.scope ? [{
+    state: packet.state || 'warn',
+    badge: packet.approval_required ? 'ask' : 'read',
+    title: 'Verification packet scope',
+    detail: packet.scope,
+    action: packet.approval_required ? 'request-backup-export' : 'open-backup-preflight',
+    actionLabel: packet.approval_required ? 'Ask' : 'Backup',
+  }] : [];
+  const artifactRows = asArray(packet.expected_artifacts).slice(0, 8).map(item => ({
+    state: item.state || 'warn',
+    badge: item.required ? 'req' : 'opt',
+    title: item.title || item.id || 'Expected artifact',
+    detail: item.detail || '',
+    action: 'open-backups',
+    actionLabel: 'Backups',
+  }));
+  const checkRows = asArray(packet.verification_checks).slice(0, 8).map(item => ({
+    state: item.state || 'warn',
+    badge: 'check',
+    title: item.title || item.id || 'Verification check',
+    detail: item.detail || '',
+    action: 'open-backup-preflight',
+    actionLabel: 'Backup',
+  }));
+  const actionRows = asArray(packet.candidate_actions).slice(0, 8).map(item => ({
+    state: item.approval_required ? 'warn' : 'ok',
+    badge: item.approval_required ? 'ask' : 'read',
+    title: item.title || item.id || 'Candidate backup action',
+    detail: item.detail || item.risk || '',
+    action: item.approval_required ? 'request-backup-export' : 'open-backup-preflight',
+    actionLabel: item.approval_required ? 'Ask' : 'Backup',
+  }));
+  const passRows = asArray(packet.pass_criteria).slice(0, 8).map(item => ({
+    state: 'ok',
+    badge: 'pass',
+    title: String(item || 'Pass criterion'),
+    detail: 'Required before claiming the backup is verified',
+    action: 'open-backup-preflight',
+    actionLabel: 'Backup',
+  }));
+  const noGoRows = asArray(packet.disallowed_actions).slice(0, 8).map(item => ({
+    state: 'ok',
+    badge: 'no',
+    title: String(item || 'Disallowed action'),
+    detail: 'Not part of backup verification without explicit owner approval',
+    action: 'open-trust-controls',
+    actionLabel: 'Trust',
+  }));
+  const missingRows = asArray(packet.missing_snapshot_items).slice(0, 8).map(item => ({
+    state: 'warn',
+    badge: 'miss',
+    title: item.title || item.id || 'Missing snapshot item',
+    detail: item.path || item.detail || '',
+    action: 'open-local-data-map',
+    actionLabel: 'Data',
+  }));
+  return {
+    packet,
+    summaryRows,
+    artifactRows,
+    checkRows,
+    actionRows,
+    passRows,
+    noGoRows,
+    missingRows,
+  };
+}
+
 function backupVerifyPlanData(snapshot) {
   const source = snapshot || {};
   const backup = backupStatusData(source);
@@ -10540,10 +10655,12 @@ function backupVerifyPlanData(snapshot) {
   ];
   const backendProtectedRows = asArray(backendPlan.protected_rows);
   const backendSnapshotRows = asArray(backendPlan.snapshot_rows);
+  const verificationPacket = backupVerificationPacketRows(backendPlan);
   return {
     backup,
     local,
     exportMode,
+    verificationPacket,
     protectedRows: backendOk && backendProtectedRows.length ? backendProtectedRows : protectedRows,
     uncoveredRows: backendOk && backendSnapshotRows.length ? backendSnapshotRows : uncoveredRows,
     sequenceRows,
@@ -10602,6 +10719,14 @@ function backupVerifyPlanText(snapshot) {
     '',
     'Backend backup evidence:',
     ...data.backendRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Verification packet:',
+    ...(data.verificationPacket.summaryRows.length ? data.verificationPacket.summaryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend verification packet available']),
+    ...(data.verificationPacket.artifactRows.length ? data.verificationPacket.artifactRows.map(row => `- artifact [${row.state}] ${row.title}: ${row.detail}`) : []),
+    ...(data.verificationPacket.checkRows.length ? data.verificationPacket.checkRows.map(row => `- check [${row.state}] ${row.title}: ${row.detail}`) : []),
+    ...(data.verificationPacket.actionRows.length ? data.verificationPacket.actionRows.map(row => `- action [${row.state}] ${row.title}: ${row.detail}`) : []),
+    ...(data.verificationPacket.passRows.length ? data.verificationPacket.passRows.map(row => `- pass ${row.title}: ${row.detail}`) : []),
+    ...(data.verificationPacket.noGoRows.length ? data.verificationPacket.noGoRows.map(row => `- disallowed ${row.title}: ${row.detail}`) : []),
     '',
     'Encrypted app export coverage:',
     ...data.protectedRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -10698,6 +10823,16 @@ function renderBackupVerifyPlan(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend backup evidence</div>
       ${briefingList(data.backendRows, 'Backend backup evidence is not available')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Verification packet</div>
+      ${briefingList(data.verificationPacket.summaryRows, 'No backend verification packet available')}
+      ${briefingList(data.verificationPacket.artifactRows, 'No expected artifacts listed')}
+      ${briefingList(data.verificationPacket.checkRows, 'No verification checks listed')}
+      ${briefingList(data.verificationPacket.actionRows, 'No candidate backup actions listed')}
+      ${briefingList(data.verificationPacket.passRows, 'No pass criteria listed')}
+      ${briefingList(data.verificationPacket.noGoRows, 'No disallowed actions listed')}
+      ${briefingList(data.verificationPacket.missingRows, 'No missing snapshot items listed')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Encrypted app export coverage</div>
@@ -12957,6 +13092,42 @@ function closeLocalDocumentSearch() {
   el('cc-local-document-search')?.classList.add('hidden');
 }
 
+function recordLocalDocumentSearchActivity(query, data = {}, error = null) {
+  if (!operatorCommands.recordActivity) return null;
+  const results = Array.isArray(data.results) ? data.results : [];
+  const resultCount = Number(data.count ?? results.length) || results.length;
+  const searchType = String(data.search_type || (error ? 'error' : (resultCount ? 'local' : 'none')));
+  const cleanQuery = truncate(String(query || '').trim(), 240);
+  const state = error ? 'error' : (resultCount ? 'ok' : 'warn');
+  const status = error ? 'error' : (resultCount ? 'success' : 'no_matches');
+  const detail = error
+    ? `Local document search failed for "${cleanQuery}": ${truncate(error?.message || error || 'unknown error', 220)}`
+    : `${plural(resultCount, 'local document match')} via ${searchType || 'local'} for "${cleanQuery}"`;
+  return operatorCommands.recordActivity({
+    command_id: 'search-local-documents',
+    title: error ? 'Local Document Search Failed' : (resultCount ? 'Local Document Search' : 'Local Document Search: No Matches'),
+    category: 'Library',
+    source: 'local-document-search',
+    status,
+    state,
+    trust: 'local',
+    trust_mode: 'auto',
+    detail,
+    query: cleanQuery,
+    result_count: resultCount,
+    search_type: searchType,
+    rag_available: data.rag_available === true,
+    embedding_model: truncate(data.embedding_model || '', 160),
+    vector_error: truncate(data.vector_error || '', 300),
+    result_refs: results.slice(0, 6).map(result => ({
+      title: truncate(result?.title || 'Document', 160),
+      source: truncate(result?.source || result?.path || '', 300),
+      search_type: truncate(result?.search_type || searchType, 40),
+    })),
+    privacy_note: 'Result snippets are not stored in the activity ledger.',
+  });
+}
+
 async function runLocalDocumentSearch(query) {
   const cleanQuery = String(query || '').trim();
   _localDocumentSearch = {
@@ -12971,6 +13142,7 @@ async function runLocalDocumentSearch(query) {
   if (!cleanQuery) return;
   try {
     const data = await fetchJson(`/api/personal/search?q=${encodeURIComponent(cleanQuery)}&limit=8`);
+    recordLocalDocumentSearchActivity(cleanQuery, data);
     _localDocumentSearch = {
       status: 'success',
       query: cleanQuery,
@@ -12988,6 +13160,7 @@ async function runLocalDocumentSearch(query) {
       error: error?.message || 'Local document search failed',
       embedding_model: '',
     };
+    recordLocalDocumentSearchActivity(cleanQuery, {}, error);
   }
   renderLocalDocumentSearch();
 }
@@ -14459,6 +14632,58 @@ function operatorRepairPlanServiceRows(snapshot) {
   }));
 }
 
+function operatorRepairApprovalPacketRows(snapshot) {
+  const packet = operatorRepairPlan(snapshot)?.approval_packet || {};
+  const affectedRows = asArray(packet.affected_services).slice(0, 6).map(service => ({
+    state: service.state || 'warn',
+    badge: service.required ? 'core' : 'opt',
+    title: service.label || service.id || 'Affected service',
+    detail: `${service.recommended_step || 'Review service'} - ${service.reason || service.target || ''}`,
+    action: service.required ? 'request-container-fix' : 'open-local-services-map',
+    actionLabel: service.required ? 'Ask' : 'Services',
+  }));
+  const commandRows = asArray(packet.candidate_host_commands).slice(0, 5).map(command => ({
+    state: command.risk === 'read-only' ? 'ok' : 'warn',
+    badge: command.risk === 'read-only' ? 'read' : 'ask',
+    title: command.label || 'Candidate host command',
+    detail: command.command || '',
+    action: 'open-trust-controls',
+    actionLabel: command.approval_required ? 'Trust' : 'Read',
+  }));
+  const checklistRows = asArray(packet.preflight_checklist).slice(0, 5).map(item => ({
+    state: item.state || 'warn',
+    badge: 'check',
+    title: item.title || item.id || 'Preflight check',
+    detail: item.detail || '',
+    action: 'open-container-repair-plan',
+    actionLabel: 'Plan',
+  }));
+  const disallowedRows = asArray(packet.disallowed_actions).slice(0, 8).map(action => ({
+    state: 'ok',
+    badge: 'no',
+    title: String(action || 'Disallowed action'),
+    detail: 'Not part of the repair packet without explicit owner approval',
+    action: 'open-trust-controls',
+    actionLabel: 'Trust',
+  }));
+  const summaryRows = packet.scope ? [{
+    state: packet.state || 'warn',
+    badge: packet.approval_required ? 'ask' : 'read',
+    title: 'Approval packet scope',
+    detail: packet.scope,
+    action: packet.approval_required ? 'request-container-fix' : 'open-container-repair-plan',
+    actionLabel: packet.approval_required ? 'Ask' : 'Plan',
+  }] : [];
+  return {
+    packet,
+    summaryRows,
+    affectedRows,
+    commandRows,
+    checklistRows,
+    disallowedRows,
+  };
+}
+
 function operatorServiceSnapshotRows(snapshot) {
   const snapshotData = operatorServiceSnapshot(snapshot);
   return asArray(snapshotData, ['services']).map(service => {
@@ -14549,6 +14774,7 @@ function containerRepairStatusData(snapshot) {
   const backendRepairPlan = operatorRepairPlan(source);
   const backendRepairRows = operatorRepairPlanStepRows(source);
   const backendRepairServiceRows = operatorRepairPlanServiceRows(source);
+  const backendApprovalPacket = operatorRepairApprovalPacketRows(source);
   const backendRepairSummary = backendRepairPlan.summary || {};
   const backendRepairIssues = backendRepairRows.filter(row => row.state === 'error' || row.state === 'warn');
   const urgentRows = systemRows.filter(row => row.state === 'error');
@@ -14753,6 +14979,7 @@ function containerRepairStatusData(snapshot) {
     backendRepairPlan,
     backendRepairRows,
     backendRepairServiceRows,
+    backendApprovalPacket,
     backendRepairSummary,
     backendRepairIssues,
     totalIssues,
@@ -14807,6 +15034,13 @@ function containerRepairText(snapshot) {
     '',
     'Backend Service Recommendations:',
     ...(data.backendRepairServiceRows.length ? data.backendRepairServiceRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend service recommendations available']),
+    '',
+    'Approval Packet:',
+    ...(data.backendApprovalPacket.summaryRows.length ? data.backendApprovalPacket.summaryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No approval packet available']),
+    ...(data.backendApprovalPacket.affectedRows.length ? data.backendApprovalPacket.affectedRows.map(row => `- affected [${row.state}] ${row.title}: ${row.detail}`) : []),
+    ...(data.backendApprovalPacket.commandRows.length ? data.backendApprovalPacket.commandRows.map(row => `- command [${row.state}] ${row.title}: ${row.detail}`) : []),
+    ...(data.backendApprovalPacket.checklistRows.length ? data.backendApprovalPacket.checklistRows.map(row => `- preflight [${row.state}] ${row.title}: ${row.detail}`) : []),
+    ...(data.backendApprovalPacket.disallowedRows.length ? data.backendApprovalPacket.disallowedRows.map(row => `- disallowed ${row.title}: ${row.detail}`) : []),
     '',
     'Expected Docker Services:',
     ...(data.hostServiceRows.length ? data.hostServiceRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No service map available']),
@@ -14910,6 +15144,14 @@ function renderContainerRepairPlan(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend service recommendations</div>
       ${briefingList(data.backendRepairServiceRows, 'No backend service recommendations available')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Approval packet</div>
+      ${briefingList(data.backendApprovalPacket.summaryRows, 'No backend approval packet available')}
+      ${briefingList(data.backendApprovalPacket.affectedRows, 'No affected services listed')}
+      ${briefingList(data.backendApprovalPacket.commandRows, 'No candidate host commands listed')}
+      ${briefingList(data.backendApprovalPacket.checklistRows, 'No approval checklist listed')}
+      ${briefingList(data.backendApprovalPacket.disallowedRows, 'No disallowed action rows listed')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Expected Docker services</div>

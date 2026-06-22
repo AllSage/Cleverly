@@ -304,6 +304,15 @@ def run_operator_document_search_plan(
             "actionLabel": "Search",
         },
         {
+            "id": "activity-ledger",
+            "state": "ok",
+            "badge": "log",
+            "title": "Search activity ledger",
+            "detail": "Browser search completions are mirrored to data/operator_activity.json with query metadata and result references only; result snippets are not stored.",
+            "action": "open-activity-preflight",
+            "actionLabel": "Activity",
+        },
+        {
             "id": "rag-ready",
             "state": "ok" if rag.get("available") else "warn",
             "badge": "rag",
@@ -341,6 +350,7 @@ def run_operator_document_search_plan(
             "changes_files": False,
             "uses_network": False,
             "requires_search_text": True,
+            "activity_metadata_only": True,
             "route_command_id": "search-local-documents",
             "next_action": "Open Local Document Search, enter query text, and review local-only vector or keyword results.",
         },
@@ -370,5 +380,6 @@ def run_operator_document_search_plan(
             "native_chroma": str(data_path / "chroma"),
             "docker_chroma": "/data",
             "search_endpoint": "/api/personal/search",
+            "activity": "data/operator_activity.json",
         },
     }

@@ -283,6 +283,167 @@ def _evidence_rows(audit_rows: list[dict[str, Any]], missing_count: int) -> list
     return rows + audit_rows[:4]
 
 
+def _verification_packet(
+    snapshot_rows: list[dict[str, Any]],
+    audit_rows: list[dict[str, Any]],
+    sequence_rows: list[dict[str, Any]],
+    host_commands: list[dict[str, Any]],
+    api_actions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    missing_rows = [row for row in snapshot_rows if row["state"] != "ok"]
+    expected_artifacts = [
+        {
+            "id": "encrypted-export",
+            "state": "warn",
+            "title": "Encrypted app export file",
+            "detail": "Browser-downloaded encrypted backup plus filename and creation time.",
+            "required": True,
+        },
+        {
+            "id": "password-custody",
+            "state": "warn",
+            "title": "Password custody note",
+            "detail": "Record where the backup password is kept; never store the password in Cleverly activity.",
+            "required": True,
+        },
+        {
+            "id": "restore-drill-summary",
+            "state": "ok" if audit_rows else "loading",
+            "title": "Dry-run restore summary",
+            "detail": "Test Restore output proving the encrypted file decrypts without importing live data.",
+            "required": True,
+        },
+        {
+            "id": "full-snapshot-archive",
+            "state": "warn" if missing_rows else "ok",
+            "title": "Full data snapshot archive",
+            "detail": "Archive or volume snapshot covering app DB, auth, sessions, documents, uploads, code, training, models, logs, and media.",
+            "required": True,
+        },
+        {
+            "id": "snapshot-verify-output",
+            "state": "warn",
+            "title": "Snapshot verification output",
+            "detail": "`scripts/cleverly-backup verify PATH --pretty` output saved next to the archive or in the activity report.",
+            "required": True,
+        },
+        {
+            "id": "storage-location",
+            "state": "warn",
+            "title": "Storage location",
+            "detail": "Offline/local destination path or media label for the encrypted export and full snapshot.",
+            "required": True,
+        },
+    ]
+    verification_checks = [
+        {
+            "id": "export-readable",
+            "state": "warn",
+            "title": "Encrypted export exists",
+            "detail": "Confirm the browser download completed and the file is readable before moving it.",
+            "executes": False,
+        },
+        {
+            "id": "restore-dry-run",
+            "state": "ok" if audit_rows else "loading",
+            "title": "Encrypted restore drill passes",
+            "detail": "Run dry-run import to decrypt and summarize sections without writing live data.",
+            "executes": False,
+        },
+        {
+            "id": "snapshot-covers-runtime",
+            "state": "warn" if missing_rows else "ok",
+            "title": "Full snapshot covers runtime paths",
+            "detail": f"{len(snapshot_rows) - len(missing_rows)}/{len(snapshot_rows)} expected runtime path(s) visible in this environment.",
+            "executes": False,
+        },
+        {
+            "id": "snapshot-verify",
+            "state": "warn",
+            "title": "Snapshot archive verifies",
+            "detail": "Run the verify command against the selected archive before relying on it.",
+            "executes": False,
+        },
+        {
+            "id": "evidence-recorded",
+            "state": "ok" if audit_rows else "loading",
+            "title": "Evidence is recorded",
+            "detail": f"{len(audit_rows)} recent backup/export/restore audit event(s) visible.",
+            "executes": False,
+        },
+    ]
+    disallowed = [
+        "restore into live data without a dry-run review",
+        "delete existing data",
+        "upload backup files",
+        "store backup passwords in activity logs",
+        "overwrite Docker volumes",
+        "move host files without approval",
+        "run network transfer commands",
+    ]
+    candidate_actions = [
+        *[
+            {
+                "id": row.get("id") or "",
+                "title": row.get("title") or "Backup step",
+                "detail": row.get("detail") or "",
+                "risk": row.get("risk") or "read-only",
+                "approval_required": row.get("approval_required") is True,
+                "executes": False,
+            }
+            for row in sequence_rows[:6]
+        ],
+        *[
+            {
+                "id": row.get("id") or row.get("label") or "",
+                "title": row.get("label") or "Host backup command",
+                "detail": row.get("command") or "",
+                "risk": row.get("risk") or "approval-required",
+                "approval_required": row.get("requires_approval") is True,
+                "executes": False,
+            }
+            for row in host_commands[:4]
+        ],
+        *[
+            {
+                "id": row.get("id") or "",
+                "title": f"{row.get('method') or 'POST'} {row.get('path') or ''}".strip(),
+                "detail": f"{row.get('risk') or 'approval-required'}; password required={bool(row.get('requires_password'))}",
+                "risk": row.get("risk") or "approval-required",
+                "approval_required": bool(row.get("requires_password")),
+                "executes": False,
+            }
+            for row in api_actions[:4]
+        ],
+    ]
+    return {
+        "state": "warn" if missing_rows else ("ok" if audit_rows else "loading"),
+        "approval_required": True,
+        "scope": "Prove both encrypted app export and full local runtime snapshot before risky work.",
+        "expected_artifacts": expected_artifacts,
+        "verification_checks": verification_checks,
+        "candidate_actions": candidate_actions[:12],
+        "disallowed_actions": disallowed,
+        "pass_criteria": [
+            "encrypted export file exists",
+            "restore drill completes in dry-run mode",
+            "full snapshot archive exists",
+            "snapshot verify command succeeds",
+            "storage location and password custody are recorded",
+            "no live data is overwritten during verification",
+        ],
+        "missing_snapshot_items": [
+            {"id": row["id"], "title": row["title"], "path": row["path"], "detail": row["detail"]}
+            for row in missing_rows[:12]
+        ],
+        "executes": False,
+        "writes": False,
+        "restores_data": False,
+        "runs_shell": False,
+        "uses_network": False,
+    }
+
+
 def run_operator_backup_plan(
     owner: str = "local",
     *,
@@ -301,6 +462,44 @@ def run_operator_backup_plan(
     audit_rows = _audit_rows(audit_records)
     sequence_rows = _sequence_rows(len(audit_rows), len(missing_rows))
     evidence_rows = _evidence_rows(audit_rows, len(missing_rows))
+    host_commands = [
+        {
+            "id": "snapshot",
+            "label": "Create full data snapshot",
+            "risk": "approval-required",
+            "command": "python scripts/cleverly-backup snapshot --pretty",
+            "executes": False,
+            "requires_approval": True,
+        },
+        {
+            "id": "verify",
+            "label": "Verify full data snapshot",
+            "risk": "read-only-after-user-selects-file",
+            "command": "python scripts/cleverly-backup verify PATH --pretty",
+            "executes": False,
+            "requires_approval": True,
+        },
+    ]
+    api_actions = [
+        {
+            "id": "encrypted-export",
+            "method": "POST",
+            "path": "/api/backup/encrypted/export",
+            "risk": "approval-required",
+            "executes": False,
+            "requires_password": True,
+        },
+        {
+            "id": "test-restore",
+            "method": "POST",
+            "path": "/api/backup/encrypted/import",
+            "risk": "dry-run-read-only-after-user-file",
+            "executes": False,
+            "dry_run": True,
+            "requires_password": True,
+        },
+    ]
+    verification_packet = _verification_packet(snapshot_rows, audit_rows, sequence_rows, host_commands, api_actions)
     state = "warn" if missing_rows else ("ok" if audit_rows else "loading")
     return {
         "mode": "read-only-backup-verify-plan",
@@ -322,43 +521,9 @@ def run_operator_backup_plan(
         "snapshot_rows": snapshot_rows,
         "sequence_rows": sequence_rows,
         "evidence_rows": evidence_rows,
-        "host_commands": [
-            {
-                "id": "snapshot",
-                "label": "Create full data snapshot",
-                "risk": "approval-required",
-                "command": "python scripts/cleverly-backup snapshot --pretty",
-                "executes": False,
-                "requires_approval": True,
-            },
-            {
-                "id": "verify",
-                "label": "Verify full data snapshot",
-                "risk": "read-only-after-user-selects-file",
-                "command": "python scripts/cleverly-backup verify PATH --pretty",
-                "executes": False,
-                "requires_approval": True,
-            },
-        ],
-        "api_actions": [
-            {
-                "id": "encrypted-export",
-                "method": "POST",
-                "path": "/api/backup/encrypted/export",
-                "risk": "approval-required",
-                "executes": False,
-                "requires_password": True,
-            },
-            {
-                "id": "test-restore",
-                "method": "POST",
-                "path": "/api/backup/encrypted/import",
-                "risk": "dry-run-read-only-after-user-file",
-                "executes": False,
-                "dry_run": True,
-                "requires_password": True,
-            },
-        ],
+        "verification_packet": verification_packet,
+        "host_commands": host_commands,
+        "api_actions": api_actions,
         "approval": {
             "required": True,
             "gate": "Request Backup Export",

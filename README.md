@@ -72,11 +72,16 @@ If the backend route catalog is unavailable, stale, unauthenticated, or returns
 no selected command, the browser falls back to its local matcher and then chat.
 The repair plan lists suggested host Docker commands as evidence only; restarts,
 starts, pulls, deletes, network use, and host filesystem changes still require
-explicit approval. The note-to-task endpoint returns a draft payload only;
+explicit approval. It also returns an approval packet with affected services,
+candidate host commands, preflight checklist rows, and disallowed actions so
+"check containers and fix anything unhealthy" has a clear local scope before
+any owner-approved repair. The note-to-task endpoint returns a draft payload only;
 saving or scheduling still happens from the Tasks review form. The backup plan
-endpoint returns scope, evidence, and approval rows only; encrypted export,
-restore drill, full snapshots, tarball verification, restore, uploads, moves,
-and deletion stay behind explicit user actions. The activity-plan endpoint
+endpoint returns scope, evidence, approval rows, and a verification packet with
+required artifacts, dry-run restore checks, snapshot verification checks, pass
+criteria, and disallowed actions only; encrypted export, restore drill, full
+snapshots, tarball verification, restore, uploads, moves, and deletion stay
+behind explicit user actions. The activity-plan endpoint
 audits status/result/log coverage, trust tags, retryable routes, failures,
 pending work, recovery prompts, and timeline data paths only; it does not write
 or delete records, retry commands, approve actions, restore data, restart
@@ -105,6 +110,12 @@ The workday-plan endpoint returns task, task-run, calendar, note, briefing,
 API-gate, and data-path rows only; it does not create tasks, update tasks, run
 tasks, create calendar events, sync calendars, edit notes, send notifications,
 start automation, run shell commands, or use network access.
+The briefing endpoint returns a deterministic local operating snapshot for
+"summarize today" with overview rows, suggested next-action rows, source rows,
+guardrails, and API evidence from local tasks, task runs, calendar events,
+notes, memory, model/training status, services, workflows, and operator
+activity only; it does not write activity, start work, run commands, repair
+services, train models, query networks, or modify local data.
 The model-ops-plan endpoint returns primary-model, endpoint, local model,
 training, fine-tune, Ollama, API-gate, and data-path rows only; it does not set
 or auto-select the primary model, register or delete endpoints, pull or
@@ -163,7 +174,10 @@ index, and reports a no-match result instead of claiming it has no local access.
 The Command Center Local Document Search modal uses
 `/api/operator/document-search-plan` before a query so the local index,
 `/api/personal/search` route, RAG/keyword fallback, and safety boundaries are
-visible before retrieval starts.
+visible before retrieval starts. Completed local document searches are mirrored
+to `data/operator_activity.json` with query metadata, result count, route type,
+and result titles/sources only; result snippets are not stored in the activity
+ledger.
 
 Voice I/O includes an approval-gated browser voice setup route that enables
 browser STT/TTS locally; microphone access still requires the browser's own

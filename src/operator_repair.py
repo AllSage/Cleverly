@@ -275,6 +275,111 @@ def _plan_steps(summary: dict[str, Any], service_rows: list[dict[str, Any]], com
     return steps
 
 
+def _approval_packet(
+    summary: dict[str, Any],
+    service_rows: list[dict[str, Any]],
+    steps: list[dict[str, Any]],
+    commands: list[dict[str, Any]],
+) -> dict[str, Any]:
+    affected = [row for row in service_rows if row["state"] != "ok"]
+    required_affected = [row for row in affected if row["required"]]
+    optional_affected = [row for row in affected if not row["required"]]
+    command_by_text = {str(command.get("command") or ""): command for command in commands if command.get("command")}
+    candidate_commands: list[dict[str, Any]] = []
+    seen_commands: set[str] = set()
+    for step in steps:
+        command_text = str(step.get("command") or "")
+        if not command_text or command_text in seen_commands:
+            continue
+        seen_commands.add(command_text)
+        command = command_by_text.get(command_text) or {}
+        candidate_commands.append({
+            "label": command.get("label") or step.get("command_label") or step.get("title") or "Host command",
+            "command": command_text,
+            "risk": command.get("risk") or step.get("risk") or "approval-required",
+            "step_id": step.get("id") or "",
+            "executes": False,
+            "approval_required": (command.get("risk") or step.get("risk")) != "read-only",
+        })
+
+    preflight = [
+        {
+            "id": "capture-status",
+            "state": "ok",
+            "title": "Capture current container status",
+            "detail": "Use read-only compose/docker status before selecting a repair command.",
+            "executes": False,
+        },
+        {
+            "id": "inspect-logs",
+            "state": "warn" if summary["state"] != "ok" else "ok",
+            "title": "Inspect relevant logs",
+            "detail": "Review only the affected service logs before restart or recreation.",
+            "executes": False,
+        },
+        {
+            "id": "verify-data-boundary",
+            "state": "error" if any(row["id"] == "data-dir" for row in required_affected) else "ok",
+            "title": "Verify data volume boundary",
+            "detail": "Confirm /app/data and backup posture before any service recreation.",
+            "executes": False,
+        },
+        {
+            "id": "repair-one-service",
+            "state": "warn" if affected else "ok",
+            "title": "Repair one service at a time",
+            "detail": "Restart/recreate only the named unhealthy service after explicit approval.",
+            "executes": False,
+        },
+    ]
+    disallowed = [
+        "pull images",
+        "download models",
+        "delete volumes",
+        "delete host files",
+        "change credentials",
+        "run network diagnostics",
+        "restart healthy services",
+        "modify app data without backup review",
+    ]
+    if required_affected:
+        scope = f"{len(required_affected)} required service/path issue(s) require owner approval before repair."
+    elif optional_affected:
+        scope = f"{len(optional_affected)} optional service issue(s) can stay offline unless the feature is needed."
+    else:
+        scope = "No affected services are visible; repair is optional and should remain read-only."
+    return {
+        "state": summary["state"],
+        "approval_required": summary["approval_required"],
+        "scope": scope,
+        "affected_count": len(affected),
+        "required_affected_count": len(required_affected),
+        "optional_affected_count": len(optional_affected),
+        "affected_services": [
+            {
+                "id": row["id"],
+                "label": row["label"],
+                "state": row["state"],
+                "required": row["required"],
+                "recommended_step": row["recommended_step"],
+                "reason": row["reason"],
+                "target": row["target"],
+            }
+            for row in affected[:10]
+        ],
+        "candidate_host_commands": candidate_commands[:8],
+        "preflight_checklist": preflight,
+        "disallowed_actions": disallowed,
+        "operator_prompt": (
+            "Ask before applying any repair. Use the read-only status/log commands first, "
+            "repair only named unhealthy services, avoid pulls/downloads/deletes, and preserve local data."
+        ),
+        "executes": False,
+        "writes": False,
+        "uses_network": False,
+    }
+
+
 def run_operator_repair_plan() -> dict[str, Any]:
     """Return a read-only repair plan for service/container issues."""
     service_snapshot = run_operator_service_snapshot()
@@ -284,12 +389,14 @@ def run_operator_repair_plan() -> dict[str, Any]:
     service_rows = _service_rows(service_snapshot)
     summary = _summary(service_rows, service_snapshot)
     steps = _plan_steps(summary, service_rows, commands)
+    approval_packet = _approval_packet(summary, service_rows, steps, commands)
     return {
         "mode": "read-only-local-repair-plan",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "summary": summary,
         "services": service_rows,
         "steps": steps,
+        "approval_packet": approval_packet,
         "host_commands": commands,
         "container_plan": {
             "source": container_plan.get("source") or "",
