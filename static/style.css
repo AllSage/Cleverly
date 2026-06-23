@@ -1970,6 +1970,7 @@ body.bg-pattern-sparkles {
       top: 88px;
       bottom: 146px;
       transform: translateX(-50%);
+      animation: none;
       z-index: 2;
       width: min(1120px, calc(100% - 40px));
       max-height: calc(100dvh - 276px);
@@ -1981,7 +1982,7 @@ body.bg-pattern-sparkles {
       gap: 0;
     }
     .chat-container.command-center-home {
-      margin-top: 48px;
+      margin-top: 64px;
     }
     .chat-container.command-center-home #welcome-screen .welcome-name,
     .chat-container.command-center-home #welcome-screen .welcome-sub,
@@ -5181,7 +5182,7 @@ body.bg-pattern-sparkles {
     }
     @media (max-width: 768px) {
       .chat-container.command-center-home {
-        margin-top: 32px;
+        margin-top: 48px;
       }
       .chat-container.command-center-home #welcome-screen {
         top: 40px;
