@@ -324,6 +324,36 @@ def test_chat_bar_uses_current_controls_for_docs_group_and_privileges():
     assert "mode-chat-btn" in checked["static/app.js"]
 
 
+def test_command_center_home_has_top_clearance_for_container_frame():
+    css = (ROOT / "static" / "style.css").read_text(encoding="utf-8")
+
+    container_rule = re.search(
+        r"\.chat-container\.command-center-home \{(?P<body>.*?)\n    \}",
+        css,
+        re.S,
+    )
+    desktop_rule = re.search(
+        r"\.chat-container\.command-center-home #welcome-screen \{(?P<body>.*?)\n    \}",
+        css,
+        re.S,
+    )
+    mobile_rule = re.search(
+        r"@media \(max-width: 768px\) \{(?P<body>.*?)\n      \.chat-container\.command-center-home\.welcome-active",
+        css,
+        re.S,
+    )
+
+    assert container_rule is not None
+    assert desktop_rule is not None
+    assert mobile_rule is not None
+    assert "margin-top: 48px;" in container_rule.group("body")
+    assert "top: 88px;" in desktop_rule.group("body")
+    assert "max-height: calc(100dvh - 276px);" in desktop_rule.group("body")
+    assert "margin-top: 32px;" in mobile_rule.group("body")
+    assert "top: 40px;" in mobile_rule.group("body")
+    assert "max-height: calc(100dvh - 160px);" in mobile_rule.group("body")
+
+
 def test_document_library_close_removes_stale_visible_modal():
     doclib_js = (ROOT / "static" / "js" / "documentLibrary.js").read_text(encoding="utf-8")
     close_fn = doclib_js.split("export function closeLibrary()", 1)[1]
