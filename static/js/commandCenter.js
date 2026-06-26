@@ -1,10 +1,10 @@
 // Cleverly Command Center: local status dashboard and tool command router.
 
-import operatorCommands from './operatorCommands.js?v=20260621-code-run-backend-ledger';
+import operatorCommands from './operatorCommands.js?v=20260626-operator-console';
 import { styledConfirm, styledPrompt } from './ui.js';
-import voiceCommand from './voiceCommand.js?v=20260621-code-run-backend-ledger';
+import voiceCommand from './voiceCommand.js?v=20260626-operator-console';
 
-const COMMAND_CENTER_VERSION = '20260621-code-run-backend-ledger';
+const COMMAND_CENTER_VERSION = '20260626-operator-console';
 const WORKFLOW_CATALOG_VERSION = COMMAND_CENTER_VERSION;
 let _apiBase = '';
 let _initialized = false;
@@ -328,9 +328,11 @@ function activityRecoveryRows(activity) {
     command?.subtitle,
     ...(command?.keywords || []),
   ].filter(Boolean).join(' ').toLowerCase();
-  const retryable = !!activity.command_id && activity.command_id !== 'chat-command' && !!command;
+  const retryable = activity.retryable === true || (!!activity.command_id && activity.command_id !== 'chat-command' && !!command);
   const trust = String(activity.trust || preview.trust || command?.trust || 'local').toLowerCase();
   const trustMode = String(activity.trust_mode || preview.trust_mode || operatorCommands.commandTrustMode?.(command) || 'auto').toLowerCase();
+  const recoveryHint = String(activity.recovery_hint || '').trim();
+  const rollbackHint = String(activity.rollback_hint || '').trim();
   const fileShellLikely = trust === 'approval'
     || trust === 'danger'
     || /\b(code|workspace|container|repair|fix|backup|restore|train|model|machine|shell|files?|documents?|dataset|build|tests?)\b/i.test(text);
@@ -341,7 +343,7 @@ function activityRecoveryRows(activity) {
       state: retryable ? 'ok' : 'warn',
       title: 'Retry route',
       detail: retryable
-        ? 'Retry re-runs this command through the current trust policy and records a new activity entry.'
+        ? (recoveryHint || 'Retry re-runs this command through the current trust policy and records a new activity entry.')
         : 'This record has no replayable operator command.',
     },
     {
@@ -354,11 +356,11 @@ function activityRecoveryRows(activity) {
     {
       state: fileShellLikely || destructiveLikely ? 'warn' : 'ok',
       title: 'Rollback boundary',
-      detail: destructiveLikely
+      detail: rollbackHint || (destructiveLikely
         ? 'Use backups, snapshots, or a restore drill before repeating destructive work.'
         : fileShellLikely
           ? 'Check the relevant tool ledger, snapshot, backup, or repair plan before treating this as reversible.'
-          : 'Read-only UI routes do not need rollback; deleting this record only removes local ledger evidence.',
+          : 'Read-only UI routes do not need rollback; deleting this record only removes local ledger evidence.'),
     },
     {
       state: 'ok',
@@ -448,25 +450,43 @@ async function loadSnapshot() {
     authStatus: '/api/auth/status',
     operatorChecks: '/api/operator/checks',
     operatorServices: '/api/operator/services',
+    operatorServicesPlan: '/api/operator/services-plan',
+    operatorDockerRuntimePlan: '/api/operator/docker-runtime-plan',
+    operatorCredentialsPlan: '/api/operator/credentials-plan',
+    operatorDataPlan: '/api/operator/data-plan',
     operatorRepairPlan: '/api/operator/repair-plan',
+    operatorRecoveryPlan: '/api/operator/recovery-plan',
     operatorRuntimePlan: '/api/operator/runtime-plan',
     operatorConsolePlan: '/api/operator/console-plan',
+    operatorCommandLayerPlan: '/api/operator/command-layer-plan',
     operatorToolchainPlan: '/api/operator/toolchain-plan',
+    operatorToolAccessPlan: '/api/operator/tool-access-plan',
     operatorSafetyPlan: '/api/operator/safety-plan',
     operatorGoalPlan: '/api/operator/goal-plan',
     operatorExperiencePlan: '/api/operator/experience-plan',
     operatorNoteTaskDraft: '/api/operator/note-task-draft',
+    operatorNotesPlan: '/api/operator/notes-plan',
+    operatorCalendarPlan: '/api/operator/calendar-plan',
+    operatorTasksPlan: '/api/operator/tasks-plan',
+    operatorWorkOpsPlan: '/api/operator/work-ops-plan',
     operatorChangeBrief: '/api/operator/change-brief',
     operatorBackupPlan: '/api/operator/backup-plan',
     operatorCodeTestPlan: '/api/operator/code-test-plan',
     operatorBuildWatchPlan: '/api/operator/build-watch-plan',
+    operatorWorkspacePlan: '/api/operator/workspace-plan',
     operatorDocumentSearchPlan: '/api/operator/document-search-plan',
+    operatorResearchPlan: '/api/operator/research-plan',
+    operatorGalleryPlan: '/api/operator/gallery-plan',
     operatorFileOpsPlan: '/api/operator/file-ops-plan',
     operatorTrainingPlan: '/api/operator/training-plan',
     operatorVoicePlan: '/api/operator/voice-plan',
+    operatorAutomationPlan: '/api/operator/automation-plan',
     operatorAutonomyPlan: '/api/operator/autonomy-plan',
+    operatorApprovalPlan: '/api/operator/approval-plan',
+    operatorLoopsPlan: '/api/operator/loops-plan',
     operatorMemoryPlan: '/api/operator/memory-plan',
     operatorWorkdayPlan: '/api/operator/workday-plan',
+    operatorAiRuntimePlan: '/api/operator/ai-runtime-plan',
     operatorModelOpsPlan: '/api/operator/model-ops-plan',
     operatorModels: '/api/operator/models',
     operatorBriefing: '/api/operator/briefing',
@@ -1668,34 +1688,74 @@ function decisionCheckpointData(snapshot) {
   const source = snapshot || {};
   const queue = queueStatusData(source);
   const autonomy = autonomyMapData();
+  const approvalPlan = readData(source, 'operatorApprovalPlan') || {};
+  const approvalSummary = approvalPlan.summary || {};
+  const approvalQueueRows = asArray(approvalPlan, ['approval_queue_rows', 'approvalQueueRows']);
+  const approvalDecisionRows = asArray(approvalPlan, ['decision_rows', 'decisionRows']);
+  const approvalCheckpointRows = asArray(approvalPlan, ['decision_checkpoint_rows', 'decisionCheckpointRows']);
+  const approvalFailureRows = asArray(approvalPlan, ['failure_rows', 'failureRows']);
+  const approvalAlertRows = asArray(approvalPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'ask',
+    title: row.title || row.id || 'Approval alert',
+    detail: row.detail || 'Backend approval posture alert',
+    action: row.action || 'open-trust-controls',
+    actionLabel: row.actionLabel || row.action_label || 'Trust',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+  }));
   const activity = operatorActivityItems(80);
   const pending = autonomy.pending || [];
   const failedCommands = autonomy.failed || [];
   const retryable = autonomy.retryable || [];
   const latest = activity[0] || null;
   const latestRetryable = retryable.find(item => item.id) || null;
-  const decisionCount = (autonomy.approved?.length || 0) + (autonomy.cancelled?.length || 0);
-  const pendingAction = pending[0]?.id ? `activity-detail:${pending[0].id}` : 'open-activity-preflight';
+  const backendApprovalOk = source.operatorApprovalPlan?.ok === true;
+  const pendingCount = Number(approvalSummary.pending_approval_count ?? approvalQueueRows.length ?? pending.length);
+  const decisionCount = Number(approvalSummary.decision_count ?? approvalDecisionRows.length ?? ((autonomy.approved?.length || 0) + (autonomy.cancelled?.length || 0)));
+  const approvalFailureCount = Number(approvalSummary.failed_activity_count ?? approvalFailureRows.length ?? failedCommands.length);
+  const approvalAlertCount = Number(approvalSummary.approval_alert_count ?? approvalAlertRows.length ?? 0);
+  const criticalApprovalAlertCount = Number(approvalSummary.critical_approval_alert_count ?? 0);
+  const pendingTitle = approvalQueueRows[0]?.title || pending[0]?.title || pending[0]?.command_id || 'Command';
+  const pendingDetail = approvalQueueRows[0]?.detail || 'waiting for an allow/cancel decision';
+  const pendingAction = approvalQueueRows[0]?.action || (pending[0]?.id ? `activity-detail:${pending[0].id}` : 'open-activity-preflight');
   const failureAction = queue.failureGroups[0]?.action || (failedCommands[0]?.id ? `activity-detail:${failedCommands[0].id}` : 'open-operations-queue');
   const policyAction = queue.policyBlockedGroups[0]?.action || 'open-operations-queue';
   const retryAction = latestRetryable?.id ? `activity-detail:${latestRetryable.id}` : 'retry-latest-activity';
+  const backendCheckpointCards = approvalCheckpointRows.slice(0, 4).map(row => ({
+    state: row.state || 'warn',
+    label: row.badge || 'Checkpoint',
+    value: row.state === 'ok' ? 'Ready' : 'Review',
+    detail: row.detail || row.title || 'Backend approval checkpoint',
+    action: row.action || 'open-trust-controls',
+  }));
   const rows = [
     {
-      state: pending.length ? 'warn' : 'ok',
+      state: pendingCount ? 'warn' : 'ok',
       label: 'Approvals',
-      value: pending.length ? `${pending.length} wait` : 'Clear',
-      detail: pending.length
-        ? `${pending[0].title || pending[0].command_id || 'Command'} is waiting for an allow/cancel decision`
-        : 'No command is currently waiting for operator approval',
+      value: pendingCount ? `${pendingCount} wait` : 'Clear',
+      detail: pendingCount
+        ? `${pendingTitle} is ${pendingDetail}`
+        : (backendApprovalOk ? 'Backend approval queue is clear' : 'No command is currently waiting for operator approval'),
       action: pendingAction,
     },
     {
-      state: queue.failureCount ? 'error' : 'ok',
+      state: criticalApprovalAlertCount ? 'error' : (approvalAlertCount ? 'warn' : 'ok'),
+      label: 'Approval Gates',
+      value: approvalAlertCount ? String(approvalAlertCount) : String(Number(approvalSummary.ask_gated_count ?? autonomy.askCommandCount ?? 0)),
+      detail: backendApprovalOk
+        ? `${plural(Number(approvalSummary.ask_gated_count || 0), 'ask-gated route')}; ${plural(Number(approvalSummary.workflow_gate_ready_count || 0), 'workflow gate')} ready`
+        : 'Backend approval posture is unavailable; using local trust policy view',
+      action: approvalAlertRows[0]?.action || 'open-trust-controls',
+    },
+    {
+      state: queue.failureCount || approvalFailureCount ? 'error' : 'ok',
       label: 'Failures',
-      value: queue.failureCount ? String(queue.failureCount) : 'Clear',
+      value: queue.failureCount || approvalFailureCount ? String(queue.failureCount || approvalFailureCount) : 'Clear',
       detail: queue.failureCount
         ? `${queue.failureGroups[0]?.title || 'Failure cluster'} - ${queue.failureGroups[0]?.detail || 'review owner and logs'}`
-        : 'No failed local operations are visible across the queue feeds',
+        : (approvalFailureCount
+          ? `${plural(approvalFailureCount, 'failed command record')} should be reviewed before retry or approval`
+          : 'No failed local operations are visible across the queue feeds'),
       action: failureAction,
     },
     {
@@ -1716,6 +1776,7 @@ function decisionCheckpointData(snapshot) {
         : 'Retry becomes available after a command is routed through the operator layer',
       action: retryAction,
     },
+    ...backendCheckpointCards,
     {
       state: queue.activeCount ? 'warn' : (queue.failureCount || queue.policyBlockedCount ? 'warn' : 'ok'),
       label: 'Recovery Gate',
@@ -1743,8 +1804,12 @@ function decisionCheckpointData(snapshot) {
     rows,
     urgentCount,
     reviewCount,
-    pendingCount: pending.length,
+    pendingCount,
     decisionCount,
+    approvalPlan,
+    approvalSummary,
+    approvalAlertRows,
+    approvalCheckpointRows,
   };
 }
 
@@ -2534,6 +2599,52 @@ function collectAlerts(snapshot) {
   const runs = asArray(readData(snapshot, 'runs'), ['runs']);
   const calendar = asArray(readData(snapshot, 'calendar'), ['events']);
   const finetune = training?.finetune || {};
+  const backendAlertSources = [
+    { plan: readData(snapshot, 'operatorWorkOpsPlan'), action: 'open-work-preflight', label: 'Work Ops' },
+    { plan: readData(snapshot, 'operatorWorkdayPlan'), action: 'open-work-preflight', label: 'Work' },
+    { plan: readData(snapshot, 'operatorFileOpsPlan'), action: 'open-local-data-map', label: 'Files' },
+    { plan: readData(snapshot, 'operatorTrainingPlan'), action: 'open-training-run-plan', label: 'Training' },
+    { plan: readData(snapshot, 'operatorAutonomyPlan'), action: 'open-automation-map', label: 'Automation' },
+    { plan: readData(snapshot, 'operatorApprovalPlan'), action: 'open-trust-controls', label: 'Approvals' },
+    { plan: readData(snapshot, 'operatorLoopsPlan'), action: 'open-automation-map', label: 'Loops' },
+    { plan: readData(snapshot, 'operatorMemoryPlan'), action: 'open-memory-profile', label: 'Memory' },
+    { plan: readData(snapshot, 'operatorTasksPlan'), action: 'open-work-preflight', label: 'Tasks' },
+    { plan: readData(snapshot, 'operatorNotesPlan'), action: 'open-work-preflight', label: 'Notes' },
+    { plan: readData(snapshot, 'operatorCalendarPlan'), action: 'open-work-preflight', label: 'Calendar' },
+    { plan: readData(snapshot, 'operatorDocumentSearchPlan'), action: 'open-library-preflight', label: 'Library' },
+    { plan: readData(snapshot, 'operatorResearchPlan'), action: 'open-research-preflight', label: 'Research' },
+    { plan: readData(snapshot, 'operatorGalleryPlan'), action: 'open-library-preflight', label: 'Gallery' },
+    { plan: readData(snapshot, 'operatorServicesPlan'), action: 'open-local-services-map', label: 'Services' },
+    { plan: readData(snapshot, 'operatorDockerRuntimePlan'), action: 'open-local-services-map', label: 'Docker' },
+    { plan: readData(snapshot, 'operatorCredentialsPlan'), action: 'open-local-data-map', label: 'Credentials' },
+    { plan: readData(snapshot, 'operatorDataPlan'), action: 'open-local-data-map', label: 'Data' },
+    { plan: readData(snapshot, 'operatorRuntimePlan'), action: 'open-machine-preflight', label: 'Runtime' },
+    { plan: readData(snapshot, 'operatorRepairPlan'), action: 'open-container-repair-plan', label: 'Repair' },
+    { plan: readData(snapshot, 'operatorModelOpsPlan'), action: 'open-model-preflight', label: 'Models' },
+    { plan: readData(snapshot, 'operatorBackupPlan'), action: 'open-backup-preflight', label: 'Backup' },
+    { plan: readData(snapshot, 'operatorChangeBrief'), action: 'explain-changes-since-yesterday', label: 'Changes' },
+    { plan: readData(snapshot, 'operatorActivityPlan'), action: 'open-activity-preflight', label: 'Activity' },
+    { plan: readData(snapshot, 'operatorCodeTestPlan'), action: 'run-tests', label: 'Code' },
+    { plan: readData(snapshot, 'operatorBuildWatchPlan'), action: 'watch-build-until-green', label: 'Build' },
+    { plan: readData(snapshot, 'operatorWorkspacePlan'), action: 'open-code-workspace-map', label: 'Workspace' },
+    { plan: readData(snapshot, 'operatorSafetyPlan'), action: 'open-autonomy-map', label: 'Safety' },
+    { plan: readData(snapshot, 'operatorConsolePlan'), action: 'open-console-readiness-audit', label: 'Console' },
+    { plan: readData(snapshot, 'operatorToolchainPlan'), action: 'open-capability-map', label: 'Toolchain' },
+    { plan: readData(snapshot, 'operatorToolAccessPlan'), action: 'open-capability-map', label: 'Tools' },
+    { plan: readData(snapshot, 'operatorExperiencePlan'), action: 'open-capability-map', label: 'Targets' },
+  ];
+
+  backendAlertSources.forEach(source => {
+    asArray(source.plan?.alert_rows).slice(0, 3).forEach(row => {
+      pushAlert(alerts, {
+        state: row.state || 'warn',
+        title: row.title || `${source.label} alert`,
+        detail: row.detail || 'Review backend operator plan alert',
+        action: row.action || source.action,
+        actionLabel: row.actionLabel || row.action_label || source.label,
+      });
+    });
+  });
 
   if (!snapshot.offline?.ok) {
     pushAlert(alerts, {
@@ -2731,7 +2842,12 @@ function collectAlerts(snapshot) {
       actionLabel: 'Library',
     });
   }
-  return alerts.slice(0, 5);
+  const rank = { error: 0, warn: 1, loading: 2, ok: 3 };
+  return alerts
+    .map((alert, index) => ({ ...alert, _index: index }))
+    .sort((a, b) => (rank[a.state] ?? 1) - (rank[b.state] ?? 1) || a._index - b._index)
+    .slice(0, 8)
+    .map(({ _index, ...alert }) => alert);
 }
 
 function renderAlerts(snapshot) {
@@ -3342,6 +3458,16 @@ function goalPlanSummaryRows(snapshot) {
   const ready = Number(backendSummary.ready_count) || 0;
   const total = Number(backendSummary.requirement_count) || 0;
   const issues = Number(backendSummary.issue_count) || 0;
+  const routeCount = Number(backendSummary.entry_route_count || asArray(backendPlan, ['entry_rows', 'entryRows']).length || 0);
+  const routeReady = Number(backendSummary.entry_route_ready_count || 0);
+  const capabilityCount = Number(backendSummary.capability_count || asArray(backendPlan, ['capability_rows', 'capabilityRows']).length || 0);
+  const capabilityReady = Number(backendSummary.capability_ready_count || 0);
+  const releaseGateCount = Number(backendSummary.release_gate_count || asArray(backendPlan, ['release_gate_rows', 'releaseGateRows']).length || 0);
+  const releaseGateReady = Number(backendSummary.release_gate_ready_count || 0);
+  const identityCount = Number(backendSummary.identity_count || asArray(backendPlan, ['identity_rows', 'identityRows']).length || 0);
+  const identityReady = Number(backendSummary.identity_ready_count || 0);
+  const alertCount = Number(backendSummary.goal_alert_count || asArray(backendPlan.alert_rows).length || 0);
+  const criticalAlertCount = Number(backendSummary.critical_goal_alert_count || 0);
   if (!source.operatorGoalPlan?.ok) {
     return [{
       state: 'warn',
@@ -3353,15 +3479,90 @@ function goalPlanSummaryRows(snapshot) {
     }];
   }
   return [{
-    state: issues ? 'warn' : 'ok',
+    state: criticalAlertCount ? 'error' : (issues || alertCount ? 'warn' : 'ok'),
     badge: 'goal',
     title: 'Backend goal readiness plan',
     detail: total
-      ? `${ready}/${total} operating-console requirements proven; executes=${backendSummary.executes_commands ? 'yes' : 'no'}; network=${backendSummary.uses_network ? 'yes' : 'no'}`
+      ? `${ready}/${total} operating-console requirements proven; identity ${identityReady}/${identityCount || 0}; capabilities ${capabilityReady}/${capabilityCount || 0}; release gates ${releaseGateReady}/${releaseGateCount || 0}; routes ${routeReady}/${routeCount || 0}; ${alertCount ? `${plural(alertCount, 'goal alert')}${criticalAlertCount ? `, ${criticalAlertCount} critical` : ''}; ` : ''}executes=${backendSummary.executes_commands ? 'yes' : 'no'}; network=${backendSummary.uses_network ? 'yes' : 'no'}`
       : 'Backend goal plan returned without requirement rows',
     action: 'open-cleverly-goal-prompt',
     actionLabel: 'Goal',
   }];
+}
+
+function goalPlanAlertRows(snapshot) {
+  const backendPlan = readData(snapshot || {}, 'operatorGoalPlan') || {};
+  return asArray(backendPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'goal',
+    title: row.title || row.id || 'Goal alert',
+    detail: row.detail || 'Backend goal readiness alert',
+    action: row.action || 'open-cleverly-goal-prompt',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    usesNetwork: row.uses_network === true,
+  }));
+}
+
+function goalPlanEntryRows(snapshot) {
+  const backendPlan = readData(snapshot || {}, 'operatorGoalPlan') || {};
+  return asArray(backendPlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || (row.ready || row.action_ready || row.actionReady ? 'ok' : 'warn'),
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Goal request route proof',
+    detail: [
+      row.detail || 'Backend goal request route evidence',
+      `goalApi=${row.goal_api || row.goalApi || '/api/operator/goal-plan'}`,
+      `executes=${row.executes ? 'yes' : 'no'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.action_id || row.actionId || 'open-cleverly-goal-prompt',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    executes: row.executes === true,
+    usesNetwork: row.uses_network === true,
+  }));
+}
+
+function goalPlanHandoffRows(snapshot) {
+  const backendPlan = readData(snapshot || {}, 'operatorGoalPlan') || {};
+  return asArray(backendPlan.handoff_rows).slice(0, 12).map(row => {
+    const gated = row.gated_operation || row.gatedOperation || {};
+    return {
+      state: row.state || 'warn',
+      badge: row.badge || 'handoff',
+      title: row.title || row.id || 'Goal handoff',
+      detail: [
+        row.detail || 'goal handoff evidence',
+        `target=${row.target_api || row.targetApi || '/api/operator/goal-plan'}`,
+        `approval=${row.approval_command_id || row.approvalCommandId || 'none'}`,
+        `routes=${gated.routes_commands === true || gated.routesCommands === true ? 'yes' : 'no'}`,
+        `workflow=${gated.starts_workflows === true || gated.startsWorkflows === true ? 'yes' : 'no'}`,
+        `shell=${gated.runs_shell === true || gated.runsShell === true ? 'yes' : 'no'}`,
+        `docker=${gated.runs_docker === true || gated.runsDocker === true ? 'yes' : 'no'}`,
+        `network=${gated.uses_network === true || gated.usesNetwork === true ? 'yes' : 'no'}`,
+      ].join('; '),
+      action: row.action || 'open-cleverly-goal-prompt',
+      actionLabel: row.actionLabel || row.action_label || 'Review',
+      requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+      routesCommands: gated.routes_commands === true || gated.routesCommands === true,
+      startsWorkflows: gated.starts_workflows === true || gated.startsWorkflows === true,
+      startsJobs: gated.starts_jobs === true || gated.startsJobs === true,
+      startsModels: gated.starts_models === true || gated.startsModels === true,
+      startsTraining: gated.starts_training === true || gated.startsTraining === true,
+      runsSearch: gated.runs_search === true || gated.runsSearch === true,
+      runsShell: gated.runs_shell === true || gated.runsShell === true,
+      runsDocker: gated.runs_docker === true || gated.runsDocker === true,
+      writesActivity: gated.writes_activity === true || gated.writesActivity === true,
+      changesPolicy: gated.changes_policy === true || gated.changesPolicy === true,
+      approvesActions: gated.approves_actions === true || gated.approvesActions === true,
+      createsBackup: gated.creates_backup === true || gated.createsBackup === true,
+      restoresData: gated.restores_data === true || gated.restoresData === true,
+      restartsServices: gated.restarts_services === true || gated.restartsServices === true,
+      usesNetwork: gated.uses_network === true || gated.usesNetwork === true,
+      gatedOperation: gated,
+      backendProof: true,
+    };
+  });
 }
 
 function cleverlyGoalEvidenceRows(snapshot) {
@@ -3427,14 +3628,22 @@ function cleverlyGoalPromptText(snapshot) {
   const source = snapshot || {};
   const backendPlan = readData(source, 'operatorGoalPlan') || {};
   const backendSummary = backendPlan.summary || {};
+  const backendIdentity = goalPlanBriefingRows(backendPlan.identity_rows);
   const backendPrinciples = goalPlanBriefingRows(backendPlan.principle_rows);
   const backendDefinitions = goalPlanBriefingRows(backendPlan.definition_rows);
+  const backendReleaseGates = goalPlanBriefingRows(backendPlan.release_gate_rows);
+  const backendCapabilities = goalPlanBriefingRows(backendPlan.capability_rows);
   const backendGuards = goalPlanBriefingRows(backendPlan.guard_rows, 'open-trust-controls');
+  const backendAlerts = goalPlanAlertRows(source);
+  const backendEntryRows = goalPlanEntryRows(source);
+  const backendHandoffRows = goalPlanHandoffRows(source);
   const evidence = cleverlyGoalEvidenceRows(source);
   const targetRows = targetWorkflowRows(source)
     .map(row => `- [${row.state}] ${row.title}: ${row.detail}`);
   const backendReady = Number(backendSummary.ready_count) || 0;
   const backendTotal = Number(backendSummary.requirement_count) || 0;
+  const backendIdentityReady = Number(backendSummary.identity_ready_count) || 0;
+  const backendIdentityTotal = Number(backendSummary.identity_count || backendIdentity.length || 0);
   const lines = [
     'Cleverly Goal Prompt',
     `Generated: ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`,
@@ -3444,6 +3653,9 @@ function cleverlyGoalPromptText(snapshot) {
     'Identity:',
     '- Cleverly is an always-available local AI operator: calm, direct, capable, privacy-first, and local-first.',
     '- Cleverly is not just a chatbot. It should inspect, explain, plan, and safely operate local workflows with clear approval.',
+    '',
+    'Backend identity proof:',
+    ...(backendIdentity.length ? backendIdentity.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend identity rows visible']),
     '',
     'Core goal:',
     '- Turn Cleverly into a unified command center for local AI work, system operations, research, coding, training, memory, scheduling, and automation.',
@@ -3455,12 +3667,26 @@ function cleverlyGoalPromptText(snapshot) {
     ...(backendPlan.mode
       ? [
           `- Mode: ${backendPlan.mode}`,
-          `- Requirements: ${backendReady}/${backendTotal} ready; issues=${Number(backendSummary.issue_count) || 0}; executes=${backendSummary.executes_commands ? 'yes' : 'no'}; network=${backendSummary.uses_network ? 'yes' : 'no'}`,
+          `- Requirements: ${backendReady}/${backendTotal} ready; release gates=${Number(backendSummary.release_gate_ready_count) || 0}/${Number(backendSummary.release_gate_count) || 0}; identity=${backendIdentityReady}/${backendIdentityTotal}; issues=${Number(backendSummary.issue_count) || 0}; executes=${backendSummary.executes_commands ? 'yes' : 'no'}; network=${backendSummary.uses_network ? 'yes' : 'no'}`,
         ]
       : [`- [warn] ${readError(source, 'operatorGoalPlan')}`]),
+    ...(backendAlerts.length ? [
+      '',
+      'Backend goal alerts:',
+      ...backendAlerts.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    '',
+    'Backend goal request route proof:',
+    ...(backendEntryRows.length ? backendEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend goal request route proof visible']),
+    '',
+    'Goal handoffs:',
+    ...(backendHandoffRows.length ? backendHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No goal handoffs visible']),
     '',
     'Backend principle proof:',
     ...(backendPrinciples.length ? backendPrinciples.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend principle rows visible']),
+    '',
+    'Backend capability coverage:',
+    ...(backendCapabilities.length ? backendCapabilities.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend capability rows visible']),
     '',
     'Target experience:',
     ...targetRows,
@@ -3473,6 +3699,9 @@ function cleverlyGoalPromptText(snapshot) {
     '',
     'Backend definition-of-done proof:',
     ...(backendDefinitions.length ? backendDefinitions.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend definition rows visible']),
+    '',
+    'V1 release gates:',
+    ...(backendReleaseGates.length ? backendReleaseGates.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend release gates visible']),
     '',
     'Backend guard rails:',
     ...(backendGuards.length ? backendGuards.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend guard rows visible']),
@@ -3545,9 +3774,15 @@ function renderCleverlyGoalPrompt(snapshot) {
   if (!body) return;
   const source = snapshot || {};
   const backendPlan = readData(source, 'operatorGoalPlan') || {};
+  const backendIdentity = goalPlanBriefingRows(backendPlan.identity_rows);
   const backendPrinciples = goalPlanBriefingRows(backendPlan.principle_rows);
   const backendDefinitions = goalPlanBriefingRows(backendPlan.definition_rows);
+  const backendReleaseGates = goalPlanBriefingRows(backendPlan.release_gate_rows);
+  const backendCapabilities = goalPlanBriefingRows(backendPlan.capability_rows);
   const backendGuards = goalPlanBriefingRows(backendPlan.guard_rows, 'open-trust-controls');
+  const backendAlerts = goalPlanAlertRows(source);
+  const backendEntryRows = goalPlanEntryRows(source);
+  const backendHandoffRows = goalPlanHandoffRows(source);
   const evidenceRows = cleverlyGoalEvidenceRows(source);
   const targetRows = targetWorkflowRows(source);
   setText('cc-cleverly-goal-prompt-time', new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }));
@@ -3570,8 +3805,26 @@ function renderCleverlyGoalPrompt(snapshot) {
       ], 'No identity rows visible')}
     </section>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend identity proof</div>
+      ${briefingList(backendIdentity, 'No backend identity rows visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend goal readiness plan</div>
       ${briefingList(goalPlanSummaryRows(source), 'No backend goal readiness plan visible')}
+    </section>
+    ${backendAlerts.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Backend goal alerts</div>
+        ${briefingList(backendAlerts, 'No backend goal alerts visible')}
+      </section>
+    ` : ''}
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Goal request route proof</div>
+      ${briefingList(backendEntryRows, 'No backend goal request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Goal handoffs</div>
+      ${briefingList(backendHandoffRows, 'No goal handoffs visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Primary principles</div>
@@ -3580,6 +3833,10 @@ function renderCleverlyGoalPrompt(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend principle proof</div>
       ${briefingList(backendPrinciples, 'No backend principle proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend capability coverage</div>
+      ${briefingList(backendCapabilities, 'No backend capability rows visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Target experience</div>
@@ -3596,6 +3853,10 @@ function renderCleverlyGoalPrompt(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend definition-of-done proof</div>
       ${briefingList(backendDefinitions, 'No backend definition proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">V1 release gates</div>
+      ${briefingList(backendReleaseGates, 'No backend release gates visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend guard rails</div>
@@ -3779,6 +4040,19 @@ function consoleReadinessAuditData(snapshot) {
     action: row.action_id || row.actionId || 'open-console-readiness-audit',
     actionLabel: row.state === 'ok' ? 'Open' : 'Review',
   }));
+  const backendEntryRows = asArray(backendPlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'entry',
+    title: row.title || row.id || 'Console request route proof',
+    detail: [
+      row.detail || 'Console entry route evidence',
+      `action=${row.action_id || row.actionId || 'open-console-readiness-audit'}`,
+      `executes=${row.executes ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action_id || row.actionId || 'open-console-readiness-audit',
+    actionLabel: row.state === 'ok' ? 'Open' : 'Review',
+    executes: row.executes === true,
+  }));
   const backendGuardRows = asArray(backendPlan, ['guard_rows', 'guardRows']).map(row => ({
     state: row.state || 'ok',
     badge: row.badge || 'gate',
@@ -3795,6 +4069,53 @@ function consoleReadinessAuditData(snapshot) {
     action: 'open-console-readiness-audit',
     actionLabel: 'Gate',
   }));
+  const consoleAlertRows = asArray(backendPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'dash',
+    title: row.title || row.id || 'Console alert',
+    detail: row.detail || 'Console readiness needs review',
+    action: row.action || 'open-console-readiness-audit',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  }));
+  const backendAlertFeedRows = asArray(backendPlan.alert_feed_rows).slice(0, 12).map(row => ({
+    state: row.state || 'ok',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Console alert feed',
+    detail: row.detail || `${row.endpoint || 'endpoint'} ${row.count_key || row.countKey || ''}`,
+    action: row.action || 'open-activity-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Activity',
+  }));
+  const consoleHandoffRows = asArray(backendPlan.handoff_rows).slice(0, 10).map(row => {
+    const gated = row.gated_operation || row.gatedOperation || {};
+    return {
+      state: row.state || 'warn',
+      badge: row.badge || 'handoff',
+      title: row.title || row.id || 'Console handoff',
+      detail: [
+        row.detail || 'console handoff evidence',
+        `target=${row.target_api || row.targetApi || '/api/operator/console-plan'}`,
+        `approval=${row.approval_command_id || row.approvalCommandId || 'none'}`,
+        `routes=${gated.routes_commands === true || gated.routesCommands === true ? 'yes' : 'no'}`,
+        `activity=${gated.writes_activity === true || gated.writesActivity === true ? 'yes' : 'no'}`,
+        `backup=${gated.creates_backup === true || gated.createsBackup === true ? 'yes' : 'no'}`,
+        `network=${gated.uses_network === true || gated.usesNetwork === true ? 'yes' : 'no'}`,
+      ].join('; '),
+      action: row.action || 'open-console-readiness-audit',
+      actionLabel: row.actionLabel || row.action_label || 'Review',
+      requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+      routesCommands: gated.routes_commands === true || gated.routesCommands === true,
+      writesActivity: gated.writes_activity === true || gated.writesActivity === true,
+      approvesActions: gated.approves_actions === true || gated.approvesActions === true,
+      startsWorkflows: gated.starts_workflows === true || gated.startsWorkflows === true,
+      createsBackup: gated.creates_backup === true || gated.createsBackup === true,
+      restoresData: gated.restores_data === true || gated.restoresData === true,
+      changesPolicy: gated.changes_policy === true || gated.changesPolicy === true,
+      usesNetwork: gated.uses_network === true || gated.usesNetwork === true,
+      gatedOperation: gated,
+      backendProof: true,
+    };
+  });
   const okRows = rows.filter(row => row.state === 'ok');
   const issueRows = rows.filter(row => row.state === 'warn' || row.state === 'error');
   const loadingRows = rows.filter(row => row.state === 'loading');
@@ -3808,8 +4129,12 @@ function consoleReadinessAuditData(snapshot) {
     backendPlan,
     backendSummary,
     backendRows,
+    backendEntryRows,
     backendGuardRows,
     backendApiRows,
+    consoleAlertRows,
+    backendAlertFeedRows,
+    consoleHandoffRows,
     targetRows,
     targetReady,
     routeReady,
@@ -3819,6 +4144,10 @@ function consoleReadinessAuditData(snapshot) {
 }
 
 function consoleReadinessAuditStats(data = consoleReadinessAuditData(_lastSnapshot || {})) {
+  const entryRouteCount = Number(data.backendSummary.entry_route_count || data.backendEntryRows.length || 0);
+  const entryRouteReady = Number(data.backendSummary.entry_route_ready_count || data.backendEntryRows.filter(row => row.state === 'ok').length || 0);
+  const handoffCount = Number(data.backendSummary.handoff_count || data.consoleHandoffRows.length || 0);
+  const handoffReady = Number(data.backendSummary.handoff_ready_count || data.consoleHandoffRows.filter(row => row.state === 'ok').length || 0);
   return [
     {
       state: data.score >= 85 ? 'ok' : (data.score >= 60 ? 'warn' : 'error'),
@@ -3833,6 +4162,12 @@ function consoleReadinessAuditStats(data = consoleReadinessAuditData(_lastSnapsh
         ? `${data.backendSummary.ready_count ?? data.backendRows.filter(row => row.state === 'ok').length}/${data.backendSummary.section_count ?? data.backendRows.length}`
         : '0/0',
       detail: data.backendRows.length ? 'console plan proof' : 'console plan unavailable',
+    },
+    {
+      state: entryRouteCount && entryRouteReady >= entryRouteCount ? 'ok' : 'warn',
+      label: 'Entry Routes',
+      value: entryRouteCount ? `${entryRouteReady}/${entryRouteCount}` : '0',
+      detail: 'console proof',
     },
     {
       state: data.routeReady ? 'ok' : 'warn',
@@ -3851,6 +4186,24 @@ function consoleReadinessAuditStats(data = consoleReadinessAuditData(_lastSnapsh
       label: 'Review',
       value: String(data.issueRows.length + data.loadingRows.length),
       detail: 'non-green areas',
+    },
+    {
+      state: Number(data.backendSummary.critical_console_alert_count || 0) ? 'error' : (Number(data.backendSummary.console_alert_count || data.consoleAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.backendSummary.console_alert_count || data.consoleAlertRows.length || 0)),
+      detail: `${plural(Number(data.backendSummary.critical_console_alert_count || 0), 'critical')}`,
+    },
+    {
+      state: Number(data.backendSummary.alert_feed_ready_count || data.backendAlertFeedRows.filter(row => row.state === 'ok').length || 0) >= Number(data.backendSummary.alert_feed_count || data.backendAlertFeedRows.length || 0) ? 'ok' : 'warn',
+      label: 'Feeds',
+      value: `${Number(data.backendSummary.alert_feed_ready_count || data.backendAlertFeedRows.filter(row => row.state === 'ok').length || 0)}/${Number(data.backendSummary.alert_feed_count || data.backendAlertFeedRows.length || 0)}`,
+      detail: 'alert sources',
+    },
+    {
+      state: handoffCount && handoffReady >= handoffCount ? 'ok' : 'warn',
+      label: 'Console Handoffs',
+      value: handoffCount ? `${handoffReady}/${handoffCount}` : '0',
+      detail: 'handoff gates',
     },
   ];
 }
@@ -3874,6 +4227,36 @@ function consoleReadinessAuditText(snapshot) {
       ...data.backendRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     );
   }
+  if (data.backendEntryRows.length) {
+    lines.push(
+      '',
+      'Console request route proof:',
+      ...data.backendEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    );
+  } else {
+    lines.push('', 'Console request route proof:', '- No console request route proof visible');
+  }
+  lines.push(
+    '',
+    'Console alert queue:',
+    ...(data.consoleAlertRows.length
+      ? data.consoleAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No console alerts returned']),
+  );
+  lines.push(
+    '',
+    'Console alert feeds:',
+    ...(data.backendAlertFeedRows.length
+      ? data.backendAlertFeedRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`)
+      : ['- No console alert feed proof visible']),
+  );
+  lines.push(
+    '',
+    'Console handoffs:',
+    ...(data.consoleHandoffRows.length
+      ? data.consoleHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No console handoffs visible']),
+  );
   if (data.backendGuardRows.length) {
     lines.push(
       '',
@@ -3984,6 +4367,22 @@ function renderConsoleReadinessAudit(snapshot) {
         ${briefingList(data.backendRows, 'No backend console plan rows visible')}
       </section>
     ` : ''}
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Console request route proof</div>
+      ${briefingList(data.backendEntryRows, 'No console request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Console alert queue</div>
+      ${briefingList(data.consoleAlertRows, 'No console alerts returned')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Console alert feeds</div>
+      ${briefingList(data.backendAlertFeedRows, 'No console alert feed proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Console handoffs</div>
+      ${briefingList(data.consoleHandoffRows, 'No console handoffs visible')}
+    </section>
     ${data.backendGuardRows.length ? `
       <section class="cc-briefing-section">
         <div class="cc-briefing-section-title">Console guard rails</div>
@@ -4282,6 +4681,8 @@ function briefingSnapshot(snapshot) {
     action: row.action || 'summarize-today',
     actionLabel: row.actionLabel || 'Brief',
   }));
+  const backendAlertRows = backendBriefingRows(operatorBriefing.alert_rows, 'alert');
+  const backendAlertCount = Number(operatorBriefing.summary?.briefing_alert_count || backendAlertRows.length || 0);
   return {
     generatedAt: operatorBriefing.generated_at
       ? formatTime(operatorBriefing.generated_at)
@@ -4294,8 +4695,16 @@ function briefingSnapshot(snapshot) {
       rows: backendRows,
       overviewRows: backendBriefingRows(operatorBriefing.overview_rows, 'sum'),
       actionRows: backendBriefingRows(operatorBriefing.action_rows, 'next'),
+      alertRows: backendAlertRows,
       riskRows: backendBriefingRows(operatorBriefing.risk_rows, 'gate', 'open-trust-controls'),
       dataSourceRows: backendBriefingRows(operatorBriefing.data_source_rows, 'data', 'open-local-data-map'),
+      routeRows: backendBriefingRows(
+        asArray(operatorBriefing, ['entry_rows', 'entryRows']).length
+          ? asArray(operatorBriefing, ['entry_rows', 'entryRows'])
+          : operatorBriefing.route_rows,
+        'route',
+        'summarize-today',
+      ),
       summary: operatorBriefing.summary || {},
       apiActions: asArray(operatorBriefing.api_actions),
       paths: operatorBriefing.paths || {},
@@ -4317,7 +4726,7 @@ function briefingSnapshot(snapshot) {
       state: queue.failureCount ? 'error' : (queue.policyBlockedCount || queue.activeCount ? 'warn' : 'ok'),
     },
     counts: {
-      alerts: alerts.length,
+      alerts: alerts.length + backendAlertCount,
       tasks: activeTasks.length,
       events: upcomingEvents.length,
       notes: latestNotes.length,
@@ -4572,6 +4981,9 @@ function todayContextData(snapshot) {
   const documents = sortRecent(asArray(docResponse, ['documents', 'items'])).slice(0, 2);
   const workspaces = sortRecent(asArray(readData(source, 'workspaces'), ['workspaces', 'items'])).slice(0, 2);
   const gallery = readData(source, 'gallery') || {};
+  const galleryPlan = readData(source, 'operatorGalleryPlan') || {};
+  const gallerySummary = galleryPlan.summary || {};
+  const galleryOk = source.operatorGalleryPlan?.ok === true;
   const imageTotal = numberOrNull(gallery.total_photos ?? gallery.total ?? gallery.count ?? gallery.images ?? gallery.stats?.total) || 0;
   const workRows = compactContextItems(briefing.failedRuns.concat(briefing.tasks), 2);
   const calendarRows = compactContextItems(briefing.events, 2);
@@ -4875,6 +5287,26 @@ function toolchainData(snapshot) {
     actionLabel: row.state === 'ok' ? 'Open' : 'Review',
     backendProof: true,
   }));
+  const toolchainEntryRows = asArray(backendPlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || (row.ready || row.action_ready || row.actionReady ? 'ok' : 'warn'),
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Toolchain request route',
+    detail: row.detail || 'Backend toolchain request route evidence',
+    action: row.action || row.action_id || row.actionId || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || (row.state === 'ok' ? 'Open' : 'Review'),
+    backendProof: true,
+  }));
+  const toolchainAlertRows = asArray(backendPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'tool',
+    title: row.title || row.id || 'Toolchain alert',
+    detail: row.detail || 'Toolchain integration needs review',
+    action: row.action || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    usesNetwork: row.uses_network === true,
+    backendProof: true,
+  }));
   const backendGuardRows = asArray(backendPlan, ['guard_rows', 'guardRows']).map(row => ({
     state: row.state || 'ok',
     badge: row.badge || 'gate',
@@ -5016,6 +5448,8 @@ function toolchainData(snapshot) {
     frontendRows: rows,
     backendRows,
     backendGuardRows,
+    toolchainEntryRows,
+    toolchainAlertRows,
     backendSummary,
     sourceLabel: backendRows.length ? 'backend toolchain proof' : 'live browser snapshot',
     readyCount: visibleRows.filter(row => row.state === 'ok').length,
@@ -5030,7 +5464,11 @@ function renderToolchain(snapshot) {
   const data = toolchainData(snapshot || {});
   const services = serviceHealthData(snapshot || {});
   const healthNode = el('cc-service-health');
-  setText('cc-toolchain-summary', `${data.readyCount}/${data.rows.length} modules ready; ${services.readyCount}/${services.chips.length} services ready; ${data.sourceLabel}${data.reviewCount ? ` - ${plural(data.reviewCount, 'review item')}` : ''}`);
+  const alertCount = Number(data.backendSummary.toolchain_alert_count || data.toolchainAlertRows.length || 0);
+  const criticalAlertCount = Number(data.backendSummary.critical_toolchain_alert_count || 0);
+  const routeCount = Number(data.backendSummary.entry_route_count || data.toolchainEntryRows.length || 0);
+  const routeReady = Number(data.backendSummary.entry_route_ready_count || data.toolchainEntryRows.filter(row => row.state === 'ok').length || 0);
+  setText('cc-toolchain-summary', `${data.readyCount}/${data.rows.length} modules ready; ${services.readyCount}/${services.chips.length} services ready${routeCount ? `; routes ${routeReady}/${routeCount}` : ''}; ${data.sourceLabel}${data.reviewCount ? ` - ${plural(data.reviewCount, 'review item')}` : ''}${alertCount ? ` - ${plural(alertCount, 'toolchain alert')}${criticalAlertCount ? `, ${criticalAlertCount} critical` : ''}` : ''}`);
   if (healthNode) {
     healthNode.innerHTML = services.chips.map(chip => `
       <button type="button" class="cc-service-health-chip" data-state="${escapeHtml(chip.state)}" data-cc-action="${escapeHtml(chip.action)}" title="${escapeHtml(chip.detail)}">
@@ -5039,7 +5477,10 @@ function renderToolchain(snapshot) {
       </button>
     `).join('');
   }
-  grid.innerHTML = data.rows.map(row => `
+  const displayRows = data.toolchainAlertRows.length || data.toolchainEntryRows.length
+    ? [...data.toolchainAlertRows, ...data.toolchainEntryRows, ...data.rows].slice(0, Math.max(data.rows.length + data.toolchainEntryRows.length, 16))
+    : data.rows;
+  grid.innerHTML = displayRows.map(row => `
     <article class="cc-toolchain-card" data-state="${escapeHtml(row.state)}">
       <div class="cc-toolchain-top">
         <span class="cc-toolchain-badge">${escapeHtml(row.badge)}</span>
@@ -5071,6 +5512,12 @@ function briefingText(snapshot) {
     '',
     'Backend Suggested Actions:',
     ...(data.backend.actionRows.length ? data.backend.actionRows.map(item => `- [${item.state}] ${item.title}: ${item.detail}`) : ['- No backend action rows visible']),
+    '',
+    'Backend Briefing Alerts:',
+    ...(data.backend.alertRows.length ? data.backend.alertRows.map(item => `- [${item.state}] ${item.title}: ${item.detail}`) : ['- No backend briefing alerts visible']),
+    '',
+    'Backend Route Proof:',
+    ...(data.backend.routeRows.length ? data.backend.routeRows.map(item => `- [${item.state}] ${item.title}: ${item.detail}`) : ['- No backend route proof rows visible']),
     '',
     'Operator Agenda:',
     ...(data.agendaRows.length ? data.agendaRows.map(item => `- [${item.state}] ${item.title}: ${item.detail}`) : ['- No operator agenda items right now']),
@@ -5157,6 +5604,70 @@ function changeBriefData(snapshot) {
     actionLabel: 'Code',
   }));
   const backendEvidenceCommands = asArray(backendChange.evidence_commands);
+  const changeAlertRows = asArray(backendChange.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Change Brief alert',
+    detail: row.detail || '',
+    action: row.action || 'explain-changes-since-yesterday',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  }));
+  const frontendEntryRows = [
+    {
+      state: backendSummary.total_change_count ? 'ok' : 'loading',
+      badge: 'dash',
+      title: 'Command Center dashboard',
+      detail: backendSummary.total_change_count
+        ? `Change Brief opens with ${plural(Number(backendSummary.total_change_count) || 0, 'local change signal')} from workspace metadata and activity records`
+        : 'Change Brief opens first and reports local change signals for the selected window',
+      action: 'explain-changes-since-yesterday',
+      actionLabel: 'Brief',
+    },
+    {
+      state: 'ok',
+      badge: 'text',
+      title: 'Typed operator command',
+      detail: 'The phrase "Explain what changed since yesterday" resolves to a local metadata brief before any repo command is run',
+      action: 'explain-changes-since-yesterday',
+      actionLabel: 'Brief',
+    },
+    {
+      state: 'ok',
+      badge: 'cmd',
+      title: 'Global command palette',
+      detail: 'The palette exposes Explain Changes Since Yesterday as a read-only local activity and workspace route',
+      action: 'open-command-palette',
+      actionLabel: 'Palette',
+    },
+    {
+      state: 'ok',
+      badge: 'voice',
+      title: 'Voice command mode',
+      detail: 'Voice routing can open the same Change Brief without running git, shell commands, or network requests',
+      action: 'open-voice-preflight',
+      actionLabel: 'Voice',
+    },
+    {
+      state: Number(backendSummary.workspace_count || 0) || Number(backendSummary.activity_count || 0) ? 'ok' : 'warn',
+      badge: 'flow',
+      title: 'Automation workflow handoff',
+      detail: Number(backendSummary.workspace_count || 0) || Number(backendSummary.activity_count || 0)
+        ? 'Workflow handoff can summarize local change evidence and route deeper inspection to Activity or Code Workspace'
+        : 'Workflow handoff stays in review mode until local activity or Code Workspace evidence is visible',
+      action: 'open-automation-map',
+      actionLabel: 'Workflow',
+    },
+  ];
+  const backendEntryRows = backendOk ? asArray(backendChange.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Change Brief request route proof',
+    detail: row.detail || 'explain-changes-since-yesterday request route evidence',
+    action: row.action || 'explain-changes-since-yesterday',
+    actionLabel: row.actionLabel || row.action_label || 'Brief',
+  })) : [];
+  const entryRows = backendOk && backendEntryRows.length ? backendEntryRows : frontendEntryRows;
   const backendRows = [
     backendOk ? {
       state: backendSummary.runs_shell ? 'warn' : (backendSummary.state || 'ok'),
@@ -5385,11 +5896,17 @@ function changeBriefData(snapshot) {
     modelResearchRows,
     safetyRows,
     backendRows,
+    backendSummary,
+    entryRows,
+    changeAlertRows,
   };
 }
 
 function changeBriefStats(snapshot) {
   const data = changeBriefData(snapshot || {});
+  const summary = data.backendSummary || {};
+  const entryRouteCount = Number(summary.entry_route_count) || data.entryRows.length;
+  const entryRouteReadyCount = Number(summary.entry_route_ready_count) || data.entryRows.filter(row => row.state === 'ok').length;
   return [
     {
       state: data.counts.commands ? 'ok' : 'loading',
@@ -5415,6 +5932,18 @@ function changeBriefStats(snapshot) {
       value: String(data.counts.models + data.counts.safety),
       detail: 'models/research/queue',
     },
+    {
+      state: Number(data.changeAlertRows?.filter?.(row => row.state === 'error')?.length || 0) ? 'error' : (data.changeAlertRows?.length ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(data.changeAlertRows?.length || 0),
+      detail: 'change brief',
+    },
+    {
+      state: entryRouteReadyCount >= entryRouteCount && entryRouteCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: entryRouteCount ? `${entryRouteReadyCount}/${entryRouteCount}` : '0',
+      detail: 'request proof',
+    },
   ];
 }
 
@@ -5422,6 +5951,8 @@ function changeBriefText(snapshot) {
   const data = changeBriefData(snapshot || {});
   const sections = [
     ['Backend Evidence:', data.backendRows],
+    ['Request Route Proof:', data.entryRows],
+    ['Change Alert Queue:', data.changeAlertRows],
     ['Commands:', data.commandRows],
     ['Work:', data.workRows],
     ['Code:', data.codeRows],
@@ -5523,6 +6054,14 @@ function renderChangeBrief(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend change evidence</div>
       ${briefingList(data.backendRows, 'Backend change evidence is not available')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Request route proof</div>
+      ${briefingList(data.entryRows, 'No Change Brief request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Change alert queue</div>
+      ${briefingList(data.changeAlertRows, 'No Change Brief alerts returned')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Command activity</div>
@@ -5712,6 +6251,11 @@ function renderTodayBriefing(snapshot) {
         <strong>${escapeHtml(plural(data.counts.alerts, 'alert'))}</strong>
         <em>${escapeHtml(`${plural(data.counts.tasks, 'task')} - ${plural(data.counts.events, 'event')}`)}</em>
       </div>
+      <div class="cc-briefing-stat" data-state="${Number(data.backend.summary.entry_route_ready_count || data.backend.summary.route_ready_count || 0) ? 'ok' : 'warn'}">
+        <span>Routes</span>
+        <strong>${escapeHtml(`${Number(data.backend.summary.entry_route_ready_count || data.backend.summary.route_ready_count || 0)}/${Number(data.backend.summary.entry_route_count || data.backend.summary.route_count || data.backend.routeRows.length || 0)}`)}</strong>
+        <em>briefing entries</em>
+      </div>
     </div>
     <div class="cc-briefing-sections">
       <section class="cc-briefing-section">
@@ -5725,6 +6269,14 @@ function renderTodayBriefing(snapshot) {
       <section class="cc-briefing-section">
         <div class="cc-briefing-section-title">Backend suggested actions</div>
         ${briefingList(data.backend.actionRows, 'No backend action rows visible')}
+      </section>
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Backend briefing alerts</div>
+        ${briefingList(data.backend.alertRows, 'No backend briefing alerts visible')}
+      </section>
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Backend route proof</div>
+        ${briefingList(data.backend.routeRows, 'No backend route proof rows visible')}
       </section>
       <section class="cc-briefing-section" data-brief-section="agenda">
         <div class="cc-briefing-section-title">Operator agenda</div>
@@ -7040,7 +7592,333 @@ function workStatusData(snapshot) {
   const notes = asArray(readData(source, 'notes'), ['notes']);
   const workdayPlan = readData(source, 'operatorWorkdayPlan') || {};
   const workdaySummary = workdayPlan.summary || {};
+  const tasksPlan = readData(source, 'operatorTasksPlan') || {};
+  const tasksSummary = tasksPlan.summary || {};
+  const tasksPlanOk = source.operatorTasksPlan?.ok === true;
+  const notesPlan = readData(source, 'operatorNotesPlan') || {};
+  const notesSummary = notesPlan.summary || {};
+  const notesPlanOk = source.operatorNotesPlan?.ok === true;
+  const calendarPlan = readData(source, 'operatorCalendarPlan') || {};
+  const calendarSummary = calendarPlan.summary || {};
+  const calendarPlanOk = source.operatorCalendarPlan?.ok === true;
+  const workOpsPlan = readData(source, 'operatorWorkOpsPlan') || {};
+  const workOpsSummary = workOpsPlan.summary || {};
+  const workOpsPlanOk = source.operatorWorkOpsPlan?.ok === true;
+  const workOpsRows = asArray(workOpsPlan.work_ops_rows).slice(0, 8).map(row => ({
+    state: row.state || 'loading',
+    badge: row.badge || 'work',
+    title: row.title || 'Backend work operations',
+    detail: row.detail || '',
+    action: row.action || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Work',
+    backendProof: true,
+  }));
+  const workOpsAlertRows = asArray(workOpsPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'work',
+    title: row.title || row.id || 'Work operations alert',
+    detail: row.detail || 'backend work operations alert',
+    action: row.action || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const workOpsEntryRows = asArray(workOpsPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Work operations request route proof',
+    detail: [
+      row.detail || 'unified work operations route evidence',
+      `command=${row.command_id || 'summarize-today'}`,
+      `work=${row.work_command_id || 'open-work-preflight'}`,
+      `tasks=${row.task_command_id || 'open-tasks'}`,
+      `notes=${row.note_command_id || 'open-notes'}`,
+      `calendar=${row.calendar_command_id || 'open-calendar'}`,
+      `draft=${row.draft_command_id || 'draft-task-from-note'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.work_command_id || row.command_id || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Work',
+    requiresApproval: row.requires_approval === true,
+    createsTasks: row.creates_tasks === true,
+    runsTasks: row.runs_tasks === true,
+    createsNotes: row.creates_notes === true,
+    updatesNotes: row.updates_notes === true,
+    firesReminders: row.fires_reminders === true,
+    createsCalendarEvents: row.creates_calendar_events === true,
+    syncsCalendars: row.syncs_calendars === true,
+    startsAutomation: row.starts_automation === true,
+    writesActivity: row.writes_activity === true,
+    runsShell: row.runs_shell === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const workOpsHandoffRows = asArray(workOpsPlan, ['handoff_rows', 'handoffRows']).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'work',
+    title: row.title || row.id || 'Work operations handoff',
+    detail: row.detail || 'Backend work handoff evidence',
+    action: row.action || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    createsTasks: row.creates_tasks === true,
+    runsTasks: row.runs_tasks === true,
+    firesReminders: row.fires_reminders === true,
+    createsCalendarEvents: row.creates_calendar_events === true,
+    syncsCalendars: row.syncs_calendars === true,
+    startsAutomation: row.starts_automation === true,
+    writesActivity: row.writes_activity === true,
+    sendsNotifications: row.sends_notifications === true,
+    runsShell: row.runs_shell === true,
+    usesNetwork: row.uses_network === true,
+    networkAfterApproval: row.network_after_approval === true || row.networkAfterApproval === true,
+    backendProof: true,
+  }));
+  const workOpsGuardRows = asArray(workOpsPlan.guard_rows).slice(0, 8).map(row => ({
+    state: row.state || 'ok',
+    badge: row.badge || 'gate',
+    title: row.title || 'Work operations guard',
+    detail: row.detail || '',
+    action: row.action || 'open-trust-controls',
+    actionLabel: row.actionLabel || row.action_label || 'Trust',
+  }));
   const rawBackendRows = asArray(workdayPlan.work_rows);
+  const alertRows = asArray(workdayPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || 'Workday alert',
+    detail: row.detail || '',
+    action: row.action || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
+  const workdayEntryRows = asArray(workdayPlan, ['entry_rows', 'entryRows']).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Workday request route proof',
+    detail: [
+      row.detail || 'summarize-today workday route evidence',
+      `command=${row.command_id || 'summarize-today'}`,
+      `work=${row.work_command_id || 'open-work-preflight'}`,
+      `tasks=${row.tasks_command_id || 'open-tasks'}`,
+      `calendar=${row.calendar_command_id || 'open-calendar'}`,
+      `notes=${row.notes_command_id || 'open-notes'}`,
+      `activity=${row.activity_command_id || 'open-activity-preflight'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.work_command_id || row.command_id || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Work',
+    requiresApproval: row.requires_approval === true,
+    createsTasks: row.creates_tasks === true,
+    updatesTasks: row.updates_tasks === true,
+    runsTasks: row.runs_tasks === true,
+    createsCalendarEvents: row.creates_calendar_events === true,
+    syncsCalendar: row.syncs_calendar === true,
+    editsNotes: row.edits_notes === true,
+    sendsNotifications: row.sends_notifications === true,
+    startsAutomation: row.starts_automation === true,
+    runsAutomation: row.runs_automation === true,
+    runsShell: row.runs_shell === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const taskAlertRows = asArray(tasksPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'task',
+    title: row.title || row.id || 'Task alert',
+    detail: row.detail || 'backend task alert',
+    action: row.action || 'open-tasks',
+    actionLabel: row.actionLabel || row.action_label || 'Tasks',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const taskPlanRows = asArray(tasksPlan.task_rows).slice(0, 8).map(row => ({
+    state: row.state || 'loading',
+    badge: row.badge || 'task',
+    title: row.title || row.id || 'Scheduled task',
+    detail: row.detail || 'backend task metadata',
+    action: 'open-tasks',
+    actionLabel: row.actionLabel || row.action_label || 'Tasks',
+    backendProof: true,
+  }));
+  const taskEntryRows = asArray(tasksPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Task request route proof',
+    detail: [
+      row.detail || 'open-work-preflight task route evidence',
+      `command=${row.command_id || 'open-work-preflight'}`,
+      `tasks=${row.start_command_id || 'open-tasks'}`,
+      `approval=${row.approval_api || '/api/tasks'}`,
+      `run=${row.run_api || '/api/tasks/{task_id}/run'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    createsTasks: row.creates_tasks === true,
+    runsTasks: row.runs_tasks === true,
+    changesWebhooks: row.changes_webhooks === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const taskHandoffRows = asArray(tasksPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Task handoff',
+    detail: [
+      row.detail || 'task handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/tasks-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'open-work-preflight'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    createsTasks: row.creates_tasks === true || row.createsTasks === true,
+    updatesTasks: row.updates_tasks === true || row.updatesTasks === true,
+    deletesTasks: row.deletes_tasks === true || row.deletesTasks === true,
+    runsTasks: row.runs_tasks === true || row.runsTasks === true,
+    stopsTasks: row.stops_tasks === true || row.stopsTasks === true,
+    changesWebhooks: row.changes_webhooks === true || row.changesWebhooks === true,
+    clearsCache: row.clears_cache === true || row.clearsCache === true,
+    sendsNotifications: row.sends_notifications === true || row.sendsNotifications === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const notesAlertRows = asArray(notesPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'note',
+    title: row.title || row.id || 'Notes alert',
+    detail: row.detail || 'backend notes alert',
+    action: row.action || 'open-notes',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const notesPlanRows = asArray(notesPlan.note_rows).slice(0, 8).map(row => ({
+    state: row.state || 'loading',
+    badge: row.badge || 'note',
+    title: row.title || row.id || 'Note',
+    detail: row.detail || 'backend note metadata',
+    action: row.action || 'open-notes',
+    actionLabel: row.actionLabel || row.action_label || 'Notes',
+    backendProof: true,
+  }));
+  const notesEntryRows = asArray(notesPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Notes request route proof',
+    detail: [
+      row.detail || 'open-work-preflight notes route evidence',
+      `command=${row.command_id || 'open-work-preflight'}`,
+      `notes=${row.start_command_id || 'open-notes'}`,
+      `draft=${row.draft_command_id || 'draft-task-from-note'}`,
+      `approval=${row.approval_api || '/api/notes'}`,
+      `reminder=${row.reminder_api || '/api/notes/fire-reminder'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    createsNotes: row.creates_notes === true,
+    updatesNotes: row.updates_notes === true,
+    deletesNotes: row.deletes_notes === true,
+    firesReminders: row.fires_reminders === true,
+    createsTasks: row.creates_tasks === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const notesHandoffRows = asArray(notesPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Notes handoff',
+    detail: [
+      row.detail || 'notes handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/notes-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'open-work-preflight'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    createsNotes: row.creates_notes === true || row.createsNotes === true,
+    updatesNotes: row.updates_notes === true || row.updatesNotes === true,
+    archivesNotes: row.archives_notes === true || row.archivesNotes === true,
+    deletesNotes: row.deletes_notes === true || row.deletesNotes === true,
+    togglesChecklistItems: row.toggles_checklist_items === true || row.togglesChecklistItems === true,
+    firesReminders: row.fires_reminders === true || row.firesReminders === true,
+    createsTasks: row.creates_tasks === true || row.createsTasks === true,
+    exportsNotes: row.exports_notes === true || row.exportsNotes === true,
+    indexesNotes: row.indexes_notes === true || row.indexesNotes === true,
+    sendsNotifications: row.sends_notifications === true || row.sendsNotifications === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const calendarAlertRows = asArray(calendarPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'cal',
+    title: row.title || row.id || 'Calendar alert',
+    detail: row.detail || 'backend calendar alert',
+    action: row.action || 'open-calendar',
+    actionLabel: row.actionLabel || row.action_label || 'Calendar',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const calendarPlanRows = asArray(calendarPlan.event_rows).slice(0, 8).map(row => ({
+    state: row.state || 'loading',
+    badge: row.badge || 'cal',
+    title: row.title || row.id || 'Calendar event',
+    detail: row.detail || 'backend calendar metadata',
+    action: row.action || 'open-calendar',
+    actionLabel: row.actionLabel || row.action_label || 'Calendar',
+    backendProof: true,
+  }));
+  const calendarEntryRows = asArray(calendarPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Calendar request route proof',
+    detail: [
+      row.detail || 'open-work-preflight calendar route evidence',
+      `command=${row.command_id || 'open-work-preflight'}`,
+      `calendar=${row.start_command_id || 'open-calendar'}`,
+      `approval=${row.approval_api || '/api/calendar/events'}`,
+      `sync=${row.sync_api || '/api/calendar/sync'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    createsEvents: row.creates_events === true,
+    syncsCalendars: row.syncs_calendars === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const calendarHandoffRows = asArray(calendarPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Calendar handoff',
+    detail: [
+      row.detail || 'calendar handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/calendar-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'open-work-preflight'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-work-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    createsEvents: row.creates_events === true || row.createsEvents === true,
+    updatesEvents: row.updates_events === true || row.updatesEvents === true,
+    deletesEvents: row.deletes_events === true || row.deletesEvents === true,
+    importsCalendars: row.imports_calendars === true || row.importsCalendars === true,
+    exportsCalendars: row.exports_calendars === true || row.exportsCalendars === true,
+    syncsCalendars: row.syncs_calendars === true || row.syncsCalendars === true,
+    testsRemoteConnection: row.tests_remote_connection === true || row.testsRemoteConnection === true,
+    sendsNotifications: row.sends_notifications === true || row.sendsNotifications === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
   const backendRows = rawBackendRows.length
     ? rawBackendRows.slice(0, 8).map(row => ({
         state: row.state || 'loading',
@@ -7081,10 +7959,26 @@ function workStatusData(snapshot) {
   const latestRunTitle = firstValue(latestRun, ['task_name', 'name', 'task_id']) || 'Task run';
   const rows = [
     {
-      state: source.tasks?.ok ? (failedRuns.length ? 'error' : (policyBlockedRuns.length ? 'warn' : 'ok')) : 'warn',
+      state: workOpsPlanOk
+        ? stateFromStatus(workOpsSummary.state || (Number(workOpsSummary.critical_work_ops_alert_count || 0) ? 'error' : (Number(workOpsSummary.work_ops_alert_count || 0) ? 'warn' : 'ok')))
+        : 'warn',
+      badge: 'ops',
+      title: 'Backend work operations',
+      detail: workOpsPlanOk
+        ? `${plural(Number(workOpsSummary.active_task_count || 0), 'active task')}; ${plural(Number(workOpsSummary.today_event_count || 0), 'event')} today; ${plural(Number(workOpsSummary.task_candidate_count || 0), 'note candidate')}; writes blocked`
+        : readError(source, 'operatorWorkOpsPlan'),
+      action: 'open-work-preflight',
+      actionLabel: 'Plan',
+    },
+    {
+      state: tasksPlanOk
+        ? stateFromStatus(tasksSummary.state || (Number(tasksSummary.critical_task_alert_count || 0) ? 'error' : (Number(tasksSummary.task_alert_count || 0) ? 'warn' : 'ok')))
+        : (source.tasks?.ok ? (failedRuns.length ? 'error' : (policyBlockedRuns.length ? 'warn' : 'ok')) : 'warn'),
       badge: 'task',
       title: 'Task automation',
-      detail: source.tasks?.ok ? `${plural(activeTasks.length || tasks.length, 'task')} visible` : readError(source, 'tasks'),
+      detail: tasksPlanOk
+        ? `${plural(Number(tasksSummary.active_task_count || activeTasks.length || tasks.length || 0), 'active task')}; ${plural(Number(tasksSummary.failed_run_count || failedRuns.length || 0), 'failed run')}; ${plural(Number(tasksSummary.task_alert_count || 0), 'alert')}`
+        : (source.tasks?.ok ? `${plural(activeTasks.length || tasks.length, 'task')} visible` : readError(source, 'tasks')),
       action: 'open-tasks',
       actionLabel: 'Tasks',
     },
@@ -7117,24 +8011,32 @@ function workStatusData(snapshot) {
       badge: 'plan',
       title: 'Backend workday plan',
       detail: source.operatorWorkdayPlan?.ok
-        ? `${plural(Number(workdaySummary.active_task_count || 0), 'active task')}; ${plural(Number(workdaySummary.today_event_count || 0), 'event')} today; writes blocked`
+        ? `${plural(Number(workdaySummary.active_task_count || 0), 'active task')}; ${plural(Number(workdaySummary.today_event_count || 0), 'event')} today; ${plural(Number(workdaySummary.alert_count || 0), 'alert')}; writes blocked`
         : readError(source, 'operatorWorkdayPlan'),
       action: 'open-work-preflight',
       actionLabel: 'Plan',
     },
     {
-      state: source.calendar?.ok ? (todayEvents.length ? 'warn' : 'ok') : 'warn',
+      state: calendarPlanOk
+        ? stateFromStatus(calendarSummary.state || (Number(calendarSummary.critical_calendar_alert_count || 0) ? 'error' : (Number(calendarSummary.calendar_alert_count || 0) ? 'warn' : 'ok')))
+        : (source.calendar?.ok ? (todayEvents.length ? 'warn' : 'ok') : 'warn'),
       badge: 'cal',
       title: 'Calendar window',
-      detail: source.calendar?.ok ? `${plural(events.length, 'event')} next 7 days${todayEvents.length ? `; ${todayEvents.length} today` : ''}` : readError(source, 'calendar'),
+      detail: calendarPlanOk
+        ? `${plural(Number(calendarSummary.event_count || events.length || 0), 'event')}; ${plural(Number(calendarSummary.today_event_count || todayEvents.length || 0), 'event')} today; ${plural(Number(calendarSummary.calendar_alert_count || 0), 'alert')}`
+        : (source.calendar?.ok ? `${plural(events.length, 'event')} next 7 days${todayEvents.length ? `; ${todayEvents.length} today` : ''}` : readError(source, 'calendar')),
       action: 'open-calendar',
       actionLabel: 'Calendar',
     },
     {
-      state: latestNotes.length ? 'ok' : 'loading',
+      state: notesPlanOk
+        ? stateFromStatus(notesSummary.state || (Number(notesSummary.critical_notes_alert_count || 0) ? 'error' : (Number(notesSummary.notes_alert_count || 0) ? 'warn' : 'ok')))
+        : (latestNotes.length ? 'ok' : 'loading'),
       badge: 'note',
       title: 'Note-to-task source',
-      detail: latestNotes.length ? noteTitle(latestNotes[0]) : 'No local notes visible for task drafting',
+      detail: notesPlanOk
+        ? `${plural(Number(notesSummary.active_note_count || notes.length || 0), 'active note')}; ${plural(Number(notesSummary.task_candidate_count || 0), 'task candidate')}; ${plural(Number(notesSummary.notes_alert_count || 0), 'alert')}`
+        : (latestNotes.length ? noteTitle(latestNotes[0]) : 'No local notes visible for task drafting'),
       action: latestNotes.length ? 'draft-task-from-note' : 'open-notes',
       actionLabel: latestNotes.length ? 'Draft' : 'Notes',
     },
@@ -7179,6 +8081,37 @@ function workStatusData(snapshot) {
     workActivity,
     workdayPlan,
     workdaySummary,
+    tasksPlan,
+    tasksSummary,
+    tasksPlanOk,
+    notesPlan,
+    notesSummary,
+    notesPlanOk,
+    calendarPlan,
+    calendarSummary,
+    calendarPlanOk,
+    workOpsPlan,
+    workOpsSummary,
+    workOpsPlanOk,
+    workOpsRows,
+    workOpsAlertRows,
+    workOpsEntryRows,
+    workOpsHandoffRows,
+    workOpsGuardRows,
+    alertRows,
+    workdayEntryRows,
+    taskAlertRows,
+    taskPlanRows,
+    taskEntryRows,
+    taskHandoffRows,
+    notesAlertRows,
+    notesPlanRows,
+    notesEntryRows,
+    notesHandoffRows,
+    calendarAlertRows,
+    calendarPlanRows,
+    calendarEntryRows,
+    calendarHandoffRows,
     backendRows,
     guardRows,
     rows,
@@ -7191,6 +8124,7 @@ function workOpsRows(snapshot, data = workStatusData(snapshot || {})) {
   const latestActivity = data.workActivity[0] || null;
   const taskCount = data.activeTasks.length || data.tasks.length;
   const latestNote = data.latestNotes[0] || null;
+  const combinedAlertRows = [...data.workOpsAlertRows, ...data.taskAlertRows, ...data.alertRows, ...data.notesAlertRows, ...data.calendarAlertRows];
   const runValue = data.failedRuns.length
     ? `${data.failedRuns.length} fail`
     : data.policyBlockedRuns.length
@@ -7200,20 +8134,37 @@ function workOpsRows(snapshot, data = workStatusData(snapshot || {})) {
         : 'Clear';
   return [
     {
-      state: source.tasks?.ok ? (data.failedRuns.length ? 'error' : (data.policyBlockedRuns.length ? 'warn' : 'ok')) : 'warn',
+      state: combinedAlertRows.some(row => row.state === 'error') ? 'error' : (combinedAlertRows.length ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: combinedAlertRows.length ? String(combinedAlertRows.length) : 'Clear',
+      detail: combinedAlertRows.length
+        ? `${combinedAlertRows[0].title} - ${combinedAlertRows[0].detail}`
+        : 'no local tasks, workday, notes, or calendar alerts in backend plans',
+      action: combinedAlertRows[0]?.action || 'open-work-preflight',
+    },
+    {
+      state: data.tasksPlanOk
+        ? stateFromStatus(data.tasksSummary.state || (Number(data.tasksSummary.task_alert_count || 0) ? 'warn' : 'ok'))
+        : (source.tasks?.ok ? (data.failedRuns.length ? 'error' : (data.policyBlockedRuns.length ? 'warn' : 'ok')) : 'warn'),
       label: 'Tasks',
-      value: String(taskCount),
-      detail: source.tasks?.ok
-        ? `${plural(data.activeTasks.length, 'active task')}; ${plural(data.tasks.length, 'task')} total`
+      value: String(Number(data.tasksSummary.active_task_count || taskCount || 0)),
+      detail: data.tasksPlanOk
+        ? `${plural(Number(data.tasksSummary.task_count || data.tasks.length || 0), 'task')} total; ${plural(Number(data.tasksSummary.task_alert_count || data.taskAlertRows.length || 0), 'alert')}`
+        : source.tasks?.ok
+          ? `${plural(data.activeTasks.length, 'active task')}; ${plural(data.tasks.length, 'task')} total`
         : readError(source, 'tasks'),
       action: data.failedRuns.length || data.policyBlockedRuns.length ? 'open-operations-queue' : 'open-tasks',
     },
     {
-      state: source.calendar?.ok ? (data.todayEvents.length ? 'warn' : 'ok') : 'warn',
+      state: data.calendarPlanOk
+        ? stateFromStatus(data.calendarSummary.state || (Number(data.calendarSummary.calendar_alert_count || 0) ? 'warn' : 'ok'))
+        : (source.calendar?.ok ? (data.todayEvents.length ? 'warn' : 'ok') : 'warn'),
       label: 'Calendar',
-      value: String(data.events.length),
-      detail: source.calendar?.ok
-        ? `${plural(data.events.length, 'event')} next 7 days${data.todayEvents.length ? `; ${data.todayEvents.length} today` : ''}`
+      value: String(Number(data.calendarSummary.event_count || data.events.length || 0)),
+      detail: data.calendarPlanOk
+        ? `${plural(Number(data.calendarSummary.today_event_count || data.todayEvents.length || 0), 'event')} today; ${plural(Number(data.calendarSummary.calendar_alert_count || data.calendarAlertRows.length || 0), 'alert')}`
+        : source.calendar?.ok
+          ? `${plural(data.events.length, 'event')} next 7 days${data.todayEvents.length ? `; ${data.todayEvents.length} today` : ''}`
         : readError(source, 'calendar'),
       action: 'open-calendar',
     },
@@ -7333,18 +8284,54 @@ function workControlRows(snapshot, data = workStatusData(snapshot || {})) {
 
 function workPreflightStats(snapshot) {
   const data = workStatusData(snapshot);
+  const alertTotal = data.workOpsAlertRows.length + data.taskAlertRows.length + data.alertRows.length + data.notesAlertRows.length + data.calendarAlertRows.length;
+  const alertHasError = [...data.workOpsAlertRows, ...data.taskAlertRows, ...data.alertRows, ...data.notesAlertRows, ...data.calendarAlertRows].some(row => row.state === 'error');
+  const workOpsRouteCount = Number(data.workOpsSummary.entry_route_count || data.workOpsEntryRows.length || 0);
+  const workOpsRouteReady = Number(data.workOpsSummary.entry_route_ready_count || data.workOpsEntryRows.filter(row => row.state === 'ok').length || 0);
+  const workdayRouteCount = Number(data.workdaySummary.entry_route_count || data.workdayEntryRows.length || 0);
+  const workdayRouteReady = Number(data.workdaySummary.entry_route_ready_count || data.workdayEntryRows.filter(row => row.state === 'ok').length || 0);
+  const taskRouteCount = Number(data.tasksSummary.entry_route_count || data.taskEntryRows.length || 0);
+  const taskRouteReady = Number(data.tasksSummary.entry_route_ready_count || data.taskEntryRows.filter(row => row.state === 'ok').length || 0);
+  const calendarRouteCount = Number(data.calendarSummary.entry_route_count || data.calendarEntryRows.length || 0);
+  const calendarRouteReady = Number(data.calendarSummary.entry_route_ready_count || data.calendarEntryRows.filter(row => row.state === 'ok').length || 0);
+  const notesRouteCount = Number(data.notesSummary.entry_route_count || data.notesEntryRows.length || 0);
+  const notesRouteReady = Number(data.notesSummary.entry_route_ready_count || data.notesEntryRows.filter(row => row.state === 'ok').length || 0);
+  const handoffCount = Number(data.workOpsSummary.handoff_count || data.workOpsHandoffRows.length || 0);
+  const handoffReady = Number(data.workOpsSummary.handoff_ready_count || data.workOpsHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const taskHandoffCount = Number(data.tasksSummary.handoff_count || data.taskHandoffRows.length || 0);
+  const taskHandoffReady = Number(data.tasksSummary.handoff_ready_count || data.taskHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const notesHandoffCount = Number(data.notesSummary.handoff_count || data.notesHandoffRows.length || 0);
+  const notesHandoffReady = Number(data.notesSummary.handoff_ready_count || data.notesHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const calendarHandoffCount = Number(data.calendarSummary.handoff_count || data.calendarHandoffRows.length || 0);
+  const calendarHandoffReady = Number(data.calendarSummary.handoff_ready_count || data.calendarHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const routeCount = workOpsRouteCount + workdayRouteCount + taskRouteCount + calendarRouteCount + notesRouteCount;
+  const routeReady = workOpsRouteReady + workdayRouteReady + taskRouteReady + calendarRouteReady + notesRouteReady;
   return [
     {
-      state: data.workdayPlan?.mode ? stateFromStatus(data.workdaySummary.state || 'ok') : 'warn',
+      state: data.workOpsPlan?.mode
+        ? stateFromStatus(data.workOpsSummary.state || 'ok')
+        : (data.workdayPlan?.mode ? stateFromStatus(data.workdaySummary.state || 'ok') : 'warn'),
       label: 'Plan',
-      value: data.workdayPlan?.mode ? 'Ready' : 'Missing',
-      detail: data.workdayPlan?.mode ? 'backend read-only proof' : 'no backend proof',
+      value: data.workOpsPlan?.mode ? 'Unified' : (data.workdayPlan?.mode ? 'Ready' : 'Missing'),
+      detail: data.workOpsPlan?.mode
+        ? `${plural(Number(data.workOpsSummary.work_ops_alert_count || 0), 'alert')} in work ops queue`
+        : (data.workdayPlan?.mode ? `${plural(Number(data.workdaySummary.alert_count || 0), 'alert')} in backend queue` : 'no backend proof'),
     },
     {
-      state: data.failedRuns.length ? 'error' : (data.policyBlockedRuns.length ? 'warn' : 'ok'),
+      state: alertHasError ? 'error' : (alertTotal ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: alertTotal ? String(alertTotal) : 'Clear',
+      detail: alertTotal ? 'tasks/work/notes/calendar queues' : 'none',
+    },
+    {
+      state: data.tasksPlanOk
+        ? stateFromStatus(data.tasksSummary.state || (Number(data.tasksSummary.task_alert_count || 0) ? 'warn' : 'ok'))
+        : (data.failedRuns.length ? 'error' : (data.policyBlockedRuns.length ? 'warn' : 'ok')),
       label: 'Tasks',
-      value: String(data.activeTasks.length || data.tasks.length),
-      detail: 'visible automations',
+      value: String(Number(data.tasksSummary.active_task_count || data.activeTasks.length || data.tasks.length || 0)),
+      detail: data.tasksPlanOk
+        ? `${plural(Number(data.tasksSummary.task_alert_count || data.taskAlertRows.length || 0), 'alert')}; ${plural(Number(data.tasksSummary.due_today_count || 0), 'due today')}`
+        : 'visible automations',
     },
     {
       state: data.failedRuns.length ? 'error' : (data.policyBlockedRuns.length || data.activeRuns.length ? 'warn' : 'ok'),
@@ -7357,16 +8344,50 @@ function workPreflightStats(snapshot) {
       detail: data.failedRuns.length ? `${data.failedRuns.length} need review` : (data.policyBlockedRuns.length ? 'policy review' : 'recent ledger'),
     },
     {
-      state: data.todayEvents.length ? 'warn' : 'ok',
+      state: data.calendarPlanOk
+        ? stateFromStatus(data.calendarSummary.state || (Number(data.calendarSummary.calendar_alert_count || 0) ? 'warn' : 'ok'))
+        : (data.todayEvents.length ? 'warn' : 'ok'),
       label: 'Calendar',
-      value: String(data.events.length),
-      detail: data.todayEvents.length ? `${data.todayEvents.length} today` : 'next 7 days',
+      value: String(Number(data.calendarSummary.event_count || data.events.length || 0)),
+      detail: data.calendarPlanOk
+        ? `${plural(Number(data.calendarSummary.calendar_alert_count || data.calendarAlertRows.length || 0), 'alert')}; ${plural(Number(data.calendarSummary.today_event_count || data.todayEvents.length || 0), 'event')} today`
+        : (data.todayEvents.length ? `${data.todayEvents.length} today` : 'next 7 days'),
     },
     {
       state: data.latestNotes.length ? 'ok' : 'loading',
       label: 'Notes',
       value: String(data.notes.length),
       detail: data.latestNotes.length ? 'task source ready' : 'no note source',
+    },
+    {
+      state: handoffCount && handoffReady >= handoffCount ? 'ok' : 'warn',
+      label: 'Work Handoffs',
+      value: handoffCount ? `${handoffReady}/${handoffCount}` : '0',
+      detail: 'work review paths',
+    },
+    {
+      state: taskHandoffCount && taskHandoffReady >= taskHandoffCount ? 'ok' : 'warn',
+      label: 'Task Handoffs',
+      value: taskHandoffCount ? `${taskHandoffReady}/${taskHandoffCount}` : '0',
+      detail: 'task gates',
+    },
+    {
+      state: notesHandoffCount && notesHandoffReady >= notesHandoffCount ? 'ok' : 'warn',
+      label: 'Note Handoffs',
+      value: notesHandoffCount ? `${notesHandoffReady}/${notesHandoffCount}` : '0',
+      detail: 'note gates',
+    },
+    {
+      state: calendarHandoffCount && calendarHandoffReady >= calendarHandoffCount ? 'ok' : 'warn',
+      label: 'Cal Handoffs',
+      value: calendarHandoffCount ? `${calendarHandoffReady}/${calendarHandoffCount}` : '0',
+      detail: 'calendar gates',
+    },
+    {
+      state: routeCount && routeReady >= routeCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: routeCount ? `${routeReady}/${routeCount}` : '0',
+      detail: 'work-ops/work/tasks/notes/calendar proof',
     },
   ];
 }
@@ -7383,12 +8404,71 @@ function workPreflightText(snapshot) {
     'Checks:',
     ...data.rows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     '',
+    'Backend work operations:',
+    ...(data.workOpsRows.length ? data.workOpsRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend work operations rows visible']),
+    '',
+    'Work operations alert queue:',
+    ...(data.workOpsAlertRows.length ? data.workOpsAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend work operations alerts visible']),
+    '',
+    'Work operations request route proof:',
+    ...(data.workOpsEntryRows.length ? data.workOpsEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No work operations request route proof visible']),
+    '',
+    'Work operations handoffs:',
+    ...(data.workOpsHandoffRows.length ? data.workOpsHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No work operations handoffs visible']),
+    '',
+    'Alerts:',
+    ...(data.alertRows.length ? data.alertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No local workday alerts']),
+    '',
+    'Workday request route proof:',
+    ...(data.workdayEntryRows.length ? data.workdayEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No workday request route proof visible']),
+    '',
+    'Tasks alert queue:',
+    ...(data.taskAlertRows.length ? data.taskAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend task alerts visible']),
+    '',
+    'Tasks evidence:',
+    ...(data.taskPlanRows.length ? data.taskPlanRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend task rows visible']),
+    '',
+    'Task request route proof:',
+    ...(data.taskEntryRows.length ? data.taskEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No task request route proof visible']),
+    '',
+    'Task handoffs:',
+    ...(data.taskHandoffRows.length ? data.taskHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No task handoffs visible']),
+    '',
+    'Notes alert queue:',
+    ...(data.notesAlertRows.length ? data.notesAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend notes alerts visible']),
+    '',
+    'Notes request route proof:',
+    ...(data.notesEntryRows.length ? data.notesEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No notes request route proof visible']),
+    '',
+    'Notes handoffs:',
+    ...(data.notesHandoffRows.length ? data.notesHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No notes handoffs visible']),
+    '',
+    'Calendar alert queue:',
+    ...(data.calendarAlertRows.length ? data.calendarAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend calendar alerts visible']),
+    '',
+    'Calendar evidence:',
+    ...(data.calendarPlanRows.length ? data.calendarPlanRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend calendar rows visible']),
+    '',
+    'Calendar request route proof:',
+    ...(data.calendarEntryRows.length ? data.calendarEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No calendar request route proof visible']),
+    '',
+    'Calendar handoffs:',
+    ...(data.calendarHandoffRows.length ? data.calendarHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No calendar handoffs visible']),
+    '',
+    'Notes evidence:',
+    ...(data.notesPlanRows.length ? data.notesPlanRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend notes rows visible']),
+    '',
     'Backend plan:',
     ...data.backendRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     ...(data.guardRows.length ? [
       '',
       'Safety gates:',
       ...data.guardRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.workOpsGuardRows.length ? [
+      '',
+      'Work operations guard rails:',
+      ...data.workOpsGuardRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     ] : []),
   ];
   return lines.join('\n');
@@ -7471,12 +8551,88 @@ function renderWorkPreflight(snapshot) {
       ${briefingList(data.rows, 'Work status unavailable')}
     </section>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend work operations</div>
+      ${briefingList(data.workOpsRows, 'No backend work operations rows visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Work operations alert queue</div>
+      ${briefingList(data.workOpsAlertRows, 'No backend work operations alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Work operations request route proof</div>
+      ${briefingList(data.workOpsEntryRows, 'No work operations request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Work operations handoffs</div>
+      ${briefingList(data.workOpsHandoffRows, 'No work operations handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Local alert queue</div>
+      ${briefingList(data.alertRows, 'No local workday alerts')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Workday request route proof</div>
+      ${briefingList(data.workdayEntryRows, 'No workday request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Tasks alert queue</div>
+      ${briefingList(data.taskAlertRows, 'No backend task alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Tasks evidence</div>
+      ${briefingList(data.taskPlanRows, 'No backend task rows visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Task request route proof</div>
+      ${briefingList(data.taskEntryRows, 'No task request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Task handoffs</div>
+      ${briefingList(data.taskHandoffRows, 'No task handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Notes alert queue</div>
+      ${briefingList(data.notesAlertRows, 'No backend notes alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Notes request route proof</div>
+      ${briefingList(data.notesEntryRows, 'No notes request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Notes handoffs</div>
+      ${briefingList(data.notesHandoffRows, 'No notes handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Calendar alert queue</div>
+      ${briefingList(data.calendarAlertRows, 'No backend calendar alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Calendar evidence</div>
+      ${briefingList(data.calendarPlanRows, 'No backend calendar rows visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Calendar request route proof</div>
+      ${briefingList(data.calendarEntryRows, 'No calendar request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Calendar handoffs</div>
+      ${briefingList(data.calendarHandoffRows, 'No calendar handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Notes evidence</div>
+      ${briefingList(data.notesPlanRows, 'No backend notes rows visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend workday plan</div>
       ${briefingList(data.backendRows, 'Backend workday plan unavailable')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Safety gates</div>
       ${briefingList(data.guardRows, 'Workday safety gates unavailable', { actions: false })}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Work operations guard rails</div>
+      ${briefingList(data.workOpsGuardRows, 'Work operations guard rails unavailable', { actions: false })}
     </section>
     <div class="cc-briefing-empty">
       Task creation and scheduled work stay in the local activity ledger. Review Tasks or Calendar before approving recurring automation.
@@ -7535,10 +8691,82 @@ function noteTaskCandidates(snapshot) {
   const notes = source.operatorNoteTaskDraft?.ok && backendCandidates.length ? backendCandidates : frontendNotes;
   const latest = notes.find(note => note.backend_selected) || notes.find(note => noteTaskText(note)) || notes[0] || null;
   const tasks = asArray(readData(source, 'tasks'), ['tasks', 'items', 'data']);
+  const frontendEntryRows = [
+    {
+      state: notes.length ? 'ok' : 'warn',
+      badge: 'dash',
+      title: 'Command Center dashboard',
+      detail: notes.length
+        ? `Note To Task Draft opens with ${plural(notes.length, 'local candidate note')}; saving still happens from Tasks review`
+        : 'Note To Task Draft opens first and asks for a local note before any task can be saved',
+      action: 'draft-task-from-note',
+      actionLabel: 'Draft',
+      requiresReview: true,
+    },
+    {
+      state: 'ok',
+      badge: 'text',
+      title: 'Typed operator command',
+      detail: 'The phrase "Create a task from this note" resolves to a draft payload and Tasks review before any save',
+      action: 'draft-task-from-note',
+      actionLabel: 'Draft',
+      requiresReview: true,
+    },
+    {
+      state: 'ok',
+      badge: 'cmd',
+      title: 'Global command palette',
+      detail: 'The palette exposes Create Task From Note as a local draft route, not an auto-save route',
+      action: 'open-command-palette',
+      actionLabel: 'Palette',
+      requiresReview: true,
+    },
+    {
+      state: 'ok',
+      badge: 'voice',
+      title: 'Voice command mode',
+      detail: 'Voice routing can open the same draft flow without storing full note text or draft prompts in activity',
+      action: 'open-voice-preflight',
+      actionLabel: 'Voice',
+      requiresReview: true,
+    },
+    {
+      state: latest ? 'ok' : 'warn',
+      badge: 'flow',
+      title: 'Automation workflow handoff',
+      detail: latest
+        ? 'Workflow handoff can pass a selected note into a draft payload, but cannot save, schedule, or run a task from this panel'
+        : 'Workflow handoff stays in manual draft mode until a local note source is selected',
+      action: 'open-automation-map',
+      actionLabel: 'Workflow',
+      requiresReview: true,
+    },
+  ];
+  const backendEntryRows = asArray(backend, ['entry_rows', 'entryRows']).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Note task request route proof',
+    detail: row.detail || 'draft-task-from-note request route evidence',
+    action: row.action || 'draft-task-from-note',
+    actionLabel: row.actionLabel || row.action_label || 'Draft',
+    requiresReview: row.requires_review === true,
+  }));
+  const alertRows = source.operatorNoteTaskDraft?.ok ? asArray(backend.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'note',
+    title: row.title || row.id || 'Note task alert',
+    detail: row.detail || 'Note task draft needs review',
+    action: row.action || 'draft-task-from-note',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
+  const entryRows = source.operatorNoteTaskDraft?.ok && backendEntryRows.length ? backendEntryRows : frontendEntryRows;
   return {
     notes,
     latest,
     tasks,
+    alertRows,
+    entryRows,
     mode: commandMode('draft-task-from-note'),
     backend,
     backendOk: source.operatorNoteTaskDraft?.ok === true,
@@ -7548,6 +8776,9 @@ function noteTaskCandidates(snapshot) {
 
 function noteTaskDraftStats(snapshot) {
   const data = noteTaskCandidates(snapshot);
+  const summary = data.backend?.summary || {};
+  const entryRouteCount = Number(summary.entry_route_count) || data.entryRows.length;
+  const entryRouteReadyCount = Number(summary.entry_route_ready_count) || data.entryRows.filter(row => row.state === 'ok').length;
   return [
     {
       state: data.backendOk ? (data.notes.length ? 'ok' : 'warn') : 'warn',
@@ -7574,6 +8805,12 @@ function noteTaskDraftStats(snapshot) {
       label: 'Gate',
       value: data.mode === 'ask' ? 'Ask' : 'Auto',
       detail: 'task draft command',
+    },
+    {
+      state: entryRouteReadyCount >= entryRouteCount && entryRouteCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: entryRouteCount ? `${entryRouteReadyCount}/${entryRouteCount}` : '0',
+      detail: 'request proof',
     },
     {
       state: 'ok',
@@ -7604,6 +8841,12 @@ function noteTaskDraftText(snapshot) {
     `Notes: ${data.notes.length}`,
     `Gate: ${data.mode === 'ask' ? 'Ask' : 'Auto'}`,
     `Backend: ${data.backendOk ? 'Ready' : data.backendError || 'Unavailable'}`,
+    '',
+    'Request route proof:',
+    ...data.entryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresReview ? ' (review required)' : ''}`),
+    '',
+    'Backend alerts:',
+    ...(data.alertRows.length ? data.alertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No backend note task alerts visible']),
     '',
     `Draft: ${draft.name}`,
     `Schedule: ${formatTime(draft.scheduled_date)}`,
@@ -7733,6 +8976,14 @@ function renderNoteTaskDraft(snapshot) {
       </div>
     </section>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Request route proof</div>
+      ${briefingList(data.entryRows, 'No note task request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Note task alerts</div>
+      ${briefingList(data.alertRows, 'No backend note task alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend draft proof</div>
       ${briefingList([
         {
@@ -7764,11 +9015,42 @@ function closeNoteTaskDraft() {
   el('cc-note-task-draft')?.classList.add('hidden');
 }
 
+function recordNoteTaskDraftActivity(note, draft = {}) {
+  if (!operatorCommands.recordActivity) return null;
+  const hasNote = Boolean(note);
+  const title = hasNote ? noteTitle(note) : 'manual note task draft';
+  const detail = hasNote
+    ? `Opened task draft from "${truncate(title, 120)}"; review before saving.`
+    : 'Opened manual note task draft; review before saving.';
+  return operatorCommands.recordActivity({
+    command_id: 'draft-task-from-note',
+    title: hasNote ? 'Note Task Draft Opened' : 'Manual Note Task Draft Opened',
+    category: 'Automation',
+    source: 'note-task-draft',
+    status: 'drafted',
+    state: 'ok',
+    trust: 'local',
+    trust_mode: 'auto',
+    detail,
+    note_id: truncate(note?.id || '', 120),
+    note_title: truncate(title, 160),
+    draft_name: truncate(draft?.name || '', 160),
+    draft_task_type: truncate(draft?.task_type || '', 60),
+    draft_schedule: truncate(draft?.schedule || '', 60),
+    draft_trigger_type: truncate(draft?.trigger_type || '', 60),
+    draft_scheduled_date: truncate(draft?.scheduled_date || '', 120),
+    draft_prompt_chars: String(draft?.prompt || '').length,
+    approval_required_to_save: true,
+    privacy_note: 'Full note text and draft prompt are not stored in the activity ledger.',
+  });
+}
+
 async function openTaskDraftFromNote(note) {
   const draft = noteTaskDraft(note);
   closeNoteTaskDraft();
   if (window.tasksModule?.openTaskDraft) {
     window.tasksModule.openTaskDraft(draft);
+    recordNoteTaskDraftActivity(note, draft);
     toast(note ? 'Task draft opened from note' : 'Manual note task draft opened');
     setTimeout(refresh, 500);
     return;
@@ -7777,7 +9059,9 @@ async function openTaskDraftFromNote(note) {
   setTimeout(() => {
     if (window.tasksModule?.openTaskDraft) {
       window.tasksModule.openTaskDraft(draft);
+      recordNoteTaskDraftActivity(note, draft);
       toast(note ? 'Task draft opened from note' : 'Manual note task draft opened');
+      setTimeout(refresh, 500);
     }
   }, 300);
 }
@@ -7813,6 +9097,12 @@ function capabilityMapData(snapshot) {
   const catalog = commandCatalogStatusData(snapshot || {});
   const experiencePlan = readData(snapshot || {}, 'operatorExperiencePlan') || {};
   const experienceSummary = experiencePlan.summary || {};
+  const toolAccessPlan = readData(snapshot || {}, 'operatorToolAccessPlan') || {};
+  const toolAccessSummary = toolAccessPlan.summary || {};
+  const toolchainPlan = readData(snapshot || {}, 'operatorToolchainPlan') || {};
+  const toolchainSummary = toolchainPlan.summary || {};
+  const commandLayerPlan = readData(snapshot || {}, 'operatorCommandLayerPlan') || {};
+  const commandLayerSummary = commandLayerPlan.summary || {};
   const categories = [];
   const byCategory = new Map();
   for (const command of commands) {
@@ -7843,6 +9133,202 @@ function capabilityMapData(snapshot) {
     backendProof: row.backendProof === true,
     backendExperienceProof: row.backendExperienceProof === true,
   }));
+  const experienceAlertRows = asArray(experiencePlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'target',
+    title: row.title || row.id || 'Target experience alert',
+    detail: row.detail || 'Backend target-experience alert',
+    action: row.action || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const toolAccessAlertRows = asArray(toolAccessPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'tool',
+    title: row.title || row.id || 'Tool access alert',
+    detail: row.detail || 'Backend tool access posture alert',
+    action: row.action || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const toolAccessEntryRows = asArray(toolAccessPlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || (row.ready ? 'ok' : 'warn'),
+    badge: row.badge || row.entry || 'entry',
+    title: row.title || row.id || 'Tool access request route',
+    detail: row.detail || 'Backend tool access request route evidence',
+    action: row.action || row.command_id || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    ready: row.ready === true,
+    backendProof: true,
+  }));
+  const toolchainEntryRows = asArray(toolchainPlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || (row.ready || row.action_ready || row.actionReady ? 'ok' : 'warn'),
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Toolchain request route proof',
+    detail: row.detail || 'Backend toolchain request route proof',
+    action: row.action || row.action_id || row.actionId || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    ready: row.ready === true || row.action_ready === true || row.actionReady === true,
+    backendProof: true,
+  }));
+  const toolchainAlertRows = asArray(toolchainPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'tool',
+    title: row.title || row.id || 'Toolchain alert',
+    detail: row.detail || 'Backend toolchain integration alert',
+    action: row.action || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const toolchainRows = asArray(toolchainPlan, ['module_rows', 'moduleRows']).slice(0, 16).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.area || 'tool',
+    title: row.title || row.id || 'Toolchain module',
+    detail: row.detail || row.proof || 'Backend local toolchain module proof',
+    action: row.action || row.action_id || row.actionId || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    backendProof: true,
+  }));
+  const toolchainHandoffRows = asArray(toolchainPlan.handoff_rows).slice(0, 12).map(row => {
+    const gated = row.gated_operation || row.gatedOperation || {};
+    return {
+      state: row.state || 'warn',
+      badge: row.badge || 'handoff',
+      title: row.title || row.id || 'Toolchain handoff',
+      detail: [
+        row.detail || 'toolchain handoff evidence',
+        `target=${row.target_api || row.targetApi || '/api/operator/toolchain-plan'}`,
+        `approval=${row.approval_command_id || row.approvalCommandId || 'none'}`,
+        `models=${gated.starts_models === true || gated.startsModels === true ? 'yes' : 'no'}`,
+        `training=${gated.starts_training === true || gated.startsTraining === true ? 'yes' : 'no'}`,
+        `shell=${gated.runs_shell === true || gated.runsShell === true ? 'yes' : 'no'}`,
+        `docker=${gated.runs_docker === true || gated.runsDocker === true ? 'yes' : 'no'}`,
+        `network=${gated.uses_network === true || gated.usesNetwork === true ? 'yes' : 'no'}`,
+      ].join('; '),
+      action: row.action || 'open-capability-map',
+      actionLabel: row.actionLabel || row.action_label || 'Review',
+      requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+      routesCommands: gated.routes_commands === true || gated.routesCommands === true,
+      startsWorkflows: gated.starts_workflows === true || gated.startsWorkflows === true,
+      startsModels: gated.starts_models === true || gated.startsModels === true,
+      startsTraining: gated.starts_training === true || gated.startsTraining === true,
+      runsSearch: gated.runs_search === true || gated.runsSearch === true,
+      runsShell: gated.runs_shell === true || gated.runsShell === true,
+      runsDocker: gated.runs_docker === true || gated.runsDocker === true,
+      writesActivity: gated.writes_activity === true || gated.writesActivity === true,
+      changesSettings: gated.changes_settings === true || gated.changesSettings === true,
+      approvesActions: gated.approves_actions === true || gated.approvesActions === true,
+      downloadsModels: gated.downloads_models === true || gated.downloadsModels === true,
+      createsBackup: gated.creates_backup === true || gated.createsBackup === true,
+      restoresData: gated.restores_data === true || gated.restoresData === true,
+      restartsServices: gated.restarts_services === true || gated.restartsServices === true,
+      usesNetwork: gated.uses_network === true || gated.usesNetwork === true,
+      gatedOperation: gated,
+      backendProof: true,
+    };
+  });
+  const toolchainGuardRows = asArray(toolchainPlan, ['guard_rows', 'guardRows']).map(row => ({
+    state: row.state || 'ok',
+    badge: row.badge || 'gate',
+    title: row.title || 'Toolchain guard',
+    detail: row.detail || 'Backend toolchain safety boundary',
+    action: 'open-capability-map',
+    actionLabel: 'Proof',
+  }));
+  const commandLayerAlertRows = asArray(commandLayerPlan.alert_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'cmd',
+    title: row.title || row.id || 'Command-layer alert',
+    detail: row.detail || 'Backend command-layer readiness alert',
+    action: row.action || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    backendProof: true,
+  }));
+  const commandLayerEntryRows = asArray(commandLayerPlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || (row.ready ? 'ok' : 'warn'),
+    badge: row.badge || row.entry || 'entry',
+    title: row.title || row.id || 'Command-layer entry point',
+    detail: row.detail || 'Backend command-layer entry point proof',
+    action: row.action || row.command_id || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || (row.ready ? 'Open' : 'Review'),
+    ready: row.ready === true,
+    backendProof: true,
+  }));
+  const commandLayerRouteRows = asArray(commandLayerPlan, ['route_rows', 'routeRows']).map(row => ({
+    state: row.state || (row.route_ready || row.routeReady ? 'ok' : 'warn'),
+    badge: row.badge || 'route',
+    title: row.title || row.id || 'Command-layer route',
+    detail: row.detail || [
+      row.phrase || '',
+      row.selected_id || row.selectedId ? `selected=${row.selected_id || row.selectedId}` : '',
+      row.expected_route_id || row.expectedRouteId ? `expected=${row.expected_route_id || row.expectedRouteId}` : '',
+    ].filter(Boolean).join('; ') || 'Backend workflow route matrix proof',
+    action: row.action || row.expected_route_id || row.expectedRouteId || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || (row.route_ready || row.routeReady ? 'Open' : 'Review'),
+    routeReady: row.route_ready === true || row.routeReady === true,
+    backendProof: true,
+  }));
+  const commandLayerHandoffRows = asArray(commandLayerPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Command-layer handoff',
+    detail: [
+      row.detail || 'command-layer handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/command-layer-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'none'}`,
+      `routes=${row.routes_commands === true || row.routesCommands === true ? 'yes' : 'no'}`,
+      `workflow=${row.starts_workflows === true || row.startsWorkflows === true ? 'yes' : 'no'}`,
+      `network=${row.uses_network === true || row.usesNetwork === true ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    routesCommands: row.routes_commands === true || row.routesCommands === true,
+    executesCommands: row.executes_commands === true || row.executesCommands === true,
+    approvesCommands: row.approves_commands === true || row.approvesCommands === true,
+    startsWorkflows: row.starts_workflows === true || row.startsWorkflows === true,
+    writesActivity: row.writes_activity === true || row.writesActivity === true,
+    changesPolicy: row.changes_policy === true || row.changesPolicy === true,
+    publishesCatalog: row.publishes_catalog === true || row.publishesCatalog === true,
+    readsTranscript: row.reads_transcript === true || row.readsTranscript === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    gatedOperation: row.gated_operation || row.gatedOperation || {},
+    backendProof: true,
+  }));
+  const commandLayerCatalogRows = asArray(commandLayerPlan, ['catalog_rows', 'catalogRows']).slice(0, 12).map(row => ({
+    state: row.state || (row.requires_approval || row.requiresApproval ? 'warn' : 'ok'),
+    badge: row.badge || row.trust || 'cmd',
+    title: row.title || row.id || 'Command',
+    detail: row.detail || `${row.trust_mode || row.trustMode || 'auto'} mode`,
+    action: row.action || row.id || 'open-command-palette',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    backendProof: true,
+  }));
+  const commandLayerGuardRows = asArray(commandLayerPlan, ['guard_rows', 'guardRows']).map(row => ({
+    state: row.state || 'ok',
+    badge: row.badge || 'gate',
+    title: row.title || 'Command-layer guard',
+    detail: row.detail || 'Backend command-layer safety boundary',
+    action: 'open-capability-map',
+    actionLabel: 'Proof',
+  }));
+  const commandLayerApiRows = asArray(commandLayerPlan, ['api_actions', 'apiActions']).map(row => ({
+    state: row.requires_approval || row.requiresApproval ? 'warn' : 'ok',
+    badge: row.method || 'API',
+    title: row.title || row.path || 'Command-layer API gate',
+    detail: `${row.method || 'GET'} ${row.path || ''}${row.writes ? '; writes after explicit user action' : '; read-only'}${row.routes_commands || row.routesCommands ? '; route preflight' : ''}${row.executes_commands || row.executesCommands ? '; executes' : ''}`,
+    action: row.requires_approval || row.requiresApproval ? 'open-trust-controls' : 'open-capability-map',
+    actionLabel: row.requires_approval || row.requiresApproval ? 'Trust' : 'Gate',
+  }));
   const targetReadyCount = targetRows.filter(row => row.state === 'ok').length;
   const targetIssueCount = targetRows.length - targetReadyCount;
   const experienceGuardRows = asArray(experiencePlan, ['guard_rows', 'guardRows']).map(row => ({
@@ -7853,6 +9339,67 @@ function capabilityMapData(snapshot) {
     action: 'open-capability-map',
     actionLabel: 'Proof',
   }));
+  const experienceEntryRows = asArray(experiencePlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || (row.ready ? 'ok' : 'warn'),
+    badge: row.badge || row.channel || 'entry',
+    title: row.title || row.id || 'Operator entry path',
+    detail: row.detail || 'Backend target-experience entry path evidence',
+    action: row.action || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    ready: row.ready === true,
+    backendProof: true,
+  }));
+  const experienceRouteMatchRows = asArray(experiencePlan, ['route_match_rows', 'routeMatchRows']).map(row => ({
+    state: row.state || (row.route_ready || row.routeReady ? 'ok' : 'warn'),
+    badge: row.badge || 'route',
+    title: row.title || row.id || 'Target route match',
+    detail: [
+      row.detail || 'Backend target route match evidence',
+      row.selected_id || row.selectedId ? `selected=${row.selected_id || row.selectedId}` : '',
+      row.expected_route_id || row.expectedRouteId ? `expected=${row.expected_route_id || row.expectedRouteId}` : '',
+      row.score != null ? `score=${row.score}` : '',
+    ].filter(Boolean).join('; '),
+    action: row.action || row.expected_route_id || row.expectedRouteId || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || (row.route_ready || row.routeReady ? 'Open' : 'Review'),
+    routeReady: row.route_ready === true || row.routeReady === true,
+    backendProof: true,
+  }));
+  const experienceHandoffRows = asArray(experiencePlan.handoff_rows).slice(0, 12).map(row => {
+    const gated = row.gated_operation || row.gatedOperation || {};
+    return {
+      state: row.state || 'warn',
+      badge: row.badge || 'handoff',
+      title: row.title || row.id || 'Target handoff',
+      detail: [
+        row.detail || 'target-experience handoff evidence',
+        `target=${row.target_api || row.targetApi || '/api/operator/experience-plan'}`,
+        `approval=${row.approval_command_id || row.approvalCommandId || 'none'}`,
+        `shell=${gated.runs_shell === true || gated.runsShell === true ? 'yes' : 'no'}`,
+        `training=${gated.starts_training === true || gated.startsTraining === true ? 'yes' : 'no'}`,
+        `docker=${gated.runs_docker === true || gated.runsDocker === true ? 'yes' : 'no'}`,
+        `backup=${gated.creates_backup === true || gated.createsBackup === true ? 'yes' : 'no'}`,
+      ].join('; '),
+      action: row.action || row.command_id || row.commandId || 'open-capability-map',
+      actionLabel: row.actionLabel || row.action_label || 'Review',
+      requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+      routesCommands: gated.routes_commands === true || gated.routesCommands === true,
+      startsWorkflows: gated.starts_workflows === true || gated.startsWorkflows === true,
+      startsJobs: gated.starts_jobs === true || gated.startsJobs === true,
+      startsTraining: gated.starts_training === true || gated.startsTraining === true,
+      runsSearch: gated.runs_search === true || gated.runsSearch === true,
+      runsShell: gated.runs_shell === true || gated.runsShell === true,
+      runsDocker: gated.runs_docker === true || gated.runsDocker === true,
+      writesFiles: gated.writes_files === true || gated.writesFiles === true,
+      writesActivity: gated.writes_activity === true || gated.writesActivity === true,
+      createsTasks: gated.creates_tasks === true || gated.createsTasks === true,
+      createsBackup: gated.creates_backup === true || gated.createsBackup === true,
+      restoresData: gated.restores_data === true || gated.restoresData === true,
+      restartsServices: gated.restarts_services === true || gated.restartsServices === true,
+      usesNetwork: gated.uses_network === true || gated.usesNetwork === true,
+      gatedOperation: gated,
+      backendProof: true,
+    };
+  });
   const experienceApiRows = asArray(experiencePlan, ['api_actions', 'apiActions']).map(row => ({
     state: row.requires_approval || row.requiresApproval ? 'warn' : 'ok',
     badge: row.method || 'API',
@@ -7860,6 +9407,30 @@ function capabilityMapData(snapshot) {
     detail: `${row.method || 'GET'} ${row.path || ''}${row.writes ? '; writes after explicit user action' : '; read-only proof'}${row.uses_network || row.usesNetwork ? '; network' : '; local'}`,
     action: 'open-capability-map',
     actionLabel: 'Gate',
+  }));
+  const toolAccessRows = asArray(toolAccessPlan, ['tool_rows', 'toolRows']).slice(0, 12).map(row => ({
+    state: row.state || (row.enabled === false ? 'warn' : 'ok'),
+    badge: row.badge || (row.categories?.[0]) || 'tool',
+    title: row.title || row.id || 'Tool',
+    detail: `${row.enabled === false ? 'disabled' : 'enabled'}; ${(row.categories || []).join(', ') || 'local'}${row.requires_approval || row.requiresApproval ? '; approval-gated' : ''}${row.public_blocked || row.publicBlocked ? '; public blocked' : ''}`,
+    action: 'open-trust-controls',
+    actionLabel: row.enabled === false ? 'Enable' : 'Trust',
+  }));
+  const toolAccessGuardRows = asArray(toolAccessPlan, ['guard_rows', 'guardRows']).map(row => ({
+    state: row.state || 'ok',
+    badge: row.badge || 'gate',
+    title: row.title || 'Tool access guard',
+    detail: row.detail || 'Backend tool access guard rail',
+    action: 'open-capability-map',
+    actionLabel: 'Proof',
+  }));
+  const toolAccessApiRows = asArray(toolAccessPlan, ['api_actions', 'apiActions']).map(row => ({
+    state: row.requires_approval || row.requiresApproval ? 'warn' : 'ok',
+    badge: row.method || 'API',
+    title: row.title || row.path || 'Tool access API gate',
+    detail: `${row.method || 'GET'} ${row.path || ''}${row.writes ? '; writes after explicit user action' : '; read-only'}${row.executes ? '; can execute' : ''}`,
+    action: row.requires_approval || row.requiresApproval ? 'open-trust-controls' : 'open-capability-map',
+    actionLabel: row.requires_approval || row.requiresApproval ? 'Trust' : 'Gate',
   }));
   const categoryRows = categories.map(entry => {
     const routeNames = entry.commands.slice(0, 4).map(command => command.title || command.id).join(', ');
@@ -7893,7 +9464,7 @@ function capabilityMapData(snapshot) {
     action: command.id,
     actionLabel: 'Run',
   }));
-  const entryRows = [
+  const localEntryRows = [
     {
       state: 'ok',
       badge: 'dash',
@@ -7913,7 +9484,7 @@ function capabilityMapData(snapshot) {
     {
       state: 'ok',
       badge: 'pal',
-      title: 'Command palette',
+      title: 'Global command palette',
       detail: `${plural(commands.length, 'registered command')} searchable by title, keyword, category, and route text`,
       action: 'open-command-palette',
       actionLabel: 'Palette',
@@ -7937,12 +9508,15 @@ function capabilityMapData(snapshot) {
     {
       state: 'ok',
       badge: 'voice',
-      title: 'Voice command target',
+      title: 'Voice command route',
       detail: 'Voice mode can route recognized local commands through the same command layer',
       action: 'open-voice-preflight',
       actionLabel: 'Voice',
     },
   ];
+  const entryRows = experienceEntryRows.length
+    ? [...experienceEntryRows, ...localEntryRows.filter(row => !experienceEntryRows.some(entry => entry.title === row.title))]
+    : localEntryRows;
   const highControlRows = [
     {
       state: askCommands.length ? 'warn' : 'ok',
@@ -7984,6 +9558,12 @@ function capabilityMapData(snapshot) {
     catalog,
     experiencePlan,
     experienceSummary,
+    toolAccessPlan,
+    toolAccessSummary,
+    toolchainPlan,
+    toolchainSummary,
+    commandLayerPlan,
+    commandLayerSummary,
     categories,
     askCommands,
     networkCommands,
@@ -7991,8 +9571,28 @@ function capabilityMapData(snapshot) {
     targetWorkflowRows: targetRows,
     targetReadyCount,
     targetIssueCount,
+    experienceAlertRows,
+    experienceRouteMatchRows,
+    experienceHandoffRows,
+    toolAccessAlertRows,
+    toolAccessEntryRows,
+    toolchainAlertRows,
+    toolchainEntryRows,
+    toolchainRows,
+    toolchainHandoffRows,
+    toolchainGuardRows,
+    commandLayerAlertRows,
+    commandLayerEntryRows,
+    commandLayerRouteRows,
+    commandLayerHandoffRows,
+    commandLayerCatalogRows,
+    commandLayerGuardRows,
+    commandLayerApiRows,
     experienceGuardRows,
     experienceApiRows,
+    toolAccessRows,
+    toolAccessGuardRows,
+    toolAccessApiRows,
     categoryRows,
     trustRows,
     workflowRows,
@@ -8029,12 +9629,83 @@ function capabilityMapStats(snapshot) {
       detail: 'one-step flows',
     },
     {
-      state: data.targetIssueCount ? 'warn' : 'ok',
+      state: Number(data.commandLayerSummary.critical_command_layer_alert_count || 0)
+        ? 'error'
+        : (Number(data.commandLayerSummary.command_layer_alert_count || data.commandLayerAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Layer',
+      value: data.commandLayerEntryRows.length
+        ? `${Number(data.commandLayerSummary.entry_route_ready_count || data.commandLayerEntryRows.filter(row => row.ready).length)}/${Number(data.commandLayerSummary.entry_route_count || data.commandLayerEntryRows.length)}`
+        : '0',
+      detail: data.commandLayerSummary.command_layer_alert_count
+        ? `${plural(Number(data.commandLayerSummary.command_layer_alert_count || 0), 'command-layer alert')}`
+        : (data.commandLayerRouteRows.length
+          ? `routes ${Number(data.commandLayerSummary.route_match_ready_count || data.commandLayerRouteRows.filter(row => row.routeReady).length)}/${Number(data.commandLayerSummary.route_match_count || data.commandLayerRouteRows.length)} ready`
+          : 'backend command-layer proof'),
+    },
+    {
+      state: Number(data.commandLayerSummary.handoff_count || data.commandLayerHandoffRows.length || 0)
+        && Number(data.commandLayerSummary.handoff_ready_count || 0) >= Number(data.commandLayerSummary.handoff_count || data.commandLayerHandoffRows.length || 0)
+        ? 'ok'
+        : (data.commandLayerHandoffRows.length ? 'warn' : 'loading'),
+      label: 'Layer Handoffs',
+      value: `${Number(data.commandLayerSummary.handoff_ready_count || data.commandLayerHandoffRows.filter(row => row.state === 'ok').length)}/${Number(data.commandLayerSummary.handoff_count || data.commandLayerHandoffRows.length)}`,
+      detail: 'route handoff gates',
+    },
+    {
+      state: Number(data.experienceSummary.critical_experience_alert_count || 0)
+        ? 'error'
+        : (Number(data.experienceSummary.experience_alert_count || data.experienceAlertRows.length || 0) ? 'warn' : (data.targetIssueCount ? 'warn' : 'ok')),
       label: 'Targets',
       value: `${data.targetReadyCount}/${data.targetWorkflowRows.length}`,
-      detail: data.targetWorkflowRows.some(row => row.backendExperienceProof)
-        ? 'backend target proof'
-        : 'goal phrases',
+      detail: data.experienceSummary.experience_alert_count
+        ? `${plural(Number(data.experienceSummary.experience_alert_count || 0), 'target alert')}`
+        : (data.targetWorkflowRows.some(row => row.backendExperienceProof)
+          ? `backend target proof; matches ${Number(data.experienceSummary.route_match_ready_count || data.experienceRouteMatchRows.filter(row => row.routeReady).length || 0)}/${Number(data.experienceSummary.route_match_count || data.experienceRouteMatchRows.length || 0)}`
+          : 'goal phrases'),
+    },
+    {
+      state: Number(data.experienceSummary.handoff_count || data.experienceHandoffRows.length || 0)
+        && Number(data.experienceSummary.handoff_ready_count || 0) >= Number(data.experienceSummary.handoff_count || data.experienceHandoffRows.length || 0)
+        ? 'ok'
+        : (data.experienceHandoffRows.length ? 'warn' : 'loading'),
+      label: 'Target Handoffs',
+      value: `${Number(data.experienceSummary.handoff_ready_count || data.experienceHandoffRows.filter(row => row.state === 'ok').length)}/${Number(data.experienceSummary.handoff_count || data.experienceHandoffRows.length)}`,
+      detail: 'target action gates',
+    },
+    {
+      state: Number(data.toolAccessSummary.critical_tool_access_alert_count || 0)
+        ? 'error'
+        : (Number(data.toolAccessSummary.tool_access_alert_count || data.toolAccessAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Tools',
+      value: String(data.toolAccessSummary.enabled_tool_count ?? data.toolAccessRows.length ?? 0),
+      detail: data.toolAccessSummary.tool_access_alert_count
+        ? `${plural(Number(data.toolAccessSummary.tool_access_alert_count || 0), 'tool alert')}`
+        : (data.toolAccessEntryRows.length
+          ? `routes ${Number(data.toolAccessSummary.entry_route_ready_count || 0)}/${Number(data.toolAccessSummary.entry_route_count || data.toolAccessEntryRows.length || 0)} ready`
+          : `${plural(Number(data.toolAccessSummary.approval_gated_count || 0), 'approval-gated tool')}`),
+    },
+    {
+      state: Number(data.toolchainSummary.critical_toolchain_alert_count || 0)
+        ? 'error'
+        : (Number(data.toolchainSummary.toolchain_alert_count || data.toolchainAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Toolchain',
+      value: data.toolchainEntryRows.length
+        ? `${Number(data.toolchainSummary.entry_route_ready_count || data.toolchainEntryRows.filter(row => row.state === 'ok').length)}/${Number(data.toolchainSummary.entry_route_count || data.toolchainEntryRows.length)}`
+        : String(data.toolchainSummary.ready_count ?? data.toolchainRows.filter(row => row.state === 'ok').length ?? 0),
+      detail: data.toolchainSummary.toolchain_alert_count
+        ? `${plural(Number(data.toolchainSummary.toolchain_alert_count || 0), 'toolchain alert')}`
+        : (data.toolchainEntryRows.length
+          ? 'request routes ready'
+          : `${plural(Number(data.toolchainSummary.module_count || data.toolchainRows.length || 0), 'module')} mapped`),
+    },
+    {
+      state: Number(data.toolchainSummary.handoff_count || data.toolchainHandoffRows.length || 0)
+        && Number(data.toolchainSummary.handoff_ready_count || 0) >= Number(data.toolchainSummary.handoff_count || data.toolchainHandoffRows.length || 0)
+        ? 'ok'
+        : (data.toolchainHandoffRows.length ? 'warn' : 'loading'),
+      label: 'Tool Handoffs',
+      value: `${Number(data.toolchainSummary.handoff_ready_count || data.toolchainHandoffRows.filter(row => row.state === 'ok').length)}/${Number(data.toolchainSummary.handoff_count || data.toolchainHandoffRows.length)}`,
+      detail: 'module handoff gates',
     },
     {
       state: data.askCommands.length ? 'warn' : 'ok',
@@ -8056,9 +9727,60 @@ function capabilityMapText(snapshot) {
     '',
     'Entry points:',
     ...data.entryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ...(data.commandLayerEntryRows.length ? [
+      '',
+      'Backend command-layer entry points:',
+      ...data.commandLayerEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.commandLayerRouteRows.length ? [
+      '',
+      'Backend command-layer route matrix:',
+      ...data.commandLayerRouteRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.commandLayerHandoffRows.length ? [
+      '',
+      'Command-layer handoffs:',
+      ...data.commandLayerHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`),
+    ] : ['',
+      'Command-layer handoffs:',
+      '- No command-layer handoffs visible',
+    ]),
+    ...(data.commandLayerAlertRows.length ? [
+      '',
+      'Command-layer alerts:',
+      ...data.commandLayerAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.commandLayerGuardRows.length ? [
+      '',
+      'Command-layer safety boundary:',
+      ...data.commandLayerGuardRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.commandLayerApiRows.length ? [
+      '',
+      'Command-layer API gates:',
+      ...data.commandLayerApiRows.slice(0, 10).map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
     '',
     'Target workflows:',
     ...data.targetWorkflowRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ...(data.experienceRouteMatchRows.length ? [
+      '',
+      'Target route matches:',
+      ...data.experienceRouteMatchRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.experienceHandoffRows.length ? [
+      '',
+      'Target handoffs:',
+      ...data.experienceHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`),
+    ] : ['',
+      'Target handoffs:',
+      '- No target handoffs visible',
+    ]),
+    ...(data.experienceAlertRows.length ? [
+      '',
+      'Target alerts:',
+      ...data.experienceAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
     ...(data.experienceGuardRows.length ? [
       '',
       'Backend target-experience plan:',
@@ -8068,6 +9790,62 @@ function capabilityMapText(snapshot) {
       '',
       'Target API gates:',
       ...data.experienceApiRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.toolAccessAlertRows.length ? [
+      '',
+      'Tool access alerts:',
+      ...data.toolAccessAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.toolAccessEntryRows.length ? [
+      '',
+      'Tool access request routes:',
+      ...data.toolAccessEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.toolAccessRows.length ? [
+      '',
+      'Tool access inventory:',
+      ...data.toolAccessRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.toolAccessGuardRows.length ? [
+      '',
+      'Tool access safety boundary:',
+      ...data.toolAccessGuardRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.toolAccessApiRows.length ? [
+      '',
+      'Tool access API gates:',
+      ...data.toolAccessApiRows.slice(0, 10).map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.toolchainAlertRows.length ? [
+      '',
+      'Toolchain alerts:',
+      ...data.toolchainAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.toolchainEntryRows.length ? [
+      '',
+      'Toolchain request route proof:',
+      ...data.toolchainEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : ['',
+      'Toolchain request route proof:',
+      '- No toolchain request route proof visible',
+    ]),
+    ...(data.toolchainRows.length ? [
+      '',
+      'Toolchain inventory:',
+      ...data.toolchainRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.toolchainHandoffRows.length ? [
+      '',
+      'Toolchain handoffs:',
+      ...data.toolchainHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`),
+    ] : ['',
+      'Toolchain handoffs:',
+      '- No toolchain handoffs visible',
+    ]),
+    ...(data.toolchainGuardRows.length ? [
+      '',
+      'Toolchain safety boundary:',
+      ...data.toolchainGuardRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     ] : []),
     '',
     'Command areas:',
@@ -8162,9 +9940,63 @@ function renderCapabilityMap(snapshot) {
       <div class="cc-briefing-section-title">Entry points</div>
       ${briefingList(data.entryRows, 'No command entry points visible')}
     </section>
+    ${data.commandLayerAlertRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Command-layer alerts</div>
+        ${briefingList(data.commandLayerAlertRows, 'No command-layer alerts visible')}
+      </section>
+    ` : ''}
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend command-layer entry points</div>
+      ${briefingList(data.commandLayerEntryRows, 'No backend command-layer entry proof visible')}
+    </section>
+    ${data.commandLayerRouteRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Backend command-layer route matrix</div>
+        ${briefingList(data.commandLayerRouteRows, 'No backend command-layer route proof visible')}
+      </section>
+    ` : ''}
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Command-layer handoffs</div>
+      ${briefingList(data.commandLayerHandoffRows, 'No command-layer handoffs visible')}
+    </section>
+    ${data.commandLayerCatalogRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Backend command catalog gates</div>
+        ${briefingList(data.commandLayerCatalogRows, 'No backend command catalog rows visible')}
+      </section>
+    ` : ''}
+    ${data.commandLayerGuardRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Command-layer safety boundary</div>
+        ${briefingList(data.commandLayerGuardRows, 'No command-layer safety rows visible')}
+      </section>
+    ` : ''}
+    ${data.commandLayerApiRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Command-layer API gates</div>
+        ${briefingList(data.commandLayerApiRows.slice(0, 10), 'No command-layer API gates visible')}
+      </section>
+    ` : ''}
     <section class="cc-briefing-section" data-capability-section="targets">
       <div class="cc-briefing-section-title">Target workflows</div>
       ${briefingList(data.targetWorkflowRows, 'No target workflows visible')}
+    </section>
+    ${data.experienceAlertRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Target alerts</div>
+        ${briefingList(data.experienceAlertRows, 'No target alerts visible')}
+      </section>
+    ` : ''}
+    ${data.experienceRouteMatchRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Target route matches</div>
+        ${briefingList(data.experienceRouteMatchRows, 'No target route match evidence visible')}
+      </section>
+    ` : ''}
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Target handoffs</div>
+      ${briefingList(data.experienceHandoffRows, 'No target handoffs visible')}
     </section>
     ${data.experienceGuardRows.length ? `
       <section class="cc-briefing-section">
@@ -8176,6 +10008,62 @@ function renderCapabilityMap(snapshot) {
       <section class="cc-briefing-section">
         <div class="cc-briefing-section-title">Target API gates</div>
         ${briefingList(data.experienceApiRows.slice(0, 10), 'No target API gates visible')}
+      </section>
+    ` : ''}
+    ${data.toolAccessAlertRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Tool access alerts</div>
+        ${briefingList(data.toolAccessAlertRows, 'No tool access alerts visible')}
+      </section>
+    ` : ''}
+    ${data.toolAccessEntryRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Tool access request routes</div>
+        ${briefingList(data.toolAccessEntryRows, 'No tool access request routes visible')}
+      </section>
+    ` : ''}
+    ${data.toolAccessRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Tool access inventory</div>
+        ${briefingList(data.toolAccessRows, 'No tool access rows visible')}
+      </section>
+    ` : ''}
+    ${data.toolAccessGuardRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Tool access safety boundary</div>
+        ${briefingList(data.toolAccessGuardRows, 'No tool access guard rows visible')}
+      </section>
+    ` : ''}
+    ${data.toolAccessApiRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Tool access API gates</div>
+        ${briefingList(data.toolAccessApiRows.slice(0, 10), 'No tool access API gates visible')}
+      </section>
+    ` : ''}
+    ${data.toolchainAlertRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Toolchain alerts</div>
+        ${briefingList(data.toolchainAlertRows, 'No toolchain alerts visible')}
+      </section>
+    ` : ''}
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Toolchain request route proof</div>
+      ${briefingList(data.toolchainEntryRows, 'No toolchain request route proof visible')}
+    </section>
+    ${data.toolchainRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Toolchain inventory</div>
+        ${briefingList(data.toolchainRows, 'No toolchain inventory visible')}
+      </section>
+    ` : ''}
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Toolchain handoffs</div>
+      ${briefingList(data.toolchainHandoffRows, 'No toolchain handoffs visible')}
+    </section>
+    ${data.toolchainGuardRows.length ? `
+      <section class="cc-briefing-section">
+        <div class="cc-briefing-section-title">Toolchain safety boundary</div>
+        ${briefingList(data.toolchainGuardRows, 'No toolchain safety rows visible')}
       </section>
     ` : ''}
     <section class="cc-briefing-section">
@@ -8234,12 +10122,128 @@ function automationStatusData(snapshot) {
   const features = readData(source, 'features') || {};
   const operatorChecks = readData(source, 'operatorChecks') || {};
   const workflowCatalog = readData(source, 'operatorWorkflows') || {};
+  const autonomyPlan = readData(source, 'operatorAutonomyPlan') || {};
+  const automationPlan = readData(source, 'operatorAutomationPlan') || {};
+  const approvalPlan = readData(source, 'operatorApprovalPlan') || {};
+  const loopsPlan = readData(source, 'operatorLoopsPlan') || {};
+  const autonomySummary = autonomyPlan.summary || {};
+  const automationSummary = automationPlan.summary || {};
+  const approvalSummary = approvalPlan.summary || {};
+  const loopsSummary = loopsPlan.summary || {};
   const routeProof = backendRouteProofStatus(source);
+  const automationPlanRows = asArray(automationPlan, ['automation_rows', 'automationRows']).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'auto',
+    title: row.title || row.id || 'Automation operation',
+    detail: row.detail || 'Backend automation operations evidence',
+    action: row.action || 'open-automation-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    backendProof: true,
+  }));
+  const automationPlanRouteRows = asArray(automationPlan, ['route_rows', 'routeRows']).map(row => ({
+    state: row.state || (row.route_ready || row.routeReady ? 'ok' : 'warn'),
+    badge: row.badge || 'route',
+    title: row.title || row.id || 'Automation workflow route',
+    detail: row.detail || 'Backend automation route proof',
+    action: row.action || row.expected_route_id || row.expectedRouteId || 'open-capability-map',
+    actionLabel: row.actionLabel || row.action_label || 'Routes',
+    routeReady: row.route_ready === true || row.routeReady === true,
+    backendProof: true,
+  }));
+  const automationPlanEntryRows = asArray(automationPlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || (row.ready ? 'ok' : 'warn'),
+    badge: row.badge || row.entry || 'entry',
+    title: row.title || row.id || 'Automation request route',
+    detail: row.detail || 'Backend automation entry proof',
+    action: row.action || row.command_id || 'open-automation-map',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    ready: row.ready === true,
+    backendProof: true,
+  }));
+  const automationPlanActivityRows = asArray(automationPlan, ['activity_rows', 'activityRows']).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'activity',
+    title: row.title || row.id || 'Automation activity',
+    detail: row.detail || 'Backend automation activity evidence',
+    action: row.action || 'open-activity-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Activity',
+    activityId: row.activity_id || row.activityId || row.id || '',
+    detailAction: row.detail_action || row.detailAction || row.action || '',
+    copyLogAction: row.copy_log_action || row.copyLogAction || '',
+    retryAction: row.retry_action || row.retryAction || '',
+    recoveryAction: row.recovery_action || row.recoveryAction || '',
+    logReady: row.log_ready === true || row.logReady === true,
+    retryable: row.retryable === true,
+    rollbackReady: row.rollback_ready === true || row.rollbackReady === true,
+    needsRecovery: row.needs_recovery === true || row.needsRecovery === true,
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    backendProof: true,
+  }));
+  const automationActivityHandoffRows = automationPlanActivityRows.flatMap(row => {
+    const rows = [];
+    if (row.detailAction) {
+      rows.push({
+        state: row.state || 'warn',
+        badge: 'detail',
+        title: `${row.title} details`,
+        detail: `Open local activity evidence for ${row.activityId || row.title}.`,
+        action: row.detailAction,
+        actionLabel: 'Details',
+        requiresApproval: false,
+      });
+    }
+    if (row.copyLogAction) {
+      rows.push({
+        state: row.logReady ? 'ok' : 'warn',
+        badge: 'log',
+        title: `${row.title} log`,
+        detail: row.logReady ? 'Copy status, result, error, events, and recovery notes before retry or cleanup.' : 'Log evidence is incomplete; inspect the activity record first.',
+        action: row.copyLogAction,
+        actionLabel: 'Copy',
+        requiresApproval: false,
+      });
+    }
+    if (row.retryAction) {
+      rows.push({
+        state: row.retryable ? 'warn' : 'loading',
+        badge: 'retry',
+        title: `${row.title} retry`,
+        detail: row.retryable ? 'Retry opens the current trust-policy checkpoint before replaying the command.' : 'No replayable command route is available.',
+        action: row.retryAction,
+        actionLabel: 'Retry',
+        requiresApproval: true,
+      });
+    }
+    if (row.recoveryAction) {
+      rows.push({
+        state: row.needsRecovery || !row.rollbackReady ? 'warn' : 'ok',
+        badge: 'recover',
+        title: `${row.title} recovery`,
+        detail: row.rollbackReady ? 'Recovery and rollback guidance is available before changing local state.' : 'Rollback guidance is missing; review Recovery Map before continuing automation.',
+        action: row.recoveryAction,
+        actionLabel: 'Recovery',
+        requiresApproval: false,
+      });
+    }
+    return rows;
+  }).slice(0, 16);
+  const automationPlanAlertRows = asArray(automationPlan.alert_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'auto',
+    title: row.title || row.id || 'Automation operations alert',
+    detail: row.detail || 'Backend automation operations alert',
+    action: row.action || 'open-automation-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    backendProof: true,
+  }));
   const operatorRows = asArray(operatorChecks, ['checks']);
   const operatorIssues = operatorRows.filter(item => String(item.status || '').toLowerCase() !== 'ok');
   const loops = agentLoopTemplates();
   const backendLoops = asArray(workflowCatalog, ['loops']);
   const backendWorkflows = asArray(workflowCatalog, ['workflows']);
+  const loopPlanRows = asArray(loopsPlan, ['loop_rows']);
+  const loopWorkflowRows = asArray(loopsPlan, ['workflow_rows']);
   const workflowCommands = operatorCommands.getWorkflowCommands?.() || [];
   const automationCommands = (operatorCommands.getCommands?.() || []).filter(command => command.category === 'Automation');
   const askAutomation = automationCommands.filter(command => operatorCommands.commandTrustMode?.(command) === 'ask');
@@ -8254,15 +10258,232 @@ function automationStatusData(snapshot) {
   const automationActivity = operatorCommands.readActivity?.(30)
     .filter(item => item.category === 'Automation' || /automation|agent\s+loop|workflow|webhook|build until green|task from note|backup|watch build/i.test(`${item.title || ''} ${item.detail || ''}`))
     .slice(0, 4) || [];
+  const autonomyAlertRows = asArray(autonomyPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Automation alert',
+    detail: row.detail || 'backend autonomy alert',
+    action: row.action || 'open-automation-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
+  const autonomyEntryRows = asArray(autonomyPlan, ['entry_rows', 'entryRows']).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Automation request route proof',
+    detail: [
+      row.detail || 'open-automation-map autonomy route evidence',
+      `command=${row.command_id || 'open-automation-map'}`,
+      `trust=${row.trust_command_id || 'open-trust-controls'}`,
+      `activity=${row.activity_command_id || 'open-activity-preflight'}`,
+      `palette=${row.palette_command_id || 'open-command-palette'}`,
+      `route=${row.route_api || '/api/operator/route'}`,
+      `policy=${row.policy_api || '/api/operator/policy'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-automation-map',
+    actionLabel: row.actionLabel || row.action_label || 'Automation',
+    requiresApproval: row.requires_approval === true,
+    routesCommands: row.routes_commands === true,
+    executesCommands: row.executes_commands === true,
+    approvesCommands: row.approves_commands === true,
+    retriesCommands: row.retries_commands === true,
+    startsWorkflows: row.starts_workflows === true,
+    changesPolicy: row.changes_policy === true,
+    deletesActivity: row.deletes_activity === true,
+    runsShell: row.runs_shell === true,
+    modifiesFiles: row.modifies_files === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const autonomyHandoffRows = asArray(autonomyPlan.handoff_rows).slice(0, 10).map(row => {
+    const gated = row.gated_operation || row.gatedOperation || {};
+    return {
+      state: row.state || 'warn',
+      badge: row.badge || 'handoff',
+      title: row.title || row.id || 'Autonomy handoff',
+      detail: [
+        row.detail || 'autonomy handoff evidence',
+        `target=${row.target_api || row.targetApi || '/api/operator/autonomy-plan'}`,
+        `approval=${row.approval_command_id || row.approvalCommandId || 'none'}`,
+        `routes=${gated.routes_commands === true || gated.routesCommands === true ? 'yes' : 'no'}`,
+        `workflow=${gated.starts_workflows === true || gated.startsWorkflows === true ? 'yes' : 'no'}`,
+        `policy=${gated.changes_policy === true || gated.changesPolicy === true ? 'yes' : 'no'}`,
+        `network=${gated.uses_network === true || gated.usesNetwork === true ? 'yes' : 'no'}`,
+      ].join('; '),
+      action: row.action || 'open-autonomy-map',
+      actionLabel: row.actionLabel || row.action_label || 'Review',
+      requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+      routesCommands: gated.routes_commands === true || gated.routesCommands === true,
+      approvesCommands: gated.approves_commands === true || gated.approvesCommands === true,
+      retriesCommands: gated.retries_commands === true || gated.retriesCommands === true,
+      startsWorkflows: gated.starts_workflows === true || gated.startsWorkflows === true,
+      changesPolicy: gated.changes_policy === true || gated.changesPolicy === true,
+      deletesActivity: gated.deletes_activity === true || gated.deletesActivity === true,
+      writesActivity: gated.writes_activity === true || gated.writesActivity === true,
+      runsShell: gated.runs_shell === true || gated.runsShell === true,
+      modifiesFiles: gated.modifies_files === true || gated.modifiesFiles === true,
+      usesNetwork: gated.uses_network === true || gated.usesNetwork === true,
+      gatedOperation: gated,
+      backendProof: true,
+    };
+  });
+  const approvalAlertRows = asArray(approvalPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'ask',
+    title: row.title || row.id || 'Approval alert',
+    detail: row.detail || 'backend approval alert',
+    action: row.action || 'open-trust-controls',
+    actionLabel: row.actionLabel || row.action_label || 'Trust',
+  }));
+  const approvalEntryRows = asArray(approvalPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Approval request route proof',
+    detail: [
+      row.detail || 'open-trust-controls approval route evidence',
+      `command=${row.command_id || 'open-trust-controls'}`,
+      `review=${row.review_command_id || 'open-activity-preflight'}`,
+      `approval=${row.approval_api || '/api/operator/policy'}`,
+      `activity=${row.activity_api || '/api/operator/activity'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-trust-controls',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    approvesCommands: row.approves_commands === true,
+    retriesCommands: row.retries_commands === true,
+    changesPolicy: row.changes_policy === true,
+    writesActivity: row.writes_activity === true,
+    startsWorkflows: row.starts_workflows === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const approvalCheckpointRows = asArray(approvalPlan, ['decision_checkpoint_rows', 'decisionCheckpointRows']).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'ask',
+    title: row.title || row.id || 'Approval decision checkpoint',
+    detail: row.detail || 'Backend approval decision checkpoint',
+    action: row.action || 'open-trust-controls',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    approvesCommands: row.approves_commands === true,
+    cancelsCommands: row.cancels_commands === true,
+    retriesCommands: row.retries_commands === true,
+    changesPolicy: row.changes_policy === true,
+    writesActivity: row.writes_activity === true,
+    executes: row.executes === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const approvalHandoffRows = asArray(approvalPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Approval handoff',
+    detail: [
+      row.detail || 'approval posture handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/approval-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'open-trust-controls'}`,
+      `networkAfterApproval=${row.network_after_approval || row.networkAfterApproval ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-trust-controls',
+    actionLabel: row.actionLabel || row.action_label || 'Trust',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    routesCommands: row.routes_commands === true || row.routesCommands === true,
+    executesCommands: row.executes_commands === true || row.executesCommands === true,
+    approvesCommands: row.approves_commands === true || row.approvesCommands === true,
+    cancelsCommands: row.cancels_commands === true || row.cancelsCommands === true,
+    retriesCommands: row.retries_commands === true || row.retriesCommands === true,
+    changesPolicy: row.changes_policy === true || row.changesPolicy === true,
+    writesActivity: row.writes_activity === true || row.writesActivity === true,
+    startsWorkflows: row.starts_workflows === true || row.startsWorkflows === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    writesFiles: row.writes_files === true || row.writesFiles === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    networkAfterApproval: row.network_after_approval === true || row.networkAfterApproval === true,
+    gatedOperation: row.gated_operation || row.gatedOperation || {},
+    backendProof: true,
+  }));
+  const loopAlertRows = asArray(loopsPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'loop',
+    title: row.title || row.id || 'Loop alert',
+    detail: row.detail || 'backend Agent Loop alert',
+    action: row.action || 'open-automation-map',
+    actionLabel: row.actionLabel || row.action_label || 'Loops',
+  }));
+  const loopEntryRows = asArray(loopsPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Agent Loop request route proof',
+    detail: [
+      row.detail || 'open-automation-preflight Agent Loop route evidence',
+      `command=${row.command_id || 'open-automation-preflight'}`,
+      `loops=${row.start_command_id || 'open-loops'}`,
+      `map=${row.map_command_id || 'open-automation-map'}`,
+      `approval=${row.approval_command_id || 'open-trust-controls'}`,
+      `activity=${row.activity_command_id || 'open-activity-preflight'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-automation-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    startsLoops: row.starts_loops === true,
+    routesCommands: row.routes_commands === true,
+    executesCommands: row.executes_commands === true,
+    startsJobs: row.starts_jobs === true,
+    runsShell: row.runs_shell === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const automationAlertRows = [...approvalAlertRows, ...autonomyAlertRows, ...loopAlertRows].slice(0, 10);
+  const automationOperationsAlertRows = automationPlanAlertRows.length
+    ? automationPlanAlertRows
+    : automationAlertRows;
   const topOperatorIssue = operatorIssues[0];
   const rows = [
     {
-      state: loops.length ? 'ok' : 'warn',
+      state: source.operatorApprovalPlan?.ok
+        ? (Number(approvalSummary.critical_approval_alert_count || 0) ? 'error' : (Number(approvalSummary.approval_alert_count || 0) ? 'warn' : 'ok'))
+        : 'warn',
+      badge: 'ask',
+      title: 'Backend approval queue',
+      detail: source.operatorApprovalPlan?.ok
+        ? `${plural(Number(approvalSummary.pending_approval_count || 0), 'pending approval')}; ${plural(Number(approvalSummary.ask_gated_count || 0), 'ask-gated route')}; ${plural(Number(approvalSummary.decision_count || 0), 'decision')}`
+        : readError(source, 'operatorApprovalPlan'),
+      action: 'open-trust-controls',
+      actionLabel: 'Trust',
+    },
+    {
+      state: source.operatorAutonomyPlan?.ok
+        ? (Number(autonomySummary.critical_automation_alert_count || 0) ? 'error' : (Number(autonomySummary.automation_alert_count || 0) ? 'warn' : 'ok'))
+        : 'warn',
+      badge: 'alert',
+      title: 'Backend automation alerts',
+      detail: source.operatorAutonomyPlan?.ok
+        ? `${plural(Number(autonomySummary.automation_alert_count || 0), 'alert')}; ${plural(Number(autonomySummary.critical_automation_alert_count || 0), 'critical')}; no routes executed`
+        : readError(source, 'operatorAutonomyPlan'),
+      action: 'open-automation-map',
+      actionLabel: 'Alerts',
+    },
+    {
+      state: source.operatorLoopsPlan?.ok
+        ? (Number(loopsSummary.critical_loop_alert_count || 0) ? 'error' : (Number(loopsSummary.loop_alert_count || 0) ? 'warn' : 'ok'))
+        : 'warn',
+      badge: 'loop',
+      title: 'Backend loop alerts',
+      detail: source.operatorLoopsPlan?.ok
+        ? `${plural(Number(loopsSummary.loop_alert_count || 0), 'alert')}; ${plural(Number(loopsSummary.critical_loop_alert_count || 0), 'critical')}; no loops started`
+        : readError(source, 'operatorLoopsPlan'),
+      action: 'open-automation-map',
+      actionLabel: 'Loops',
+    },
+    {
+      state: source.operatorLoopsPlan?.ok
+        ? (Number(loopsSummary.loop_count || 0) ? 'ok' : 'warn')
+        : (loops.length ? 'ok' : 'warn'),
       badge: 'loop',
       title: 'Agent loop templates',
-      detail: loops.length
-        ? `${plural(loops.length, 'local loop')} bundled; ${joinNames(loops, ['title', 'id'], 3)}`
-        : 'Agent loop templates are not visible in the browser module',
+      detail: source.operatorLoopsPlan?.ok
+        ? `${plural(Number(loopsSummary.loop_count || loopPlanRows.length || 0), 'backend loop')} persisted; ${plural(Number(loopsSummary.workflow_count || loopWorkflowRows.length || 0), 'workflow route')}; no starts executed`
+        : (loops.length
+          ? `${plural(loops.length, 'local loop')} bundled; ${joinNames(loops, ['title', 'id'], 3)}`
+          : 'Agent loop templates are not visible in the browser module'),
       action: 'open-loops',
       actionLabel: 'Loops',
     },
@@ -8374,12 +10595,28 @@ function automationStatusData(snapshot) {
     offline,
     features,
     operatorChecks,
+    autonomyPlan,
+    automationPlan,
+    approvalPlan,
+    loopsPlan,
+    autonomySummary,
+    automationSummary,
+    approvalSummary,
+    loopsSummary,
     workflowCatalog,
+    automationPlanRows,
+    automationPlanRouteRows,
+    automationPlanEntryRows,
+    automationPlanActivityRows,
+    automationActivityHandoffRows,
+    automationPlanAlertRows,
     operatorRows,
     operatorIssues,
     loops,
     backendLoops,
     backendWorkflows,
+    loopPlanRows,
+    loopWorkflowRows,
     workflowCommands,
     automationCommands,
     askAutomation,
@@ -8389,18 +10626,53 @@ function automationStatusData(snapshot) {
     policyBlockedRuns,
     webhooksEnabled,
     automationActivity,
+    autonomyAlertRows,
+    autonomyEntryRows,
+    autonomyHandoffRows,
+    approvalAlertRows,
+    approvalEntryRows,
+    approvalCheckpointRows,
+    approvalHandoffRows,
+    loopAlertRows,
+    loopEntryRows,
+    automationAlertRows: automationOperationsAlertRows,
+    automationComponentAlertRows: automationAlertRows,
     rows,
   };
 }
 
 function automationPreflightStats(snapshot) {
   const data = automationStatusData(snapshot);
+  const autonomyRouteCount = Number(data.autonomySummary.entry_route_count || data.autonomyEntryRows.length || 0);
+  const autonomyRouteReady = Number(data.autonomySummary.entry_route_ready_count || data.autonomyEntryRows.filter(row => row.state === 'ok').length || 0);
+  const autonomyHandoffCount = Number(data.autonomySummary.handoff_count || data.autonomyHandoffRows.length || 0);
+  const autonomyHandoffReady = Number(data.autonomySummary.handoff_ready_count || data.autonomyHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const approvalRouteCount = Number(data.approvalSummary.entry_route_count || data.approvalEntryRows.length || 0);
+  const approvalRouteReady = Number(data.approvalSummary.entry_route_ready_count || data.approvalEntryRows.filter(row => row.state === 'ok').length || 0);
+  const approvalCheckpointCount = Number(data.approvalSummary.decision_checkpoint_count || data.approvalCheckpointRows.length || 0);
+  const approvalCheckpointReady = Number(data.approvalSummary.decision_checkpoint_ready_count || data.approvalCheckpointRows.filter(row => row.state === 'ok').length || 0);
+  const approvalHandoffCount = Number(data.approvalSummary.handoff_count || data.approvalHandoffRows.length || 0);
+  const approvalHandoffReady = Number(data.approvalSummary.handoff_ready_count || data.approvalHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const loopRouteCount = Number(data.loopsSummary.entry_route_count || data.loopEntryRows.length || 0);
+  const loopRouteReady = Number(data.loopsSummary.entry_route_ready_count || data.loopEntryRows.filter(row => row.state === 'ok').length || 0);
+  const automationRouteCount = Number(data.automationSummary.entry_route_count || data.automationPlanEntryRows.length || 0);
+  const automationRouteReady = Number(data.automationSummary.entry_route_ready_count || data.automationPlanEntryRows.filter(row => row.ready).length || 0);
   return [
     {
-      state: data.loops.length ? 'ok' : 'warn',
+      state: snapshot?.operatorAutomationPlan?.ok
+        ? (Number(data.automationSummary.critical_automation_alert_count || 0) ? 'error' : (Number(data.automationSummary.automation_alert_count || 0) ? 'warn' : 'ok'))
+        : 'warn',
+      label: 'Ops',
+      value: String(Number(data.automationSummary.automation_row_count || data.automationPlanRows.length || 0)),
+      detail: snapshot?.operatorAutomationPlan?.ok ? 'backend plan' : 'backend unavailable',
+    },
+    {
+      state: snapshot?.operatorLoopsPlan?.ok
+        ? (Number(data.loopsSummary.critical_loop_alert_count || 0) ? 'error' : (Number(data.loopsSummary.loop_count || 0) ? 'ok' : 'warn'))
+        : (data.loops.length ? 'ok' : 'warn'),
       label: 'Loops',
-      value: String(data.loops.length),
-      detail: 'local templates',
+      value: String(Number(data.loopsSummary.loop_count || data.loopPlanRows.length || data.loops.length || 0)),
+      detail: snapshot?.operatorLoopsPlan?.ok ? 'backend audited' : 'local templates',
     },
     {
       state: data.workflowCommands.length ? 'ok' : 'warn',
@@ -8420,6 +10692,54 @@ function automationPreflightStats(snapshot) {
       value: data.offline.runtime?.offline ? 'Off' : String(data.activeWebhooks.length),
       detail: data.offline.runtime?.offline ? 'offline policy' : 'active hooks',
     },
+    {
+      state: Number(data.automationSummary.critical_automation_alert_count || data.approvalSummary.critical_approval_alert_count || data.autonomySummary.critical_automation_alert_count || data.loopsSummary.critical_loop_alert_count || 0) ? 'error' : (Number(data.automationSummary.automation_alert_count || data.approvalSummary.approval_alert_count || data.autonomySummary.automation_alert_count || data.loopsSummary.loop_alert_count || data.automationAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.automationSummary.automation_alert_count || 0) || Number(data.approvalSummary.approval_alert_count || 0) + Number(data.autonomySummary.automation_alert_count || 0) + Number(data.loopsSummary.loop_alert_count || 0) || data.automationAlertRows.length || 0),
+      detail: 'automation queues',
+    },
+    {
+      state: automationRouteCount && automationRouteReady >= automationRouteCount ? 'ok' : 'warn',
+      label: 'Ops Routes',
+      value: automationRouteCount ? `${automationRouteReady}/${automationRouteCount}` : '0',
+      detail: 'backend route proof',
+    },
+    {
+      state: autonomyRouteCount && autonomyRouteReady >= autonomyRouteCount ? 'ok' : 'warn',
+      label: 'Autonomy Routes',
+      value: autonomyRouteCount ? `${autonomyRouteReady}/${autonomyRouteCount}` : '0',
+      detail: 'request route proof',
+    },
+    {
+      state: autonomyHandoffCount && autonomyHandoffReady >= autonomyHandoffCount ? 'ok' : 'warn',
+      label: 'Autonomy Handoffs',
+      value: autonomyHandoffCount ? `${autonomyHandoffReady}/${autonomyHandoffCount}` : '0',
+      detail: 'permission gates',
+    },
+    {
+      state: approvalRouteCount && approvalRouteReady >= approvalRouteCount ? 'ok' : 'warn',
+      label: 'Approval Routes',
+      value: approvalRouteCount ? `${approvalRouteReady}/${approvalRouteCount}` : '0',
+      detail: 'request route proof',
+    },
+    {
+      state: approvalCheckpointCount && approvalCheckpointReady >= approvalCheckpointCount ? 'ok' : 'warn',
+      label: 'Approval Checks',
+      value: approvalCheckpointCount ? `${approvalCheckpointReady}/${approvalCheckpointCount}` : '0',
+      detail: 'decision checkpoints',
+    },
+    {
+      state: approvalHandoffCount && approvalHandoffReady >= approvalHandoffCount ? 'ok' : 'warn',
+      label: 'Approval Handoffs',
+      value: approvalHandoffCount ? `${approvalHandoffReady}/${approvalHandoffCount}` : '0',
+      detail: 'decision gates',
+    },
+    {
+      state: loopRouteCount && loopRouteReady >= loopRouteCount ? 'ok' : 'warn',
+      label: 'Loop Routes',
+      value: loopRouteCount ? `${loopRouteReady}/${loopRouteCount}` : '0',
+      detail: 'Agent Loop proof',
+    },
   ];
 }
 
@@ -8432,11 +10752,47 @@ function automationPreflightText(snapshot) {
     '',
     ...stats.map(item => `${item.label}: ${item.value} - ${item.detail}`),
     '',
+    'Backend automation operations:',
+    ...(data.automationPlanRows.length ? data.automationPlanRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend automation operations plan visible']),
+    '',
+    'Backend automation request routes:',
+    ...(data.automationPlanEntryRows.length ? data.automationPlanEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend automation request route proof visible']),
+    '',
+    'Backend automation workflow routes:',
+    ...(data.automationPlanRouteRows.length ? data.automationPlanRouteRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend automation workflow route proof visible']),
+    '',
     'Agent loops:',
-    ...(data.loops.length ? data.loops.map(loop => `- ${loop.title || loop.id}: ${loop.goal || loop.summary || 'local loop'}`) : ['- No loop templates visible']),
+    ...(data.loopPlanRows.length ? data.loopPlanRows.map(loop => `- ${loop.title || loop.id}: ${loop.detail || loop.mode || 'backend loop evidence'}`) : (data.loops.length ? data.loops.map(loop => `- ${loop.title || loop.id}: ${loop.goal || loop.summary || 'local loop'}`) : ['- No loop templates visible'])),
     '',
     'Checks:',
     ...data.rows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Approval alert queue:',
+    ...(data.approvalAlertRows.length ? data.approvalAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend approval alerts visible']),
+    '',
+    'Automation request route proof:',
+    ...(data.autonomyEntryRows.length ? data.autonomyEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No automation request route proof visible']),
+    '',
+    'Autonomy handoffs:',
+    ...(data.autonomyHandoffRows.length ? data.autonomyHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No autonomy handoffs visible']),
+    '',
+    'Approval request route proof:',
+    ...(data.approvalEntryRows.length ? data.approvalEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No approval request route proof visible']),
+    '',
+    'Approval decision checkpoints:',
+    ...(data.approvalCheckpointRows.length ? data.approvalCheckpointRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No approval decision checkpoints visible']),
+    '',
+    'Approval handoffs:',
+    ...(data.approvalHandoffRows.length ? data.approvalHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No approval handoffs visible']),
+    '',
+    'Loop alert queue:',
+    ...(data.loopAlertRows.length ? data.loopAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend Agent Loop alerts visible']),
+    '',
+    'Agent Loop request route proof:',
+    ...(data.loopEntryRows.length ? data.loopEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No Agent Loop request route proof visible']),
+    '',
+    'Automation alert queue:',
+    ...(data.automationAlertRows.length ? data.automationAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend automation alerts visible']),
   ];
   return lines.join('\n');
 }
@@ -8454,7 +10810,8 @@ function automationTaskTitle(task) {
 }
 
 function automationMapData(snapshot) {
-  const data = automationStatusData(snapshot || {});
+  const source = snapshot || {};
+  const data = automationStatusData(source);
   const tasks = data.work.tasks || [];
   const runs = data.work.runs || [];
   const activeTasks = data.work.activeTasks || [];
@@ -8481,7 +10838,15 @@ function automationMapData(snapshot) {
     action: workflow.expectedRouteId || workflow.commandId || 'open-command-palette',
     actionLabel: 'Route',
   }));
-  const loopRows = data.loops.map(loop => ({
+  const backendLoopRows = data.loopPlanRows.map(loop => ({
+    state: loop.state || 'warn',
+    badge: loop.badge || 'loop',
+    title: loop.title || loop.id || 'Agent loop',
+    detail: loop.detail || loop.mode || 'Backend Agent Loop evidence',
+    action: loop.action || 'open-loops',
+    actionLabel: loop.actionLabel || loop.action_label || 'Loops',
+  }));
+  const localLoopRows = data.loops.map(loop => ({
     state: 'ok',
     badge: 'loop',
     title: loop.title || loop.id || 'Agent loop',
@@ -8489,6 +10854,7 @@ function automationMapData(snapshot) {
     action: 'open-loops',
     actionLabel: 'Loops',
   }));
+  const loopRows = backendLoopRows.length ? backendLoopRows : localLoopRows;
   const triggerRows = [
     {
       state: scheduleTasks.length ? 'ok' : 'loading',
@@ -8581,7 +10947,43 @@ function automationMapData(snapshot) {
       actionLabel: 'Trust',
     },
   ];
+  const alertRows = data.automationAlertRows.length
+    ? data.automationAlertRows
+    : [
+        failedRuns.length ? {
+          state: 'error',
+          badge: 'fail',
+          title: 'Automation run failures',
+          detail: `${plural(failedRuns.length, 'failed run')} need review before retry`,
+          action: 'open-operations-queue',
+          actionLabel: 'Queue',
+        } : null,
+        policyBlockedRuns.length ? {
+          state: 'warn',
+          badge: 'policy',
+          title: 'Policy-blocked automation',
+          detail: `${plural(policyBlockedRuns.length, 'run')} blocked by local policy`,
+          action: 'open-operations-queue',
+          actionLabel: 'Queue',
+        } : null,
+        data.askAutomation.length ? null : {
+          state: 'warn',
+          badge: 'ask',
+          title: 'Automation ask gate missing',
+          detail: 'Automation commands can route without an ask gate under current policy',
+          action: 'open-trust-controls',
+          actionLabel: 'Trust',
+        },
+      ].filter(Boolean);
   const stats = [
+    {
+      state: source.operatorAutomationPlan?.ok
+        ? (Number(data.automationSummary.critical_automation_alert_count || 0) ? 'error' : (Number(data.automationSummary.automation_alert_count || 0) ? 'warn' : 'ok'))
+        : 'warn',
+      label: 'Ops',
+      value: String(Number(data.automationSummary.automation_row_count || data.automationPlanRows.length || 0)),
+      detail: source.operatorAutomationPlan?.ok ? 'backend plan' : 'not loaded',
+    },
     {
       state: data.workflowCommands.length ? 'ok' : 'warn',
       label: 'Workflows',
@@ -8595,10 +10997,10 @@ function automationMapData(snapshot) {
       detail: data.workflowCatalog?.configured ? 'backend snapshot' : 'not published',
     },
     {
-      state: data.loops.length ? 'ok' : 'warn',
+      state: data.loopPlanRows.length ? 'ok' : (data.loops.length ? 'ok' : 'warn'),
       label: 'Loops',
-      value: String(data.loops.length),
-      detail: 'templates',
+      value: String(data.loopPlanRows.length || data.loops.length),
+      detail: data.loopPlanRows.length ? 'backend audited' : 'templates',
     },
     {
       state: activeTasks.length ? 'ok' : 'loading',
@@ -8611,6 +11013,12 @@ function automationMapData(snapshot) {
       label: 'Runs',
       value: failedRuns.length ? `${failedRuns.length} failed` : (policyBlockedRuns.length ? `${policyBlockedRuns.length} blocked` : String(activeRuns.length || runs.length)),
       detail: policyBlockedRuns.length ? 'policy review' : (activeRuns.length ? 'active' : 'recent'),
+    },
+    {
+      state: Number(data.automationSummary.critical_automation_alert_count || data.approvalSummary.critical_approval_alert_count || 0) || alertRows.some(row => row.state === 'error') ? 'error' : (alertRows.length ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.automationSummary.automation_alert_count || 0) || Number(data.approvalSummary.approval_alert_count || 0) + alertRows.length),
+      detail: 'approval and automation queues',
     },
   ];
   return {
@@ -8632,6 +11040,7 @@ function automationMapData(snapshot) {
     recentTaskRows,
     runRows,
     webhookRows,
+    alertRows,
     stats,
   };
 }
@@ -8644,11 +11053,26 @@ function automationMapText(snapshot) {
     '',
     ...data.stats.map(item => `${item.label}: ${item.value} - ${item.detail}`),
     '',
+    'Backend automation operations:',
+    ...(data.automationPlanRows.length ? data.automationPlanRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend automation operations plan visible']),
+    '',
+    'Backend automation request routes:',
+    ...(data.automationPlanEntryRows.length ? data.automationPlanEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend automation request route proof visible']),
+    '',
+    'Automation activity handoffs:',
+    ...(data.automationActivityHandoffRows.length ? data.automationActivityHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No automation activity handoffs visible']),
+    '',
     'Workflow commands:',
     ...(data.workflowRows.length ? data.workflowRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No workflow commands visible']),
     '',
     'Backend workflow catalog:',
     ...(data.backendWorkflowRows.length ? data.backendWorkflowRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend workflow catalog visible']),
+    '',
+    'Loop alert queue:',
+    ...(data.loopAlertRows.length ? data.loopAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend Agent Loop alerts visible']),
+    '',
+    'Automation alert queue:',
+    ...(data.alertRows.length ? data.alertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No automation alerts visible']),
     '',
     'Agent loops:',
     ...(data.loopRows.length ? data.loopRows.map(row => `- ${row.title}: ${row.detail}`) : ['- No agent loop templates visible']),
@@ -8681,6 +11105,18 @@ function automationHandoffReportData(snapshot) {
     ? `${plural(data.askAutomation.length, 'automation command')} asks before execution`
     : 'Automation commands can route without an ask gate under current trust policy';
   const summaryRows = [
+    {
+      state: source.operatorAutomationPlan?.ok
+        ? (Number(data.automationSummary.critical_automation_alert_count || 0) ? 'error' : (Number(data.automationSummary.automation_alert_count || 0) ? 'warn' : 'ok'))
+        : 'warn',
+      badge: 'auto',
+      title: 'Backend automation operations',
+      detail: source.operatorAutomationPlan?.ok
+        ? `${plural(Number(data.automationSummary.automation_command_count || 0), 'automation command')}; ${plural(Number(data.automationSummary.route_match_ready_count || 0), 'ready route')}; ${plural(Number(data.automationSummary.failure_count || 0), 'failure')}; no automation started`
+        : readError(source, 'operatorAutomationPlan'),
+      action: 'open-automation-map',
+      actionLabel: 'Map',
+    },
     {
       state: data.workflowCommands.length ? 'ok' : 'warn',
       badge: 'flow',
@@ -8745,6 +11181,8 @@ function automationHandoffReportData(snapshot) {
     },
   ];
   const workflowRows = [
+    ...data.automationPlanRows.slice(0, 6),
+    ...data.automationPlanRouteRows.slice(0, 6),
     ...data.backendWorkflowRows.slice(0, 6),
     ...data.workflowRows.slice(0, 6),
     ...data.loopRows.slice(0, 4),
@@ -9051,6 +11489,10 @@ function ensureAutomationMap() {
     if (!actionBtn || !modal.contains(actionBtn)) return;
     event.preventDefault();
     const commandId = actionBtn.dataset.automationMapAction || actionBtn.dataset.briefAction;
+    if (handleDashboardInternalAction(commandId)) {
+      closeAutomationMap();
+      return;
+    }
     closeAutomationMap();
     operatorCommands.executeCommand(commandId, { source: 'automation-map' })
       .then(refreshAfterCommand)
@@ -9086,12 +11528,32 @@ function renderAutomationMap(snapshot) {
       `).join('')}
     </div>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend automation operations</div>
+      ${briefingList(data.automationPlanRows, 'No backend automation operations plan visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend automation request routes</div>
+      ${briefingList(data.automationPlanEntryRows, 'No backend automation request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend automation workflow routes</div>
+      ${briefingList(data.automationPlanRouteRows, 'No backend automation workflow route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Automation activity handoffs</div>
+      ${briefingList(data.automationActivityHandoffRows, 'No automation activity handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Workflow commands</div>
       ${briefingList(data.workflowRows.slice(0, 8), 'No workflow commands visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend workflow catalog</div>
       ${briefingList(data.backendWorkflowRows.slice(0, 8), 'No backend workflow catalog visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Automation alert queue</div>
+      ${briefingList(data.alertRows, 'No automation alerts visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Agent loop templates</div>
@@ -9217,8 +11679,52 @@ function renderAutomationPreflight(snapshot) {
       `).join('')}
     </div>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend automation operations</div>
+      ${briefingList(data.automationPlanRows, 'No backend automation operations plan visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend automation request routes</div>
+      ${briefingList(data.automationPlanEntryRows, 'No backend automation request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend automation activity</div>
+      ${briefingList(data.automationPlanActivityRows, 'No backend automation activity proof visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Automation checks</div>
       ${briefingList(data.rows, 'Automation status unavailable')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Automation alert queue</div>
+      ${briefingList(data.automationAlertRows, 'No backend automation alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Automation request route proof</div>
+      ${briefingList(data.autonomyEntryRows, 'No automation request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Autonomy handoffs</div>
+      ${briefingList(data.autonomyHandoffRows, 'No autonomy handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Approval request route proof</div>
+      ${briefingList(data.approvalEntryRows, 'No approval request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Approval decision checkpoints</div>
+      ${briefingList(data.approvalCheckpointRows, 'No approval decision checkpoints visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Approval handoffs</div>
+      ${briefingList(data.approvalHandoffRows, 'No approval handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Loop alert queue</div>
+      ${briefingList(data.loopAlertRows, 'No backend Agent Loop alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Agent Loop request route proof</div>
+      ${briefingList(data.loopEntryRows, 'No Agent Loop request route proof visible')}
     </section>
     <div class="cc-briefing-empty">
       Agent loops are local templates. Running loops, tasks, webhooks, shell actions, and network-capable workflows still follow Cleverly trust controls and Offline Control policy.
@@ -9307,6 +11813,63 @@ function voiceStatusData(snapshot) {
   const voiceActivity = operatorCommands.readActivity?.(20)
     .filter(item => item.command_id === 'start-voice-command' || item.command_id === 'open-voice-preflight' || /voice|speech|microphone|listen|stt|tts/i.test(`${item.title || ''} ${item.detail || ''}`))
     .slice(0, 3) || [];
+  const entryRows = voicePlanOk ? asArray(voicePlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'loading',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || `${row.entry || 'voice'} route`,
+    detail: [
+      row.detail || 'voice request route proof',
+      `command=${row.command_id || 'open-voice-preflight'}`,
+      `permission=${row.requires_permission === true ? 'required' : 'not required'}`,
+      `mic=${row.starts_microphone ? 'starts' : 'plan-only'}`,
+      `speech=${row.speaks_audio ? 'speaks' : 'silent'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-voice-preflight',
+    actionLabel: row.actionLabel || 'Open',
+    entry: row.entry || '',
+    commandId: row.command_id || '',
+    requiresPermission: row.requires_permission === true,
+    executes: row.executes === true,
+    startsMicrophone: row.starts_microphone === true,
+    speaksAudio: row.speaks_audio === true,
+    usesNetwork: row.uses_network === true,
+  })) : [];
+  const alertRows = voicePlanOk ? asArray(voicePlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Voice alert',
+    detail: [
+      row.detail || 'voice readiness alert',
+      `approval=${row.requires_approval === true ? 'required' : 'not required'}`,
+      `mic=${row.starts_microphone ? 'starts' : 'plan-only'}`,
+      `audio=${row.records_audio ? 'records' : 'not recorded'}`,
+      `speech=${row.speaks_audio ? 'speaks' : 'silent'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-voice-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
+  const handoffRows = voicePlanOk ? asArray(voicePlan.handoff_rows).slice(0, 8).map(row => ({
+    state: row.state || 'loading',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Voice handoff',
+    detail: [
+      row.detail || 'voice transcript handoff evidence',
+      `approval=${row.requires_approval === true ? 'required' : 'not required'}`,
+      `permission=${row.requires_permission === true ? 'required' : 'not required'}`,
+      `mic=${row.starts_microphone ? 'starts' : 'plan-only'}`,
+      `transcript=${row.transcribes_audio ? 'transcribes' : 'metadata/text only'}`,
+      `speech=${row.speaks_audio ? 'speaks' : 'silent'}`,
+      `network=${row.uses_network ? 'yes' : (row.network_after_approval ? 'after approval' : 'no')}`,
+    ].join('; '),
+    action: row.action || 'open-voice-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    requiresPermission: row.requires_permission === true,
+    usesNetwork: row.uses_network === true,
+  })) : [];
   const backendRows = [
     voicePlanOk ? {
       state: stateFromStatus(voicePlanSummary.state || 'ok'),
@@ -9470,6 +12033,9 @@ function voiceStatusData(snapshot) {
     voicePlan,
     voicePlanSummary,
     voicePlanOk,
+    entryRows,
+    alertRows,
+    handoffRows,
     backendRows,
     rows,
   };
@@ -9508,6 +12074,24 @@ function voicePreflightStats(snapshot) {
       value: data.voicePlanOk ? 'Read-only' : 'Missing',
       detail: data.voicePlanOk ? 'backend evidence' : 'backend unavailable',
     },
+    {
+      state: data.voicePlanOk ? (Number(data.voicePlanSummary.entry_route_ready_count || 0) >= Number(data.voicePlanSummary.entry_route_count || data.entryRows.length || 0) ? 'ok' : 'warn') : 'warn',
+      label: 'Routes',
+      value: data.voicePlanOk ? `${Number(data.voicePlanSummary.entry_route_ready_count || data.entryRows.filter(row => row.state === 'ok').length)}/${Number(data.voicePlanSummary.entry_route_count || data.entryRows.length)}` : 'Missing',
+      detail: 'request route proof',
+    },
+    {
+      state: data.voicePlanOk ? (Number(data.voicePlanSummary.critical_voice_alert_count || 0) ? 'error' : (Number(data.voicePlanSummary.voice_alert_count || data.alertRows.length || 0) ? 'warn' : 'ok')) : 'warn',
+      label: 'Alerts',
+      value: data.voicePlanOk ? `${Number(data.voicePlanSummary.voice_alert_count || data.alertRows.length || 0)}` : 'Missing',
+      detail: 'permission gates',
+    },
+    {
+      state: data.voicePlanOk ? (Number(data.voicePlanSummary.handoff_ready_count || 0) >= Number(data.voicePlanSummary.handoff_count || data.handoffRows.length || 0) ? 'ok' : 'warn') : 'warn',
+      label: 'Handoffs',
+      value: data.voicePlanOk ? `${Number(data.voicePlanSummary.handoff_ready_count || data.handoffRows.filter(row => row.state === 'ok').length)}/${Number(data.voicePlanSummary.handoff_count || data.handoffRows.length)}` : 'Missing',
+      detail: 'transcript path',
+    },
   ];
 }
 
@@ -9525,6 +12109,15 @@ function voicePreflightText(snapshot) {
     '',
     'Backend plan:',
     ...data.backendRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Voice alert queue:',
+    ...(data.alertRows.length ? data.alertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend voice alerts visible']),
+    '',
+    'Voice transcript handoffs:',
+    ...(data.handoffRows.length ? data.handoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No voice transcript handoffs visible']),
+    '',
+    'Request route proof:',
+    ...data.entryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
   ];
   return lines.join('\n');
 }
@@ -9605,6 +12198,18 @@ function renderVoicePreflight(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Voice checks</div>
       ${briefingList(data.rows, 'Voice status unavailable')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Request route proof</div>
+      ${briefingList(data.entryRows, 'No voice request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Voice alert queue</div>
+      ${briefingList(data.alertRows, 'No backend voice alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Voice transcript handoffs</div>
+      ${briefingList(data.handoffRows, 'No voice transcript handoffs visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend voice plan</div>
@@ -9695,6 +12300,36 @@ function machineStatusData(snapshot) {
     title: row.title || 'Runtime resource guard',
     detail: row.detail || '',
   }));
+  const runtimeAlertRows = asArray(runtimePlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Runtime alert',
+    detail: row.detail || 'backend runtime alert',
+    action: row.action || 'open-machine-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
+  const runtimeEntryRows = asArray(runtimePlan, ['entry_rows', 'entryRows']).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'entry',
+    title: row.title || row.id || 'Runtime request route',
+    detail: row.detail || 'backend runtime request route evidence',
+    action: row.action || row.command_id || 'open-machine-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  }));
+  const sealedRuntimeRows = asArray(runtimePlan, ['sealed_runtime_rows', 'sealedRuntimeRows']).slice(0, 12).map(row => ({
+    state: row.state || 'loading',
+    badge: row.badge || row.kind || 'seal',
+    title: row.title || row.id || 'Sealed runtime item',
+    detail: [
+      row.detail || 'Backend sealed runtime evidence',
+      row.mount ? `mount=${row.mount}` : '',
+      row.kind ? `kind=${row.kind}` : '',
+      row.network_capable || row.networkCapable ? 'network-capable' : 'local-only',
+    ].filter(Boolean).join('; '),
+    action: row.action || (row.kind === 'volume' ? 'open-local-data-map' : 'open-local-services-map'),
+    actionLabel: row.actionLabel || row.action_label || (row.kind === 'volume' ? 'Data' : 'Services'),
+  }));
   const rows = [
     {
       state: source.authStatus?.ok ? (canUseBash ? 'ok' : 'warn') : 'warn',
@@ -9759,7 +12394,7 @@ function machineStatusData(snapshot) {
       badge: 'res',
       title: 'Backend runtime resource plan',
       detail: source.operatorRuntimePlan?.ok
-        ? `${plural(Number(runtimeSummary.existing_root_count || 0), 'visible root')}; ${plural(Number(runtimeSummary.low_space_root_count || 0), 'low-space root')}; shell blocked`
+        ? `${plural(Number(runtimeSummary.existing_root_count || 0), 'visible root')}; ${plural(Number(runtimeSummary.low_space_root_count || 0), 'low-space root')}; ${plural(Number(runtimeSummary.runtime_alert_count || 0), 'alert')}; shell blocked`
         : readError(source, 'operatorRuntimePlan'),
       action: 'open-machine-preflight',
       actionLabel: 'Resources',
@@ -9828,6 +12463,9 @@ function machineStatusData(snapshot) {
     runtimeSummary,
     runtimeRows,
     runtimeGuardRows,
+    runtimeAlertRows,
+    runtimeEntryRows,
+    sealedRuntimeRows,
     shellActivity,
     rows,
   };
@@ -9835,6 +12473,10 @@ function machineStatusData(snapshot) {
 
 function machinePreflightStats(snapshot) {
   const data = machineStatusData(snapshot);
+  const routeCount = Number(data.runtimeSummary.entry_route_count || data.runtimeEntryRows.length || 0);
+  const routeReadyCount = Number(data.runtimeSummary.entry_route_ready_count || data.runtimeEntryRows.filter(row => row.state === 'ok').length || 0);
+  const sealedCount = Number(data.runtimeSummary.sealed_runtime_count || data.sealedRuntimeRows.length || 0);
+  const sealedReadyCount = Number(data.runtimeSummary.sealed_runtime_ready_count || data.sealedRuntimeRows.filter(row => row.state === 'ok').length || 0);
   return [
     {
       state: data.runtimePlan?.mode ? stateFromStatus(data.runtimeSummary.state || 'ok') : 'warn',
@@ -9866,6 +12508,24 @@ function machinePreflightStats(snapshot) {
       value: data.repairMode === 'ask' ? 'Ask' : 'Auto',
       detail: 'container fixes',
     },
+    {
+      state: Number(data.runtimeSummary.critical_runtime_alert_count || 0) ? 'error' : (Number(data.runtimeSummary.runtime_alert_count || data.runtimeAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.runtimeSummary.runtime_alert_count || data.runtimeAlertRows.length || 0)),
+      detail: 'runtime queue',
+    },
+    {
+      state: routeCount && routeReadyCount >= routeCount ? 'ok' : (routeCount ? 'warn' : 'loading'),
+      label: 'Routes',
+      value: routeCount ? `${routeReadyCount}/${routeCount}` : '0',
+      detail: 'entry paths',
+    },
+    {
+      state: sealedCount && sealedReadyCount >= sealedCount ? 'ok' : (sealedCount ? 'warn' : 'loading'),
+      label: 'Sealed',
+      value: sealedCount ? `${sealedReadyCount}/${sealedCount}` : '0',
+      detail: `${Number(data.runtimeSummary.sealed_volume_count || 0)} volumes / ${Number(data.runtimeSummary.support_service_count || 0)} services`,
+    },
   ];
 }
 
@@ -9883,6 +12543,19 @@ function machinePreflightText(snapshot) {
     '',
     'Runtime resources:',
     ...(data.runtimeRows.length ? data.runtimeRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- Backend runtime resource plan unavailable']),
+    '',
+    'Sealed runtime matrix:',
+    ...(data.sealedRuntimeRows.length ? data.sealedRuntimeRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No sealed runtime matrix visible']),
+    ...(data.runtimeAlertRows.length ? [
+      '',
+      'Runtime alert queue:',
+      ...data.runtimeAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.runtimeEntryRows.length ? [
+      '',
+      'Runtime request routes:',
+      ...data.runtimeEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
     ...(data.runtimeGuardRows.length ? [
       '',
       'Runtime guards:',
@@ -9971,6 +12644,18 @@ function renderMachinePreflight(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Runtime resources</div>
       ${briefingList(data.runtimeRows, 'Backend runtime resource plan unavailable')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Sealed runtime matrix</div>
+      ${briefingList(data.sealedRuntimeRows, 'No sealed runtime matrix visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Runtime alert queue</div>
+      ${briefingList(data.runtimeAlertRows, 'No backend runtime alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Runtime request routes</div>
+      ${briefingList(data.runtimeEntryRows, 'No Runtime request route proof visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Runtime guards</div>
@@ -10522,6 +13207,99 @@ function backupVerifyPlanData(snapshot) {
     actionLabel: row.actionLabel || 'Open',
   }));
   const sequenceRows = backendOk && backendSequenceDisplayRows.length ? backendSequenceDisplayRows : frontendSequenceRows;
+  const frontendEntryRows = [
+    {
+      state: backup.uncoveredTotal ? 'warn' : 'ok',
+      badge: 'dash',
+      title: 'Command Center dashboard',
+      detail: backup.uncoveredTotal
+        ? 'Backup Verification Plan opens first and highlights full-snapshot coverage gaps before export'
+        : 'Backup Verification Plan can show complete snapshot coverage before owner-approved export',
+      action: 'prepare-backup',
+      actionLabel: 'Plan',
+      requiresApproval: true,
+    },
+    {
+      state: 'ok',
+      badge: 'text',
+      title: 'Typed operator command',
+      detail: 'The phrase "Prepare a backup and verify it" opens this read-only plan before any export or restore action',
+      action: 'prepare-backup',
+      actionLabel: 'Plan',
+      requiresApproval: true,
+    },
+    {
+      state: 'ok',
+      badge: 'cmd',
+      title: 'Global command palette',
+      detail: 'The palette exposes Prepare Backup as an approval-gated safety route and separates it from the export request',
+      action: 'open-command-palette',
+      actionLabel: 'Palette',
+      requiresApproval: true,
+    },
+    {
+      state: 'ok',
+      badge: 'voice',
+      title: 'Voice command mode',
+      detail: 'Voice routing can land on the same Backup Verification Plan without reading passwords, exporting files, or restoring data',
+      action: 'open-voice-preflight',
+      actionLabel: 'Voice',
+      requiresApproval: true,
+    },
+    {
+      state: backup.backupAudit.length && !backup.uncoveredTotal ? 'ok' : 'warn',
+      badge: 'flow',
+      title: 'Automation workflow handoff',
+      detail: backup.backupAudit.length
+        ? 'Workflow handoff can include backup audit evidence, restore-drill checks, and snapshot verification criteria'
+        : 'Workflow handoff stays in review mode until export, restore drill, and snapshot verification evidence are recorded',
+      action: 'open-automation-map',
+      actionLabel: 'Workflow',
+      requiresApproval: true,
+    },
+  ];
+  const backendEntryRows = asArray(backendPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Backup request route proof',
+    detail: row.detail || 'prepare-backup request route evidence',
+    action: row.action || 'prepare-backup',
+    actionLabel: row.actionLabel || row.action_label || 'Plan',
+    requiresApproval: row.requires_approval === true,
+  }));
+  const entryRows = backendOk && backendEntryRows.length ? backendEntryRows : frontendEntryRows;
+  const backupHandoffRows = backendOk ? asArray(backendPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Backup handoff',
+    detail: [
+      row.detail || 'backup handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/backup-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'request-backup-export'}`,
+      `creates=${row.creates_backup === true || row.createsBackup === true ? 'yes' : 'no'}`,
+      `verifies=${row.verifies_backup === true || row.verifiesBackup === true ? 'yes' : 'no'}`,
+      `restore=${row.restores_data === true || row.restoresData === true ? 'yes' : 'no'}`,
+      `shell=${row.runs_shell === true || row.runsShell === true ? 'yes' : 'no'}`,
+      `network=${row.uses_network === true || row.usesNetwork === true ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-backup-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Backup',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    createsBackup: row.creates_backup === true || row.createsBackup === true,
+    verifiesBackup: row.verifies_backup === true || row.verifiesBackup === true,
+    restoresData: row.restores_data === true || row.restoresData === true,
+    readsBackup: row.reads_backup === true || row.readsBackup === true,
+    readsPassword: row.reads_password === true || row.readsPassword === true,
+    writesFiles: row.writes_files === true || row.writesFiles === true,
+    movesFiles: row.moves_files === true || row.movesFiles === true,
+    deletesFiles: row.deletes_files === true || row.deletesFiles === true,
+    uploadsBackup: row.uploads_backup === true || row.uploadsBackup === true,
+    writesActivity: row.writes_activity === true || row.writesActivity === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    gatedOperation: row.gated_operation || row.gatedOperation || {},
+    backendProof: true,
+  })) : [];
   const frontendGuardRows = [
     {
       state: 'ok',
@@ -10599,6 +13377,15 @@ function backupVerifyPlanData(snapshot) {
     actionLabel: row.actionLabel || 'Activity',
   }));
   const evidenceRows = backendOk && backendEvidenceDisplayRows.length ? backendEvidenceDisplayRows : frontendEvidenceRows;
+  const backupAlertRows = asArray(backendPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Backup alert',
+    detail: row.detail || '',
+    action: row.action || 'open-backup-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Backup',
+    requiresApproval: row.requires_approval === true,
+  }));
   const backendGuardRows = [
     ...asArray(backendPlan.host_commands).slice(0, 3).map(command => ({
       state: command.requires_approval ? 'warn' : 'ok',
@@ -10664,8 +13451,11 @@ function backupVerifyPlanData(snapshot) {
     protectedRows: backendOk && backendProtectedRows.length ? backendProtectedRows : protectedRows,
     uncoveredRows: backendOk && backendSnapshotRows.length ? backendSnapshotRows : uncoveredRows,
     sequenceRows,
+    entryRows,
+    backupHandoffRows,
     guardRows,
     evidenceRows,
+    backupAlertRows,
     backendRows,
     backendPlan,
   };
@@ -10678,6 +13468,10 @@ function backupVerifyPlanStats(snapshot) {
   const coveredValue = backendHasCounts ? Number(backendSummary.encrypted_export_sections) || 0 : data.backup.protectedTotal;
   const snapshotValue = backendHasCounts ? Number(backendSummary.missing_snapshot_items) || 0 : data.backup.uncoveredTotal;
   const auditValue = backendHasCounts ? Number(backendSummary.audit_count) || 0 : data.backup.backupAudit.length;
+  const entryRouteCount = backendHasCounts ? Number(backendSummary.entry_route_count) || data.entryRows.length : data.entryRows.length;
+  const entryRouteReadyCount = backendHasCounts ? Number(backendSummary.entry_route_ready_count) || 0 : data.entryRows.filter(row => row.state === 'ok').length;
+  const handoffCount = backendHasCounts ? Number(backendSummary.handoff_count) || data.backupHandoffRows.length : data.backupHandoffRows.length;
+  const handoffReadyCount = backendHasCounts ? Number(backendSummary.handoff_ready_count) || 0 : data.backupHandoffRows.filter(row => row.state === 'ok').length;
   return [
     {
       state: coveredValue ? 'ok' : 'loading',
@@ -10696,6 +13490,24 @@ function backupVerifyPlanStats(snapshot) {
       label: 'Audit',
       value: String(auditValue),
       detail: 'backup events',
+    },
+    {
+      state: entryRouteReadyCount >= entryRouteCount && entryRouteCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: entryRouteCount ? `${entryRouteReadyCount}/${entryRouteCount}` : '0',
+      detail: 'request proof',
+    },
+    {
+      state: handoffCount && handoffReadyCount >= handoffCount ? 'ok' : (handoffCount ? 'warn' : 'loading'),
+      label: 'Backup Handoffs',
+      value: handoffCount ? `${handoffReadyCount}/${handoffCount}` : '0',
+      detail: 'handoff gates',
+    },
+    {
+      state: Number(backendSummary.critical_backup_alert_count || 0) ? 'error' : (Number(backendSummary.backup_alert_count || 0) ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(backendSummary.backup_alert_count || data.backupAlertRows.length || 0)),
+      detail: `${plural(Number(backendSummary.critical_backup_alert_count || 0), 'critical')}`,
     },
     {
       state: data.exportMode === 'ask' ? 'ok' : 'warn',
@@ -10720,6 +13532,11 @@ function backupVerifyPlanText(snapshot) {
     'Backend backup evidence:',
     ...data.backendRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     '',
+    'Backup alert queue:',
+    ...(data.backupAlertRows.length
+      ? data.backupAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- [ok] No backup alerts returned']),
+    '',
     'Verification packet:',
     ...(data.verificationPacket.summaryRows.length ? data.verificationPacket.summaryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend verification packet available']),
     ...(data.verificationPacket.artifactRows.length ? data.verificationPacket.artifactRows.map(row => `- artifact [${row.state}] ${row.title}: ${row.detail}`) : []),
@@ -10730,6 +13547,14 @@ function backupVerifyPlanText(snapshot) {
     '',
     'Encrypted app export coverage:',
     ...data.protectedRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Request route proof:',
+    ...data.entryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`),
+    '',
+    'Backup handoffs:',
+    ...(data.backupHandoffRows.length
+      ? data.backupHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No backup handoffs visible']),
     '',
     'Full snapshot coverage:',
     ...data.uncoveredRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -10825,6 +13650,10 @@ function renderBackupVerifyPlan(snapshot) {
       ${briefingList(data.backendRows, 'Backend backup evidence is not available')}
     </section>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backup alert queue</div>
+      ${briefingList(data.backupAlertRows, 'No backup alerts returned')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Verification packet</div>
       ${briefingList(data.verificationPacket.summaryRows, 'No backend verification packet available')}
       ${briefingList(data.verificationPacket.artifactRows, 'No expected artifacts listed')}
@@ -10837,6 +13666,14 @@ function renderBackupVerifyPlan(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Encrypted app export coverage</div>
       ${briefingList(data.protectedRows, 'No encrypted export coverage visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Request route proof</div>
+      ${briefingList(data.entryRows, 'No backup request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backup handoffs</div>
+      ${briefingList(data.backupHandoffRows, 'No backup handoffs visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Full snapshot coverage</div>
@@ -10909,6 +13746,77 @@ function localDataMapData(snapshot) {
   const backup = backupStatusData(source);
   const fileOpsPlan = readData(source, 'operatorFileOpsPlan') || {};
   const fileOpsSummary = fileOpsPlan.summary || {};
+  const credentialsPlan = readData(source, 'operatorCredentialsPlan') || {};
+  const credentialsSummary = credentialsPlan.summary || {};
+  const dataPlan = readData(source, 'operatorDataPlan') || {};
+  const dataSummary = dataPlan.summary || {};
+  const dataPlanRows = asArray(dataPlan.scope_rows).slice(0, 12).map(row => ({
+    state: row.state || (row.exists ? 'ok' : 'warn'),
+    badge: row.badge || row.category || 'data',
+    title: row.title || row.id || 'Local data scope',
+    detail: row.detail || 'Backend local data map evidence',
+    action: row.action || 'open-local-data-map',
+    actionLabel: row.actionLabel || row.action_label || 'Data',
+  }));
+  const dataAlertRows = asArray(dataPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Local data alert',
+    detail: row.detail || 'Backend local data boundary alert',
+    action: row.action || 'open-local-data-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  }));
+  const dataEntryRows = asArray(dataPlan, ['entry_rows', 'entryRows']).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Local Data Map request route proof',
+    detail: [
+      row.detail || 'open-local-data-map data boundary route evidence',
+      `command=${row.command_id || 'open-local-data-map'}`,
+      `backup=${row.backup_command_id || 'open-backup-preflight'}`,
+      `trust=${row.trust_command_id || 'open-trust-controls'}`,
+      `offline=${row.offline_command_id || 'open-offline'}`,
+      `data=${row.data_api || '/api/operator/data-plan'}`,
+      `writes=${row.writes_files ? 'yes' : 'no'}`,
+      `deletes=${row.deletes_files ? 'yes' : 'no'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-local-data-map',
+    actionLabel: row.actionLabel || row.action_label || 'Data',
+    requiresApproval: row.requires_approval === true,
+    readsFileContents: row.reads_file_contents === true,
+    readsSecretValues: row.reads_secret_values === true,
+    writesFiles: row.writes_files === true,
+    deletesFiles: row.deletes_files === true,
+    exportsData: row.exports_data === true,
+    restoresData: row.restores_data === true,
+    runsShell: row.runs_shell === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const dataHandoffRows = asArray(dataPlan.handoff_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Local data handoff',
+    detail: [
+      row.detail || 'local data handoff evidence',
+      `target=${row.target_api || row.targetApi || 'local data map'}`,
+      `approval=${row.requires_approval === true || row.requiresApproval === true ? 'required' : 'not required'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : (row.network_after_approval || row.networkAfterApproval ? 'after approval' : 'no')}`,
+    ].join('; '),
+    action: row.action || 'open-local-data-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    readsFileContents: row.reads_file_contents === true || row.readsFileContents === true,
+    readsSecretValues: row.reads_secret_values === true || row.readsSecretValues === true,
+    writesFiles: row.writes_files === true || row.writesFiles === true,
+    deletesFiles: row.deletes_files === true || row.deletesFiles === true,
+    exportsData: row.exports_data === true || row.exportsData === true,
+    restoresData: row.restores_data === true || row.restoresData === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    networkAfterApproval: row.network_after_approval === true || row.networkAfterApproval === true,
+  }));
   const fileOpsRows = asArray(fileOpsPlan.operation_rows).length
     ? asArray(fileOpsPlan.operation_rows).slice(0, 8).map(row => ({
         state: row.state || 'loading',
@@ -10939,6 +13847,127 @@ function localDataMapData(snapshot) {
     badge: row.badge || 'gate',
     title: row.title || 'File operation gate',
     detail: row.detail || '',
+  }));
+  const fileAlertRows = asArray(fileOpsPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || 'File safety alert',
+    detail: row.detail || '',
+    action: row.action || 'open-local-data-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
+  const fileOpsEntryRows = asArray(fileOpsPlan, ['entry_rows', 'entryRows']).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'File operation request route proof',
+    detail: [
+      row.detail || 'open-local-data-map file operation route evidence',
+      `command=${row.command_id || 'open-local-data-map'}`,
+      `trust=${row.trust_command_id || 'open-trust-controls'}`,
+      `backup=${row.backup_command_id || 'open-backup-preflight'}`,
+      `activity=${row.activity_command_id || 'open-activity-preflight'}`,
+      `fileOps=${row.file_ops_api || '/api/operator/file-ops-plan'}`,
+      `writes=${row.writes_files ? 'yes' : 'no'}`,
+      `deletes=${row.deletes_files ? 'yes' : 'no'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-local-data-map',
+    actionLabel: row.actionLabel || row.action_label || 'Files',
+    requiresApproval: row.requires_approval === true,
+    readsFileContents: row.reads_file_contents === true,
+    writesFiles: row.writes_files === true,
+    copiesFiles: row.copies_files === true,
+    movesFiles: row.moves_files === true,
+    deletesFiles: row.deletes_files === true,
+    uploadsFiles: row.uploads_files === true,
+    importsFiles: row.imports_files === true,
+    indexesFiles: row.indexes_files === true,
+    exportsFiles: row.exports_files === true,
+    restoresFiles: row.restores_files === true,
+    runsShell: row.runs_shell === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const fileOpsHandoffRows = asArray(fileOpsPlan.handoff_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'File operation handoff',
+    detail: [
+      row.detail || 'file operation handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/file-ops-plan'}`,
+      `approval=${row.requires_approval === true || row.requiresApproval === true ? 'required' : 'not required'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-local-data-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    readsFileContents: row.reads_file_contents === true || row.readsFileContents === true,
+    writesFiles: row.writes_files === true || row.writesFiles === true,
+    copiesFiles: row.copies_files === true || row.copiesFiles === true,
+    movesFiles: row.moves_files === true || row.movesFiles === true,
+    deletesFiles: row.deletes_files === true || row.deletesFiles === true,
+    uploadsFiles: row.uploads_files === true || row.uploadsFiles === true,
+    importsFiles: row.imports_files === true || row.importsFiles === true,
+    indexesFiles: row.indexes_files === true || row.indexesFiles === true,
+    exportsFiles: row.exports_files === true || row.exportsFiles === true,
+    restoresFiles: row.restores_files === true || row.restoresFiles === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+  }));
+  const credentialAlertRows = asArray(credentialsPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'key',
+    title: row.title || 'Credential posture alert',
+    detail: row.detail || '',
+    action: row.action || 'open-local-data-map',
+    actionLabel: row.actionLabel || row.action_label || 'Credentials',
+  }));
+  const credentialEntryRows = asArray(credentialsPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Credential request route proof',
+    detail: [
+      row.detail || 'open-local-data-map credential route evidence',
+      `command=${row.command_id || 'open-local-data-map'}`,
+      `trust=${row.trust_command_id || 'open-trust-controls'}`,
+      `offline=${row.offline_command_id || 'open-offline'}`,
+      `credentials=${row.credentials_api || '/api/operator/credentials-plan'}`,
+      `vault=${row.vault_api || '/api/vault/unlock'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-local-data-map',
+    actionLabel: row.actionLabel || row.action_label || 'Credentials',
+    requiresApproval: row.requires_approval === true,
+    readsSecrets: row.reads_secrets === true,
+    returnsSecretValues: row.returns_secret_values === true,
+    writesCredentials: row.writes_credentials === true,
+    changesSettings: row.changes_settings === true,
+    unlocksVault: row.unlocks_vault === true,
+    callsNetwork: row.calls_network === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const credentialHandoffRows = asArray(credentialsPlan.handoff_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'key',
+    title: row.title || row.id || 'Credential handoff',
+    detail: [
+      row.detail || 'credential posture handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/credentials-plan'}`,
+      `approval=${row.requires_approval === true || row.requiresApproval === true ? 'required' : 'not required'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : (row.network_after_approval || row.networkAfterApproval ? 'after approval' : 'no')}`,
+    ].join('; '),
+    action: row.action || 'open-local-data-map',
+    actionLabel: row.actionLabel || row.action_label || 'Credentials',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    readsSecrets: row.reads_secrets === true || row.readsSecrets === true,
+    returnsSecretValues: row.returns_secret_values === true || row.returnsSecretValues === true,
+    writesCredentials: row.writes_credentials === true || row.writesCredentials === true,
+    changesSettings: row.changes_settings === true || row.changesSettings === true,
+    unlocksVault: row.unlocks_vault === true || row.unlocksVault === true,
+    sendsEmail: row.sends_email === true || row.sendsEmail === true,
+    callsNetwork: row.calls_network === true || row.callsNetwork === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    networkAfterApproval: row.network_after_approval === true || row.networkAfterApproval === true,
   }));
   const codeWorkspaces = asArray(readData(source, 'workspaces'), ['workspaces', 'items']);
   const training = readData(source, 'training') || {};
@@ -11129,10 +14158,24 @@ function localDataMapData(snapshot) {
       actionLabel: 'Plan',
     },
     {
-      state: 'warn',
+      state: source.operatorDataPlan?.ok ? stateFromStatus(dataSummary.state || 'ok') : 'warn',
+      badge: 'map',
+      title: 'Backend Local Data Map plan',
+      detail: source.operatorDataPlan?.ok
+        ? `${plural(Number(dataSummary.visible_scope_count || 0), 'visible scope')}; ${plural(Number(dataSummary.data_alert_count || 0), 'data alert')}; writes blocked`
+        : readError(source, 'operatorDataPlan'),
+      action: 'open-local-data-map',
+      actionLabel: 'Plan',
+    },
+    {
+      state: source.operatorCredentialsPlan?.ok
+        ? (Number(credentialsSummary.critical_credential_alert_count || 0) ? 'error' : (Number(credentialsSummary.credential_alert_count || 0) ? 'warn' : 'ok'))
+        : 'warn',
       badge: 'key',
-      title: 'Sensitive local material',
-      detail: 'data/vault.json, data/.app_key, data/auth.json, /app/.ssh, and SearXNG generated secret should never be committed or synced by accident',
+      title: 'Credential posture',
+      detail: source.operatorCredentialsPlan?.ok
+        ? `${plural(Number(credentialsSummary.configured_secret_count || 0), 'configured secret signal')}; ${plural(Number(credentialsSummary.credential_alert_count || 0), 'credential alert')}; values masked`
+        : 'data/vault.json, data/.app_key, data/auth.json, /app/.ssh, and SearXNG generated secret should never be committed or synced by accident',
       action: 'open-trust-controls',
       actionLabel: 'Trust',
     },
@@ -11168,11 +14211,25 @@ function localDataMapData(snapshot) {
     work,
     library,
     backup,
+    dataPlan,
+    dataSummary,
     fileOpsPlan,
     fileOpsSummary,
+    credentialsPlan,
+    credentialsSummary,
+    dataPlanRows,
+    dataAlertRows,
+    dataEntryRows,
+    dataHandoffRows,
     fileOpsRows,
     fileOpsRootRows,
     fileOpsGuardRows,
+    fileAlertRows,
+    fileOpsEntryRows,
+    fileOpsHandoffRows,
+    credentialAlertRows,
+    credentialEntryRows,
+    credentialHandoffRows,
     codeWorkspaces,
     trainingJobs,
     localModels,
@@ -11191,12 +14248,84 @@ function localDataMapData(snapshot) {
 
 function localDataMapStats(snapshot) {
   const data = localDataMapData(snapshot || {});
+  const dataRouteCount = Number(data.dataSummary.entry_route_count || data.dataEntryRows.length || 0);
+  const dataRouteReady = Number(data.dataSummary.entry_route_ready_count || data.dataEntryRows.filter(row => row.state === 'ok').length || 0);
+  const dataHandoffCount = Number(data.dataSummary.handoff_count || data.dataHandoffRows.length || 0);
+  const dataHandoffReady = Number(data.dataSummary.handoff_ready_count || data.dataHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const fileRouteCount = Number(data.fileOpsSummary.entry_route_count || data.fileOpsEntryRows.length || 0);
+  const fileRouteReady = Number(data.fileOpsSummary.entry_route_ready_count || data.fileOpsEntryRows.filter(row => row.state === 'ok').length || 0);
+  const fileHandoffCount = Number(data.fileOpsSummary.handoff_count || data.fileOpsHandoffRows.length || 0);
+  const fileHandoffReady = Number(data.fileOpsSummary.handoff_ready_count || data.fileOpsHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const credentialRouteCount = Number(data.credentialsSummary.entry_route_count || data.credentialEntryRows.length || 0);
+  const credentialRouteReady = Number(data.credentialsSummary.entry_route_ready_count || data.credentialEntryRows.filter(row => row.state === 'ok').length || 0);
+  const credentialHandoffCount = Number(data.credentialsSummary.handoff_count || data.credentialHandoffRows.length || 0);
+  const credentialHandoffReady = Number(data.credentialsSummary.handoff_ready_count || data.credentialHandoffRows.filter(row => row.state === 'ok').length || 0);
   return [
+    {
+      state: data.dataPlan?.mode ? stateFromStatus(data.dataSummary.state || 'ok') : 'warn',
+      label: 'Data Plan',
+      value: data.dataPlan?.mode ? 'Ready' : 'Missing',
+      detail: data.dataPlan?.mode ? `${plural(Number(data.dataSummary.scope_count || 0), 'scope')}` : 'no backend plan',
+    },
+    {
+      state: Number(data.dataSummary.critical_data_alert_count || 0) ? 'error' : (Number(data.dataSummary.data_alert_count || data.dataAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Data Alerts',
+      value: String(Number(data.dataSummary.data_alert_count || data.dataAlertRows.length || 0)),
+      detail: 'local boundary',
+    },
+    {
+      state: dataRouteCount && dataRouteReady >= dataRouteCount ? 'ok' : 'warn',
+      label: 'Data Routes',
+      value: dataRouteCount ? `${dataRouteReady}/${dataRouteCount}` : '0',
+      detail: 'request proof',
+    },
+    {
+      state: dataHandoffCount && dataHandoffReady >= dataHandoffCount ? 'ok' : 'warn',
+      label: 'Handoffs',
+      value: dataHandoffCount ? `${dataHandoffReady}/${dataHandoffCount}` : '0',
+      detail: 'data review paths',
+    },
     {
       state: data.fileOpsPlan?.mode ? stateFromStatus(data.fileOpsSummary.state || 'ok') : 'warn',
       label: 'File Plan',
       value: data.fileOpsPlan?.mode ? 'Ready' : 'Missing',
       detail: data.fileOpsPlan?.mode ? 'backend gates' : 'no backend plan',
+    },
+    {
+      state: Number(data.fileOpsSummary.critical_file_alert_count || 0) ? 'error' : (Number(data.fileOpsSummary.file_alert_count || 0) ? 'warn' : 'ok'),
+      label: 'File Alerts',
+      value: String(Number(data.fileOpsSummary.file_alert_count || data.fileAlertRows.length || 0)),
+      detail: 'approval queue',
+    },
+    {
+      state: fileRouteCount && fileRouteReady >= fileRouteCount ? 'ok' : 'warn',
+      label: 'File Routes',
+      value: fileRouteCount ? `${fileRouteReady}/${fileRouteCount}` : '0',
+      detail: 'request proof',
+    },
+    {
+      state: fileHandoffCount && fileHandoffReady >= fileHandoffCount ? 'ok' : 'warn',
+      label: 'File Handoffs',
+      value: fileHandoffCount ? `${fileHandoffReady}/${fileHandoffCount}` : '0',
+      detail: 'file review paths',
+    },
+    {
+      state: Number(data.credentialsSummary.critical_credential_alert_count || 0) ? 'error' : (Number(data.credentialsSummary.credential_alert_count || data.credentialAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Credentials',
+      value: String(Number(data.credentialsSummary.credential_alert_count || data.credentialAlertRows.length || 0)),
+      detail: 'masked posture',
+    },
+    {
+      state: credentialRouteCount && credentialRouteReady >= credentialRouteCount ? 'ok' : 'warn',
+      label: 'Credential Routes',
+      value: credentialRouteCount ? `${credentialRouteReady}/${credentialRouteCount}` : '0',
+      detail: 'request proof',
+    },
+    {
+      state: credentialHandoffCount && credentialHandoffReady >= credentialHandoffCount ? 'ok' : 'warn',
+      label: 'Credential Handoffs',
+      value: credentialHandoffCount ? `${credentialHandoffReady}/${credentialHandoffCount}` : '0',
+      detail: 'sensitive review paths',
     },
     {
       state: data.sealed ? 'ok' : 'warn',
@@ -11234,6 +14363,20 @@ function localDataMapText(snapshot) {
     '',
     ...stats.map(item => `${item.label}: ${item.value} - ${item.detail}`),
     '',
+    'Backend local data map plan:',
+    ...(data.dataPlanRows.length ? data.dataPlanRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- Backend Local Data Map plan unavailable']),
+    ...(data.dataAlertRows.length ? [
+      '',
+      'Local data alert queue:',
+      ...data.dataAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`),
+    ] : []),
+    '',
+    'Local Data Map request route proof:',
+    ...(data.dataEntryRows.length ? data.dataEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No Local Data Map request route proof visible']),
+    '',
+    'Local data handoffs:',
+    ...(data.dataHandoffRows.length ? data.dataHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No local data handoffs visible']),
+    '',
     'Sealed Docker volumes and service stores:',
     ...data.volumeRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     '',
@@ -11248,6 +14391,28 @@ function localDataMapText(snapshot) {
     '',
     'Backend file-ops plan:',
     ...data.fileOpsRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ...(data.fileAlertRows.length ? [
+      '',
+      'File alert queue:',
+      ...data.fileAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    '',
+    'File operation request routes:',
+    ...(data.fileOpsEntryRows.length ? data.fileOpsEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No file operation request route proof visible']),
+    '',
+    'File operation handoffs:',
+    ...(data.fileOpsHandoffRows.length ? data.fileOpsHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No file operation handoffs visible']),
+    ...(data.credentialAlertRows.length ? [
+      '',
+      'Credential alert queue:',
+      ...data.credentialAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    '',
+    'Credential request route proof:',
+    ...(data.credentialEntryRows.length ? data.credentialEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No credential request route proof visible']),
+    '',
+    'Credential handoffs:',
+    ...(data.credentialHandoffRows.length ? data.credentialHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No credential handoffs visible']),
     '',
     'Mapped file roots:',
     ...data.fileOpsRootRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -11337,6 +14502,22 @@ function renderLocalDataMap(snapshot) {
       `).join('')}
     </div>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend local data map plan</div>
+      ${briefingList(data.dataPlanRows, 'Backend Local Data Map plan unavailable')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Local data alert queue</div>
+      ${briefingList(data.dataAlertRows, 'No local data boundary alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Local Data Map request route proof</div>
+      ${briefingList(data.dataEntryRows, 'No Local Data Map request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Local data handoffs</div>
+      ${briefingList(data.dataHandoffRows, 'No local data handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Sealed Docker volumes and service stores</div>
       ${briefingList(data.volumeRows, 'No sealed Docker volume rows visible')}
     </section>
@@ -11355,6 +14536,30 @@ function renderLocalDataMap(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend file-ops plan</div>
       ${briefingList(data.fileOpsRows, 'Backend file operations plan unavailable')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">File alert queue</div>
+      ${briefingList(data.fileAlertRows, 'No file safety alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">File operation request routes</div>
+      ${briefingList(data.fileOpsEntryRows, 'No file operation request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">File operation handoffs</div>
+      ${briefingList(data.fileOpsHandoffRows, 'No file operation handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Credential alert queue</div>
+      ${briefingList(data.credentialAlertRows, 'No credential posture alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Credential request route proof</div>
+      ${briefingList(data.credentialEntryRows, 'No credential request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Credential handoffs</div>
+      ${briefingList(data.credentialHandoffRows, 'No credential handoffs visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Mapped file roots</div>
@@ -11428,6 +14633,66 @@ function memoryStatusData(snapshot) {
     .slice(0, 3) || [];
   const topMemory = latestMemories[0];
   const topNote = latestNotes[0];
+  const memoryAlertRows = asArray(memoryPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Memory alert',
+    detail: row.detail || 'backend memory alert',
+    action: row.action || 'open-memory-profile',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
+  const memoryEntryRows = asArray(memoryPlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || (row.ready ? 'ok' : 'warn'),
+    badge: row.badge || row.entry || 'entry',
+    title: row.title || row.id || 'Memory request route',
+    detail: row.detail || 'Backend memory request route evidence',
+    action: row.action || row.command_id || 'open-memory-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    ready: row.ready === true,
+    backendProof: true,
+  }));
+  const backendBucketRows = asArray(memoryPlan.buckets).map(bucket => {
+    const examples = asArray(bucket.examples)
+      .map(item => item.text || item.title || item.id || '')
+      .filter(Boolean)
+      .slice(0, 2);
+    const count = Number(bucket.count || 0);
+    return {
+      state: count ? 'ok' : 'warn',
+      badge: bucket.key || 'mem',
+      title: bucket.label || bucket.key || 'Memory bucket',
+      detail: count
+        ? `${plural(count, 'backend record')} classified${examples.length ? `; ${examples.join(' / ')}` : ''}`
+        : 'No backend-classified records for this memory profile area',
+      action: count ? 'open-memory-profile' : 'seed-memory-profile',
+      actionLabel: count ? 'Profile' : 'Seed',
+      backendProof: true,
+    };
+  });
+  const backendRecentMemoryRows = asArray(memoryPlan, ['recent_rows', 'recentRows']).slice(0, 8).map(row => ({
+    state: row.state || 'ok',
+    badge: row.badge || row.bucket || 'mem',
+    title: row.title || row.bucket || row.id || 'Recent memory',
+    detail: row.detail || 'Backend recent memory evidence',
+    action: row.action || 'open-memory-profile',
+    actionLabel: row.actionLabel || row.action_label || 'Profile',
+    bucket: row.bucket || '',
+    pinned: row.pinned === true,
+    backendProof: true,
+  }));
+  const backendModelChoiceRows = asArray(memoryPlan, ['model_choice_rows', 'modelChoiceRows']).slice(0, 8).map(row => ({
+    state: row.state || 'ok',
+    badge: row.badge || 'model',
+    title: row.title || row.id || 'Model choice memory',
+    detail: row.detail || 'Backend model choice memory evidence',
+    action: row.action || 'open-model-routing-map',
+    actionLabel: row.actionLabel || row.action_label || 'Models',
+    source: row.source || '',
+    setsPrimaryModel: row.sets_primary_model === true || row.setsPrimaryModel === true,
+    writesMemories: row.writes_memories === true || row.writesMemories === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
   const backendRows = [
     memoryPlanOk ? {
       state: stateFromStatus(memoryPlanSummary.state || 'ok'),
@@ -11513,7 +14778,7 @@ function memoryStatusData(snapshot) {
       badge: 'plan',
       title: memoryPlanOk ? 'Backend memory plan' : 'Backend memory plan unavailable',
       detail: memoryPlanOk
-        ? `plan-only; adds=${memoryPlanSummary.adds_memories ? 'yes' : 'no'}; imports=${memoryPlanSummary.imports_files ? 'yes' : 'no'}; deletes=${memoryPlanSummary.deletes_memories ? 'yes' : 'no'}; network=${memoryPlanSummary.uses_network ? 'yes' : 'no'}`
+        ? `plan-only; ${plural(Number(memoryPlanSummary.memory_alert_count || 0), 'alert')}; adds=${memoryPlanSummary.adds_memories ? 'yes' : 'no'}; imports=${memoryPlanSummary.imports_files ? 'yes' : 'no'}; deletes=${memoryPlanSummary.deletes_memories ? 'yes' : 'no'}; network=${memoryPlanSummary.uses_network ? 'yes' : 'no'}`
         : readError(source, 'operatorMemoryPlan'),
       action: 'open-memory-preflight',
       actionLabel: 'Plan',
@@ -11548,6 +14813,11 @@ function memoryStatusData(snapshot) {
     memoryPlan,
     memoryPlanSummary,
     memoryPlanOk,
+    memoryAlertRows,
+    memoryEntryRows,
+    backendBucketRows,
+    backendRecentMemoryRows,
+    backendModelChoiceRows,
     backendRows,
     rows,
   };
@@ -11558,6 +14828,8 @@ const MEMORY_PROFILE_BUCKETS = Object.freeze([
   { key: 'preferences', label: 'Preferences', badge: 'pref', empty: 'No preferences remembered' },
   { key: 'projects', label: 'Projects & Goals', badge: 'goal', empty: 'No projects or goals remembered' },
   { key: 'decisions', label: 'Decisions', badge: 'decide', empty: 'No decisions remembered' },
+  { key: 'model_choices', label: 'Model Choices', badge: 'model', empty: 'No model choices remembered' },
+  { key: 'recurring_tasks', label: 'Recurring Tasks', badge: 'task', empty: 'No recurring tasks remembered' },
   { key: 'workflows', label: 'Workflows', badge: 'flow', empty: 'No recurring workflows remembered' },
   { key: 'contacts', label: 'Contacts', badge: 'contact', empty: 'No contact facts remembered' },
   { key: 'tasks', label: 'Task Memories', badge: 'task', empty: 'No task memories remembered' },
@@ -11585,6 +14857,16 @@ const MEMORY_PROFILE_SEED_FIELDS = Object.freeze([
     category: 'decision',
     label: 'Decisions',
     placeholder: 'User chose llama3.2:3b as the primary Ollama model.',
+  },
+  {
+    category: 'model_choice',
+    label: 'Model Choices',
+    placeholder: 'User prefers llama3.2:3b for local daily summaries.\nUser uses qwen3-coder for code work.',
+  },
+  {
+    category: 'recurring_task',
+    label: 'Recurring Tasks',
+    placeholder: 'Every weekday morning, summarize tasks, calendar, model status, and alerts.',
   },
   {
     category: 'workflow',
@@ -11627,6 +14909,22 @@ const MEMORY_PROFILE_REQUIREMENTS = Object.freeze([
     seed: 'User chose llama3.2:3b as the primary Ollama model.',
   },
   {
+    key: 'model_choices',
+    label: 'Model Choices',
+    badge: 'model',
+    presentDetail: 'preferred local models and model routes can guide operator choices',
+    gapDetail: 'Add preferred local models, coding models, fallback models, and routing constraints',
+    seed: 'User prefers llama3.2:3b for local daily summaries.',
+  },
+  {
+    key: 'recurring_tasks',
+    label: 'Recurring Tasks',
+    badge: 'task',
+    presentDetail: 'recurring tasks can inform briefings, schedules, and automation suggestions',
+    gapDetail: 'Add recurring reviews, reminders, maintenance checks, and scheduled work patterns',
+    seed: 'Every weekday morning, summarize tasks, calendar, model status, and alerts.',
+  },
+  {
     key: 'workflows',
     label: 'Workflows',
     badge: 'flow',
@@ -11648,9 +14946,11 @@ function classifyMemoryRecord(item) {
   const category = memoryRecordCategory(item);
   const text = `${category} ${memoryRecordText(item)}`.toLowerCase();
   if (/\b(identity|personal|profile)\b/.test(category) || /\b(my name|call me|i am|i'm|i live|located in|based in)\b/.test(text)) return 'identity';
+  if (/\b(model|models|model_choice|model-choice|model choice|ollama|llm)\b/.test(category) || /\b(primary model|default model|preferred model|model choice|model route|ollama model|use .* model)\b/.test(text)) return 'model_choices';
   if (/\b(preference|preferences)\b/.test(category) || /\b(prefer|preference|favorite|favourite|like|dislike|default|use .* by default)\b/.test(text)) return 'preferences';
   if (/\b(project|goal|objective)\b/.test(category) || /\b(project|goal|objective|building|working on|roadmap)\b/.test(text)) return 'projects';
   if (/\b(decision|choice)\b/.test(category) || /\b(decided|decision|chose|chosen|going forward|use .* instead)\b/.test(text)) return 'decisions';
+  if (/\b(recurring_task|recurring-task|recurring task|schedule|scheduled|routine_task)\b/.test(category) || /\b(recurring task|scheduled task|daily task|weekly task|every day|every week|remind me every|follow up every)\b/.test(text)) return 'recurring_tasks';
   if (/\b(workflow|automation|recurring|routine)\b/.test(category) || /\b(workflow|automation|recurring|every day|every week|when i|always)\b/.test(text)) return 'workflows';
   if (/\b(contact|person)\b/.test(category) || /@|\b(phone|email|address|contact)\b/.test(text)) return 'contacts';
   if (/\b(task|todo|reminder)\b/.test(category) || /\b(task|todo|remind me|remember to|follow up|due|deadline)\b/.test(text)) return 'tasks';
@@ -11770,6 +15070,8 @@ function memoryIdentityRows(data = memoryProfileData(_lastSnapshot || {}), snaps
     { key: 'preferences', label: 'Preferences' },
     { key: 'projects', label: 'Projects' },
     { key: 'decisions', label: 'Decisions' },
+    { key: 'model_choices', label: 'Model Choices' },
+    { key: 'recurring_tasks', label: 'Recurring Tasks' },
     { key: 'workflows', label: 'Workflows' },
   ];
   const profileRows = profileKeys.map(item => {
@@ -11943,6 +15245,15 @@ function memoryProfileText(snapshot) {
     '',
     'Backend memory plan:',
     ...data.backendRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Memory alert queue:',
+    ...(data.memoryAlertRows.length ? data.memoryAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend memory alerts visible']),
+    '',
+    'Memory request routes:',
+    ...(data.memoryEntryRows.length ? data.memoryEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No Memory request route proof visible']),
+    '',
+    'Backend memory bucket coverage:',
+    ...(data.backendBucketRows.length ? data.backendBucketRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend memory bucket proof visible']),
     '',
     'Memory buckets:',
     ...data.profileRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -12124,7 +15435,7 @@ function renderMemoryProfileSeed(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Profile statements</div>
       <div class="cc-briefing-empty">
-        Add one durable local memory per line. Save only facts, preferences, decisions, and workflows that should help Cleverly operate your computer later.
+        Add one durable local memory per line. Save only facts, preferences, decisions, model choices, recurring tasks, and workflows that should help Cleverly operate your computer later.
       </div>
       ${MEMORY_PROFILE_SEED_FIELDS.map(field => `
         <label class="cc-briefing-row" style="display:block;">
@@ -12299,6 +15610,18 @@ function renderMemoryProfile(snapshot) {
       ${briefingList(data.backendRows, 'Backend memory plan unavailable')}
     </section>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Memory alert queue</div>
+      ${briefingList(data.memoryAlertRows, 'No backend memory alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Memory request routes</div>
+      ${briefingList(data.memoryEntryRows, 'No Memory request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend memory bucket coverage</div>
+      ${briefingList(data.backendBucketRows, 'No backend memory bucket proof visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Operator profile readiness</div>
       ${briefingList(data.coverage.rows, 'No operator profile requirements mapped yet')}
     </section>
@@ -12384,6 +15707,32 @@ function memoryPreflightStats(snapshot) {
       value: data.memoryPlanOk ? 'Read-only' : 'Missing',
       detail: data.memoryPlanOk ? 'backend evidence' : 'backend unavailable',
     },
+    {
+      state: Number(data.memoryPlanSummary.recent_memory_count || data.backendRecentMemoryRows.length || 0) ? 'ok' : 'loading',
+      label: 'Recent',
+      value: String(Number(data.memoryPlanSummary.recent_memory_count || data.backendRecentMemoryRows.length || 0)),
+      detail: 'backend memories',
+    },
+    {
+      state: Number(data.memoryPlanSummary.model_choice_count || data.backendModelChoiceRows.length || 0) ? 'ok' : 'warn',
+      label: 'Model Choices',
+      value: String(Number(data.memoryPlanSummary.model_choice_count || data.backendModelChoiceRows.length || 0)),
+      detail: data.memoryPlanSummary.default_model_preference_ready ? 'default ready' : 'needs seed',
+    },
+    {
+      state: Number(data.memoryPlanSummary.critical_memory_alert_count || 0) ? 'error' : (Number(data.memoryPlanSummary.memory_alert_count || data.memoryAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.memoryPlanSummary.memory_alert_count || data.memoryAlertRows.length || 0)),
+      detail: 'profile queue',
+    },
+    {
+      state: Number(data.memoryPlanSummary.entry_route_count || data.memoryEntryRows.length || 0) ? 'ok' : 'warn',
+      label: 'Routes',
+      value: Number(data.memoryPlanSummary.entry_route_count || data.memoryEntryRows.length || 0)
+        ? `${Number(data.memoryPlanSummary.entry_route_ready_count || 0)}/${Number(data.memoryPlanSummary.entry_route_count || data.memoryEntryRows.length || 0)}`
+        : '0',
+      detail: 'entry paths',
+    },
   ];
 }
 
@@ -12401,6 +15750,18 @@ function memoryPreflightText(snapshot) {
     '',
     'Backend plan:',
     ...data.backendRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Backend recent memory:',
+    ...(data.backendRecentMemoryRows.length ? data.backendRecentMemoryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend recent memory rows visible']),
+    '',
+    'Backend model choices:',
+    ...(data.backendModelChoiceRows.length ? data.backendModelChoiceRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend model choice rows visible']),
+    '',
+    'Memory alert queue:',
+    ...(data.memoryAlertRows.length ? data.memoryAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend memory alerts visible']),
+    '',
+    'Memory request routes:',
+    ...(data.memoryEntryRows.length ? data.memoryEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No Memory request route proof visible']),
   ];
   return lines.join('\n');
 }
@@ -12487,6 +15848,22 @@ function renderMemoryPreflight(snapshot) {
       <div class="cc-briefing-section-title">Backend memory plan</div>
       ${briefingList(data.backendRows, 'Backend memory plan unavailable')}
     </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend recent memory</div>
+      ${briefingList(data.backendRecentMemoryRows, 'No backend recent memory rows visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend model choices</div>
+      ${briefingList(data.backendModelChoiceRows, 'No backend model choice rows visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Memory alert queue</div>
+      ${briefingList(data.memoryAlertRows, 'No backend memory alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Memory request routes</div>
+      ${briefingList(data.memoryEntryRows, 'No Memory request route proof visible')}
+    </section>
     <div class="cc-briefing-empty">
       Memories, notes, and recall toggles are local-first state. The backend plan does not add, import, extract, tidy, pin, update, delete, edit notes, run automation, run shell commands, or use network access.
     </div>
@@ -12534,6 +15911,9 @@ function libraryStatusData(snapshot) {
   const languages = docResponse.languages && typeof docResponse.languages === 'object' ? docResponse.languages : {};
   const languageCount = Object.keys(languages).length;
   const gallery = readData(source, 'gallery') || {};
+  const galleryPlan = readData(source, 'operatorGalleryPlan') || {};
+  const gallerySummary = galleryPlan.summary || {};
+  const galleryOk = source.operatorGalleryPlan?.ok === true;
   const imageTotal = numberOrNull(gallery.total_photos ?? gallery.total ?? gallery.count ?? gallery.images ?? gallery.stats?.total) || 0;
   const albumTotal = numberOrNull(gallery.albums ?? gallery.album_count) || 0;
   const favoriteTotal = numberOrNull(gallery.favorites ?? gallery.favorite_count) || 0;
@@ -12550,6 +15930,107 @@ function libraryStatusData(snapshot) {
   const libraryActivity = operatorCommands.readActivity?.(20)
     .filter(item => item.category === 'Library' || item.category === 'Research' || /library|documents?|gallery|research|search|archive|pdf|image/i.test(`${item.title || ''} ${item.detail || ''}`))
     .slice(0, 3) || [];
+  const documentAlertRows = asArray(documentSearchPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Library alert',
+    detail: row.detail || 'backend document search alert',
+    action: row.action || 'open-library-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
+  const documentHandoffRows = asArray(documentSearchPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Document search handoff',
+    detail: [
+      row.detail || 'document search handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/document-search-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'open-documents-preflight'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-library-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    runsSearch: row.runs_search === true || row.runsSearch === true,
+    readsQuery: row.reads_query === true || row.readsQuery === true,
+    readsResultSnippets: row.reads_result_snippets === true || row.readsResultSnippets === true,
+    indexesFiles: row.indexes_files === true || row.indexesFiles === true,
+    changesFiles: row.changes_files === true || row.changesFiles === true,
+    addsDirectories: row.adds_directories === true || row.addsDirectories === true,
+    excludesFiles: row.excludes_files === true || row.excludesFiles === true,
+    rebuildsRag: row.rebuilds_rag === true || row.rebuildsRag === true,
+    startsResearch: row.starts_research === true || row.startsResearch === true,
+    writesActivity: row.writes_activity === true || row.writesActivity === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const galleryAlertRows = asArray(galleryPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'media',
+    title: row.title || row.id || 'Gallery alert',
+    detail: row.detail || 'backend gallery media alert',
+    action: row.action || 'open-library-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const galleryMediaRows = asArray(galleryPlan.media_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'media',
+    title: row.title || row.id || 'Media path',
+    detail: row.detail || 'backend media path evidence',
+    action: 'open-local-data-map',
+    actionLabel: 'Data',
+    backendProof: true,
+  }));
+  const galleryEntryRows = asArray(galleryPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Media request route proof',
+    detail: [
+      row.detail || 'open-library-preflight media route evidence',
+      `command=${row.command_id || 'open-library-preflight'}`,
+      `gallery=${row.start_command_id || 'open-gallery'}`,
+      `approval=${row.approval_api || '/api/gallery/upload'}`,
+      `upload=${row.uploads_files ? 'yes' : 'no'}`,
+      `delete=${row.deletes_media ? 'yes' : 'no'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-library-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    uploadsFiles: row.uploads_files === true,
+    generatesImages: row.generates_images === true,
+    editsMedia: row.edits_media === true,
+    deletesMedia: row.deletes_media === true,
+    exportsMedia: row.exports_media === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const galleryHandoffRows = asArray(galleryPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Media handoff',
+    detail: [
+      row.detail || 'gallery media handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/gallery-plan'}`,
+      `method=${row.method || 'GET'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'open-library-preflight'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-library-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    uploadsFiles: row.uploads_files === true || row.uploadsFiles === true,
+    generatesImages: row.generates_images === true || row.generatesImages === true,
+    editsMedia: row.edits_media === true || row.editsMedia === true,
+    deletesMedia: row.deletes_media === true || row.deletesMedia === true,
+    exportsMedia: row.exports_media === true || row.exportsMedia === true,
+    refreshesVision: row.refreshes_vision === true || row.refreshesVision === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    gatedOperation: row.gated_operation || row.gatedOperation || {},
+    backendProof: true,
+  }));
   const latestDocument = sortRecent(documents).slice(0, 1)[0];
   const latestResearch = sortRecent(researchReports, ['completed_at', 'updated_at', 'started_at']).slice(0, 1)[0];
   const rows = [
@@ -12574,10 +16055,14 @@ function libraryStatusData(snapshot) {
       actionLabel: 'Files',
     },
     {
-      state: source.gallery?.ok ? 'ok' : 'warn',
+      state: galleryOk
+        ? stateFromStatus(gallerySummary.state || (Number(gallerySummary.critical_gallery_alert_count || 0) ? 'error' : (Number(gallerySummary.gallery_alert_count || 0) ? 'warn' : 'ok')))
+        : (source.gallery?.ok ? 'ok' : 'warn'),
       badge: 'media',
       title: 'Gallery index',
-      detail: source.gallery?.ok
+      detail: galleryOk
+        ? `${plural(Number(gallerySummary.media_file_count || imageTotal || 0), 'media file')}; ${plural(Number(gallerySummary.gallery_alert_count || 0), 'alert')}; network=${gallerySummary.uses_network ? 'yes' : 'no'}`
+        : source.gallery?.ok
         ? `${plural(imageTotal, 'image')} indexed; ${plural(albumTotal, 'album')}; ${plural(favoriteTotal, 'favorite')}`
         : readError(source, 'gallery'),
       action: 'open-gallery',
@@ -12590,7 +16075,7 @@ function libraryStatusData(snapshot) {
       badge: 'search',
       title: 'Local document search',
       detail: documentSearchOk
-        ? `${plural(docTotal, 'document')}; ${plural(backendChunkTotal || 0, 'chunk')}; network=${documentSearchSummary.uses_network ? 'yes' : 'no'}`
+        ? `${plural(docTotal, 'document')}; ${plural(backendChunkTotal || 0, 'chunk')}; ${plural(Number(documentSearchSummary.document_alert_count || 0), 'alert')}; network=${documentSearchSummary.uses_network ? 'yes' : 'no'}`
         : (searchMode === 'ask' ? 'Search requests ask before routing' : 'Search routes to the local Library first'),
       action: 'search-local-documents',
       actionLabel: 'Search',
@@ -12670,6 +16155,16 @@ function libraryStatusData(snapshot) {
     researchMode,
     documentSearchPlan,
     documentSearchOk,
+    documentSearchSummary,
+    galleryPlan,
+    galleryOk,
+    gallerySummary,
+    documentAlertRows,
+    documentHandoffRows,
+    galleryAlertRows,
+    galleryMediaRows,
+    galleryEntryRows,
+    galleryHandoffRows,
     libraryActivity,
     rows,
   };
@@ -12677,6 +16172,12 @@ function libraryStatusData(snapshot) {
 
 function libraryPreflightStats(snapshot) {
   const data = libraryStatusData(snapshot);
+  const galleryRouteCount = Number(data.gallerySummary.entry_route_count || data.galleryEntryRows.length || 0);
+  const galleryRouteReadyCount = Number(data.gallerySummary.entry_route_ready_count || data.galleryEntryRows.filter(row => row.state === 'ok').length || 0);
+  const documentHandoffCount = Number(data.documentSearchSummary.handoff_count || data.documentHandoffRows.length || 0);
+  const documentHandoffReady = Number(data.documentSearchSummary.handoff_ready_count || data.documentHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const galleryHandoffCount = Number(data.gallerySummary.handoff_count || data.galleryHandoffRows.length || 0);
+  const galleryHandoffReady = Number(data.gallerySummary.handoff_ready_count || data.galleryHandoffRows.filter(row => row.state === 'ok').length || 0);
   return [
     {
       state: data.docTotal ? 'ok' : 'loading',
@@ -12702,6 +16203,32 @@ function libraryPreflightStats(snapshot) {
       value: data.researchActive.length ? `${data.researchActive.length} active` : String(data.researchTotal),
       detail: data.researchEnabled ? 'reports saved' : 'disabled',
     },
+    {
+      state: Number(data.documentSearchSummary.critical_document_alert_count || 0) || Number(data.gallerySummary.critical_gallery_alert_count || 0)
+        ? 'error'
+        : (Number(data.documentSearchSummary.document_alert_count || data.documentAlertRows.length || 0) || Number(data.gallerySummary.gallery_alert_count || data.galleryAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.documentSearchSummary.document_alert_count || data.documentAlertRows.length || 0) + Number(data.gallerySummary.gallery_alert_count || data.galleryAlertRows.length || 0)),
+      detail: 'search/media queues',
+    },
+    {
+      state: documentHandoffCount && documentHandoffReady >= documentHandoffCount ? 'ok' : 'warn',
+      label: 'Doc Handoffs',
+      value: documentHandoffCount ? `${documentHandoffReady}/${documentHandoffCount}` : '0',
+      detail: 'search gates',
+    },
+    {
+      state: galleryRouteCount && galleryRouteReadyCount >= galleryRouteCount ? 'ok' : 'warn',
+      label: 'Media Routes',
+      value: galleryRouteCount ? `${galleryRouteReadyCount}/${galleryRouteCount}` : '0',
+      detail: 'request proof',
+    },
+    {
+      state: galleryHandoffCount && galleryHandoffReady >= galleryHandoffCount ? 'ok' : 'warn',
+      label: 'Media Handoffs',
+      value: galleryHandoffCount ? `${galleryHandoffReady}/${galleryHandoffCount}` : '0',
+      detail: 'operation gates',
+    },
   ];
 }
 
@@ -12716,6 +16243,30 @@ function libraryPreflightText(snapshot) {
     '',
     'Checks:',
     ...data.rows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Library alert queue:',
+    ...(data.documentAlertRows.length ? data.documentAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend document search alerts visible']),
+    '',
+    'Document search handoffs:',
+    ...(data.documentHandoffRows.length
+      ? data.documentHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No document search handoffs visible']),
+    '',
+    'Media alert queue:',
+    ...(data.galleryAlertRows.length ? data.galleryAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend gallery alerts visible']),
+    '',
+    'Media request route proof:',
+    ...(data.galleryEntryRows.length
+      ? data.galleryEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No media request route proof visible']),
+    '',
+    'Media handoffs:',
+    ...(data.galleryHandoffRows.length
+      ? data.galleryHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No media handoffs visible']),
+    '',
+    'Media paths:',
+    ...(data.galleryMediaRows.length ? data.galleryMediaRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend media path evidence visible']),
   ];
   return lines.join('\n');
 }
@@ -12798,6 +16349,30 @@ function renderLibraryPreflight(snapshot) {
       <div class="cc-briefing-section-title">Library checks</div>
       ${briefingList(data.rows, 'Library status unavailable')}
     </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Library alert queue</div>
+      ${briefingList(data.documentAlertRows, 'No backend document search alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Document search handoffs</div>
+      ${briefingList(data.documentHandoffRows, 'No document search handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Media alert queue</div>
+      ${briefingList(data.galleryAlertRows, 'No backend gallery alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Media request route proof</div>
+      ${briefingList(data.galleryEntryRows, 'No media request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Media handoffs</div>
+      ${briefingList(data.galleryHandoffRows, 'No media handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Media paths</div>
+      ${briefingList(data.galleryMediaRows, 'No backend media path evidence visible')}
+    </section>
     <div class="cc-briefing-empty">
       Library checks read local document, gallery, and research indexes. Network-backed research remains controlled by Offline Control and feature policy.
     </div>
@@ -12851,6 +16426,14 @@ function localDocumentSearchText(data = _localDocumentSearch) {
     rows.push('', 'Plan evidence:');
     rows.push(...plan.rows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`));
   }
+  if (plan.entryRows.length) {
+    rows.push('', 'Request route proof:');
+    rows.push(...plan.entryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresQuery ? ' (query required)' : ''}`));
+  }
+  if (plan.alertRows.length) {
+    rows.push('', 'Library alert queue:');
+    rows.push(...plan.alertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`));
+  }
   if (plan.guardRows.length) {
     rows.push('', 'Safety gates:');
     rows.push(...plan.guardRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`));
@@ -12898,6 +16481,67 @@ function localDocumentSearchPlanData(snapshot) {
     action: row.action || 'search-local-documents',
     actionLabel: row.actionLabel || 'Search',
   })) : [];
+  const frontendEntryRows = [
+    {
+      state: summary.keyword_ready || summary.vector_ready ? 'ok' : 'warn',
+      badge: 'dash',
+      title: 'Command Center dashboard',
+      detail: summary.keyword_ready || summary.vector_ready
+        ? 'Local Document Search opens with vector or keyword retrieval evidence ready; query text is still required'
+        : 'Local Document Search opens first and shows index/RAG readiness gaps before a query is useful',
+      action: 'search-local-documents',
+      actionLabel: 'Search',
+      requiresQuery: true,
+    },
+    {
+      state: 'ok',
+      badge: 'text',
+      title: 'Typed operator command',
+      detail: 'The phrase "Search my local documents for this" opens local search and requires query text before retrieval',
+      action: 'search-local-documents',
+      actionLabel: 'Search',
+      requiresQuery: true,
+    },
+    {
+      state: 'ok',
+      badge: 'cmd',
+      title: 'Global command palette',
+      detail: 'The palette exposes Search Local Documents as a local-only Library route, not a web research route',
+      action: 'open-command-palette',
+      actionLabel: 'Palette',
+      requiresQuery: true,
+    },
+    {
+      state: 'ok',
+      badge: 'voice',
+      title: 'Voice command mode',
+      detail: 'Voice routing can open the same local search surface without sending documents or queries to network services',
+      action: 'open-voice-preflight',
+      actionLabel: 'Voice',
+      requiresQuery: true,
+    },
+    {
+      state: (summary.keyword_ready || summary.vector_ready) && Number(summary.document_count || 0) ? 'ok' : 'warn',
+      badge: 'flow',
+      title: 'Automation workflow handoff',
+      detail: summary.keyword_ready || summary.vector_ready
+        ? 'Workflow handoff can route to local Library search, but web research stays separate and network-gated'
+        : 'Workflow handoff stays in review mode until local documents, chunks, or RAG evidence are available',
+      action: 'open-automation-map',
+      actionLabel: 'Workflow',
+      requiresQuery: true,
+    },
+  ];
+  const backendEntryRows = backendOk ? asArray(backendPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Document search request route proof',
+    detail: row.detail || 'search-local-documents request route evidence',
+    action: row.action || 'search-local-documents',
+    actionLabel: row.actionLabel || row.action_label || 'Search',
+    requiresQuery: row.requires_query === true,
+  })) : [];
+  const entryRows = backendOk && backendEntryRows.length ? backendEntryRows : frontendEntryRows;
   const guardRows = backendOk ? [
     ...asArray(backendPlan.guard_rows).slice(0, 5).map(row => ({
       state: row.state || 'loading',
@@ -12916,6 +16560,14 @@ function localDocumentSearchPlanData(snapshot) {
       actionLabel: 'Search',
     })),
   ].slice(0, 8) : [];
+  const alertRows = backendOk ? asArray(backendPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Library alert',
+    detail: row.detail || 'backend document search alert',
+    action: row.action || 'open-library-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  })) : [];
   return {
     backendPlan,
     backendOk,
@@ -12928,8 +16580,10 @@ function localDocumentSearchPlanData(snapshot) {
       action: 'search-local-documents',
       actionLabel: 'Search',
     }],
+    entryRows,
     routeRows,
     guardRows,
+    alertRows,
   };
 }
 
@@ -13001,6 +16655,8 @@ function renderLocalDocumentSearch() {
   const data = _localDocumentSearch || {};
   const plan = localDocumentSearchPlanData(_lastSnapshot);
   const planSummary = plan.summary || {};
+  const entryRouteCount = Number(planSummary.entry_route_count) || plan.entryRows.length;
+  const entryRouteReadyCount = Number(planSummary.entry_route_ready_count) || plan.entryRows.filter(row => row.state === 'ok').length;
   setText('cc-local-document-search-time', new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }));
   const stats = [
     {
@@ -13022,6 +16678,12 @@ function renderLocalDocumentSearch() {
       label: 'Route',
       value: data.search_type || 'Ready',
       detail: data.embedding_model ? truncate(data.embedding_model, 48) : 'RAG first',
+    },
+    {
+      state: entryRouteReadyCount >= entryRouteCount && entryRouteCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: entryRouteCount ? `${entryRouteReadyCount}/${entryRouteCount}` : '0',
+      detail: 'request proof',
     },
     {
       state: data.query ? 'ok' : 'loading',
@@ -13056,8 +16718,16 @@ function renderLocalDocumentSearch() {
       ${briefingList(plan.rows, 'Backend search evidence is not available')}
     </section>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Request route proof</div>
+      ${briefingList(plan.entryRows, 'No document search request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Route sequence</div>
       ${briefingList(plan.routeRows, 'No route evidence visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Library alert queue</div>
+      ${briefingList(plan.alertRows, 'No backend document search alerts visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Safety gates</div>
@@ -13493,6 +17163,8 @@ function researchStatusData(snapshot) {
   const features = readData(source, 'features') || {};
   const settings = readData(source, 'settings') || {};
   const offline = readData(source, 'offline') || {};
+  const backendPlan = readData(source, 'operatorResearchPlan') || {};
+  const backendSummary = backendPlan.summary || {};
   const active = asArray(readData(source, 'researchActive'), ['active', 'items', 'tasks']);
   const libraryResponse = readData(source, 'researchLibrary') || {};
   const reports = asArray(libraryResponse, ['research', 'items', 'reports']);
@@ -13531,6 +17203,82 @@ function researchStatusData(snapshot) {
   const researchActivity = operatorCommands.readActivity?.(30)
     .filter(item => item.category === 'Research' || /research|sources?|web search|deep dive|report/i.test(`${item.title || ''} ${item.detail || ''} ${item.category || ''}`))
     .slice(0, 4) || [];
+  const researchAlertRows = asArray(backendPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'research',
+    title: row.title || row.id || 'Research alert',
+    detail: row.detail || 'backend research alert',
+    action: row.action || 'open-research-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  }));
+  const backendFeatureRows = asArray(backendPlan.feature_rows).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'flag',
+    title: row.title || row.id || 'Research feature',
+    detail: row.detail || 'backend research feature evidence',
+    action: row.action || 'open-research-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
+  const backendProviderRows = asArray(backendPlan.provider_rows).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'search',
+    title: row.title || row.id || 'Research provider',
+    detail: row.detail || 'backend search provider evidence',
+    action: row.action || 'open-research-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
+  const backendApiRows = asArray(backendPlan.api_actions).slice(0, 8).map(row => ({
+    state: row.requires_approval || row.requiresApproval || row.uses_network || row.usesNetwork ? 'warn' : 'ok',
+    badge: row.method || 'API',
+    title: row.title || row.path || 'Research API gate',
+    detail: `${row.method || 'GET'} ${row.path || ''}${row.starts_job || row.startsJob ? '; starts job after explicit action' : ''}${row.uses_network || row.usesNetwork ? '; network-capable' : '; local/read-only'}`,
+    action: row.requires_approval || row.requiresApproval ? 'open-trust-controls' : 'open-research-preflight',
+    actionLabel: row.requires_approval || row.requiresApproval ? 'Trust' : 'Gate',
+  }));
+  const researchEntryRows = asArray(backendPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Research request route proof',
+    detail: [
+      row.detail || 'open-research-preflight request route evidence',
+      `command=${row.command_id || 'open-research-preflight'}`,
+      `start=${row.start_command_id || 'open-research'}`,
+      `approval=${row.approval_api || '/api/research/start'}`,
+      `search=${row.runs_search ? 'runs' : 'plan-only'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-research-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    startsResearch: row.starts_research === true,
+    runsSearch: row.runs_search === true,
+    writesReports: row.writes_reports === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const researchHandoffRows = asArray(backendPlan.handoff_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Research handoff',
+    detail: [
+      row.detail || 'research/library handoff evidence',
+      row.target_api ? `api=${row.target_api}` : '',
+      row.approval_api ? `approval=${row.approval_api}` : '',
+      `search=${row.runs_search ? 'runs' : 'plan-only'}`,
+      `network=${row.uses_network ? 'yes' : (row.network_after_approval ? 'after approval' : 'no')}`,
+    ].filter(Boolean).join('; '),
+    action: row.action || 'open-research-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    requiresApproval: row.requires_approval === true,
+    startsResearch: row.starts_research === true,
+    startsJobs: row.starts_jobs === true,
+    runsSearch: row.runs_search === true,
+    writesReports: row.writes_reports === true,
+    usesNetwork: row.uses_network === true,
+    networkAfterApproval: row.network_after_approval === true,
+  }));
   const activeDetail = active[0]
     ? `${truncate(firstValue(active[0], ['query', 'title', 'id', 'session_id']), 110)} - ${active[0].status || 'running'}`
     : 'No active research jobs';
@@ -13646,6 +17394,14 @@ function researchStatusData(snapshot) {
     researchTasks,
     searchConfig,
     searchProviders,
+    backendPlan,
+    backendSummary,
+    researchAlertRows,
+    backendFeatureRows,
+    backendProviderRows,
+    backendApiRows,
+    researchEntryRows,
+    researchHandoffRows,
     provider,
     providerLabel,
     researchEnabled,
@@ -13667,6 +17423,12 @@ function researchStatusData(snapshot) {
 
 function researchPreflightStats(snapshot) {
   const data = researchStatusData(snapshot);
+  const backendAlertCount = Number(data.backendSummary.research_alert_count || data.researchAlertRows.length || 0);
+  const backendCriticalCount = Number(data.backendSummary.critical_research_alert_count || 0);
+  const entryRouteCount = Number(data.backendSummary.entry_route_count || data.researchEntryRows.length || 0);
+  const entryRouteReadyCount = Number(data.backendSummary.entry_route_ready_count || data.researchEntryRows.filter(row => row.state === 'ok').length || 0);
+  const handoffCount = Number(data.backendSummary.handoff_count || data.researchHandoffRows.length || 0);
+  const handoffReadyCount = Number(data.backendSummary.handoff_ready_count || data.researchHandoffRows.filter(row => row.state === 'ok').length || 0);
   return [
     {
       state: data.researchEnabled ? 'ok' : 'warn',
@@ -13687,10 +17449,22 @@ function researchPreflightStats(snapshot) {
       detail: 'saved local',
     },
     {
-      state: data.sourceGatheringReady ? 'ok' : 'warn',
+      state: backendCriticalCount ? 'error' : (backendAlertCount ? 'warn' : (data.sourceGatheringReady ? 'ok' : 'warn')),
       label: 'Sources',
-      value: data.sourceGatheringReady ? 'Ready' : 'Limited',
-      detail: data.providerLabel,
+      value: backendCriticalCount ? `${backendCriticalCount} critical` : (data.sourceGatheringReady ? 'Ready' : 'Limited'),
+      detail: backendAlertCount ? `${plural(backendAlertCount, 'research alert')}` : data.providerLabel,
+    },
+    {
+      state: entryRouteCount && entryRouteReadyCount >= entryRouteCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: entryRouteCount ? `${entryRouteReadyCount}/${entryRouteCount}` : '0',
+      detail: 'request proof',
+    },
+    {
+      state: handoffCount && handoffReadyCount >= handoffCount ? 'ok' : 'warn',
+      label: 'Handoffs',
+      value: handoffCount ? `${handoffReadyCount}/${handoffCount}` : '0',
+      detail: 'local routes',
     },
   ];
 }
@@ -13706,6 +17480,31 @@ function researchPreflightText(snapshot) {
     '',
     'Checks:',
     ...data.rows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Request route proof:',
+    ...(data.researchEntryRows.length
+      ? data.researchEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No research request route proof visible']),
+    ...(data.researchAlertRows.length ? [
+      '',
+      'Backend research alerts:',
+      ...data.researchAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.researchHandoffRows.length ? [
+      '',
+      'Research/library handoffs:',
+      ...data.researchHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`),
+    ] : []),
+    ...(data.backendProviderRows.length ? [
+      '',
+      'Backend provider evidence:',
+      ...data.backendProviderRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    ...(data.backendApiRows.length ? [
+      '',
+      'Research API gates:',
+      ...data.backendApiRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
     '',
     'Safety: This view does not start web research. It only reviews policy, endpoints, active jobs, saved reports, and local storage posture.',
   ];
@@ -13787,6 +17586,26 @@ function renderResearchPreflight(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Research checks</div>
       ${briefingList(data.rows, 'Research status unavailable')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Research alert queue</div>
+      ${briefingList(data.researchAlertRows, 'No backend research alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Request route proof</div>
+      ${briefingList(data.researchEntryRows, 'No research request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Research/library handoffs</div>
+      ${briefingList(data.researchHandoffRows, 'No backend research handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend provider evidence</div>
+      ${briefingList([...data.backendFeatureRows, ...data.backendProviderRows], 'No backend research provider evidence visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Research API gates</div>
+      ${briefingList(data.backendApiRows, 'No backend research API gates visible')}
     </section>
     <div class="cc-briefing-empty">
       Research checks are read-only. Starting web-backed jobs remains inside the Deep Research panel and is controlled by feature flags, Offline Control, and model/search settings.
@@ -13990,6 +17809,12 @@ function systemStatusStats(snapshot) {
 function systemStatusText(snapshot) {
   const stats = systemStatusStats(snapshot);
   const rows = systemStatusRows(snapshot);
+  const runtimePlan = readData(snapshot, 'operatorRuntimePlan') || {};
+  const runtimeAlertRows = asArray(runtimePlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    title: row.title || row.id || 'Runtime alert',
+    detail: row.detail || 'backend runtime alert',
+  }));
   const lines = [
     'Cleverly System Status',
     `Generated: ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`,
@@ -13998,6 +17823,11 @@ function systemStatusText(snapshot) {
     '',
     'Runtime Checks:',
     ...rows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ...(runtimeAlertRows.length ? [
+      '',
+      'Runtime alert queue:',
+      ...runtimeAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
     '',
     'Note: This view uses status exposed inside Cleverly. Host-level docker ps/restart remains outside the app container and should stay approval-gated.',
   ];
@@ -14063,6 +17893,15 @@ function renderSystemStatus(snapshot) {
   if (!body) return;
   const stats = systemStatusStats(snapshot || {});
   const rows = systemStatusRows(snapshot || {});
+  const runtimePlan = readData(snapshot || {}, 'operatorRuntimePlan') || {};
+  const runtimeAlertRows = asArray(runtimePlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Runtime alert',
+    detail: row.detail || 'backend runtime alert',
+    action: row.action || 'open-machine-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
   setText('cc-system-status-time', new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }));
   body.innerHTML = `
     <div class="cc-briefing-stats cc-system-stats">
@@ -14077,6 +17916,10 @@ function renderSystemStatus(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Runtime checks</div>
       ${briefingList(rows, 'No runtime status available')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Runtime alert queue</div>
+      ${briefingList(runtimeAlertRows, 'No backend runtime alerts visible')}
     </section>
     <div class="cc-briefing-empty">
       Host-level Docker actions are intentionally outside this read-only status view. Use Repair Plan to review safe next steps before requesting a host-level fix.
@@ -14131,9 +17974,178 @@ function localServicesMapData(snapshot) {
   const ttsStats = readData(source, 'ttsStats') || {};
   const readiness = offline.readiness || {};
   const readinessItems = asArray(readiness.items);
+  const operatorChecks = readData(source, 'operatorChecks') || {};
   const serviceSnapshot = operatorServiceSnapshot(source);
   const serviceRows = operatorServiceSnapshotRows(source);
   const serviceSummary = serviceSnapshot.summary || {};
+  const servicesPlan = readData(source, 'operatorServicesPlan') || {};
+  const servicesPlanSummary = servicesPlan.summary || {};
+  const dockerRuntimePlan = readData(source, 'operatorDockerRuntimePlan') || {};
+  const dockerRuntimeSummary = dockerRuntimePlan.summary || {};
+  const dockerRuntimeOk = source.operatorDockerRuntimePlan?.ok === true;
+  const dockerRuntimeRows = dockerRuntimeOk ? asArray(dockerRuntimePlan.docker_rows).slice(0, 10).map(row => ({
+    state: row.state || 'loading',
+    badge: row.badge || 'dock',
+    title: row.title || row.id || 'Docker runtime row',
+    detail: row.detail || 'backend Docker runtime evidence',
+    action: row.action || 'open-local-services-map',
+    actionLabel: row.actionLabel || row.action_label || 'Services',
+    requiresApproval: row.requires_approval === true,
+  })) : [{
+    state: 'warn',
+    badge: 'dock',
+    title: 'Backend Docker runtime plan unavailable',
+    detail: readError(source, 'operatorDockerRuntimePlan'),
+    action: 'open-local-services-map',
+    actionLabel: 'Services',
+  }];
+  const dockerRuntimeAlertRows = dockerRuntimeOk ? asArray(dockerRuntimePlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'dock',
+    title: row.title || row.id || 'Docker runtime alert',
+    detail: row.detail || 'backend Docker runtime alert',
+    action: row.action || 'open-local-services-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
+  const dockerRuntimeEntryRows = dockerRuntimeOk ? asArray(dockerRuntimePlan, ['entry_rows', 'entryRows']).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Docker runtime request route',
+    detail: row.detail || 'docker-runtime-plan route evidence',
+    action: row.action || 'open-local-services-map',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
+  const dockerRuntimeHandoffRows = dockerRuntimeOk ? asArray(dockerRuntimePlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Docker runtime handoff',
+    detail: [
+      row.detail || 'docker runtime handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/docker-runtime-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'request-container-fix'}`,
+      row.target_host_command || row.targetHostCommand ? `host=${row.target_host_command || row.targetHostCommand}` : '',
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].filter(Boolean).join('; '),
+    action: row.action || 'open-container-repair-plan',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    restartsServices: row.restarts_services === true || row.restartsServices === true,
+    startsServices: row.starts_services === true || row.startsServices === true,
+    repairsServices: row.repairs_services === true || row.repairsServices === true,
+    buildsImages: row.builds_images === true || row.buildsImages === true,
+    recreatesServices: row.recreates_services === true || row.recreatesServices === true,
+    pullsImages: row.pulls_images === true || row.pullsImages === true,
+    runsDocker: row.runs_docker === true || row.runsDocker === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    writesFiles: row.writes_files === true || row.writesFiles === true,
+    deletesVolumes: row.deletes_volumes === true || row.deletesVolumes === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+  })) : [];
+  const dockerRuntimeGateRows = dockerRuntimeOk ? asArray(dockerRuntimePlan, ['api_actions', 'apiActions'])
+    .filter(row => row.builds_images === true || row.buildsImages === true || row.recreates_services === true || row.recreatesServices === true)
+    .slice(0, 6)
+    .map(row => ({
+      state: row.requires_approval || row.requiresApproval ? 'warn' : 'ok',
+      badge: row.method || 'POST',
+      title: row.title || row.path || 'Docker deployment gate',
+      detail: `${row.path || 'host command'}; build=${row.builds_images || row.buildsImages ? 'approval' : 'no'}; recreate=${row.recreates_services || row.recreatesServices ? 'approval' : 'no'}; network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+      action: row.requires_approval || row.requiresApproval ? 'open-trust-controls' : 'open-local-services-map',
+      actionLabel: row.requires_approval || row.requiresApproval ? 'Approve' : 'Open',
+      requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+      buildsImages: row.builds_images === true || row.buildsImages === true,
+      recreatesServices: row.recreates_services === true || row.recreatesServices === true,
+      usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    })) : [];
+  const serviceAlertRows = asArray(servicesPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'svc',
+    title: row.title || row.id || 'Service alert',
+    detail: row.detail || 'backend service alert',
+    action: row.action || 'open-local-services-map',
+    actionLabel: row.actionLabel || row.action_label || 'Services',
+  }));
+  const serviceSnapshotAlertRows = asArray(serviceSnapshot.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'svc',
+    title: row.title || row.id || 'Service snapshot alert',
+    detail: row.detail || 'backend service snapshot alert',
+    action: row.action || 'open-local-services-map',
+    actionLabel: row.actionLabel || row.action_label || 'Services',
+    requiresApproval: row.requires_approval === true,
+  }));
+  const checksAlertRows = [
+    ...asArray(operatorChecks.alert_rows),
+    ...asArray(operatorChecks.container_plan?.alert_rows),
+  ].slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'check',
+    title: row.title || row.id || 'Operator check alert',
+    detail: row.detail || 'operator check alert',
+    action: row.action || 'open-local-services-map',
+    actionLabel: row.actionLabel || row.action_label || 'Services',
+    requiresApproval: row.requires_approval === true,
+  }));
+  const serviceEntryRows = asArray(servicesPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Service request route proof',
+    detail: [
+      row.detail || 'open-local-services-map service route evidence',
+      `command=${row.command_id || 'open-local-services-map'}`,
+      `repair=${row.repair_command_id || 'open-container-repair-plan'}`,
+      `approval=${row.approval_command_id || 'request-container-fix'}`,
+      `services=${row.services_api || '/api/operator/services-plan'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-local-services-map',
+    actionLabel: row.actionLabel || row.action_label || 'Services',
+    requiresApproval: row.requires_approval === true,
+    restartsServices: row.restarts_services === true,
+    startsServices: row.starts_services === true,
+    pullsImages: row.pulls_images === true,
+    runsDocker: row.runs_docker === true,
+    runsShell: row.runs_shell === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const serviceHandoffRows = asArray(servicesPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Service handoff',
+    detail: [
+      row.detail || 'local service handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/services-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'request-container-fix'}`,
+      `docker=${row.runs_docker === true || row.runsDocker === true ? 'yes' : 'no'}`,
+      `repair=${row.repairs_services === true || row.repairsServices === true ? 'yes' : 'no'}`,
+      `network=${row.uses_network === true || row.usesNetwork === true ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-local-services-map',
+    actionLabel: row.actionLabel || row.action_label || 'Services',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    restartsServices: row.restarts_services === true || row.restartsServices === true,
+    startsServices: row.starts_services === true || row.startsServices === true,
+    repairsServices: row.repairs_services === true || row.repairsServices === true,
+    pullsImages: row.pulls_images === true || row.pullsImages === true,
+    runsDocker: row.runs_docker === true || row.runsDocker === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    writesFiles: row.writes_files === true || row.writesFiles === true,
+    deletesData: row.deletes_data === true || row.deletesData === true,
+    sendsNotifications: row.sends_notifications === true || row.sendsNotifications === true,
+    writesActivity: row.writes_activity === true || row.writesActivity === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    gatedOperation: row.gated_operation || row.gatedOperation || {},
+    backendProof: true,
+  }));
+  const containerStatusRows = asArray(servicesPlan, ['container_status_rows', 'containerStatusRows']).map(row => ({
+    state: row.state || (row.visible ? 'ok' : 'loading'),
+    badge: row.badge || 'dock',
+    title: row.title || row.container_name || row.compose_service || 'Container status',
+    detail: row.detail || row.status || 'container status evidence',
+    action: row.action || (row.state === 'ok' ? 'open-local-services-map' : 'open-container-repair-plan'),
+    actionLabel: row.actionLabel || row.action_label || (row.state === 'ok' ? 'Services' : 'Repair'),
+  }));
   const browserHost = window.location?.host || 'local browser';
   const localHost = /^(127\.0\.0\.1|localhost|\[::1\])(?::|$)/i.test(browserHost);
   const notificationChannels = [
@@ -14155,6 +18167,18 @@ function localServicesMapData(snapshot) {
       detail: source.health?.ok ? `Healthy at ${formatTime(health.timestamp)}` : readError(source, 'health'),
       action: 'check-containers',
       actionLabel: 'System',
+    },
+    {
+      state: source.operatorServicesPlan?.ok
+        ? (Number(servicesPlanSummary.critical_service_alert_count || 0) ? 'error' : (Number(servicesPlanSummary.service_alert_count || 0) ? 'warn' : 'ok'))
+        : 'warn',
+      badge: 'alert',
+      title: 'Service alert queue',
+      detail: source.operatorServicesPlan?.ok
+        ? `${plural(Number(servicesPlanSummary.service_alert_count || 0), 'alert')}; ${plural(Number(servicesPlanSummary.critical_service_alert_count || 0), 'critical')}; no service actions executed`
+        : readError(source, 'operatorServicesPlan'),
+      action: 'open-local-services-map',
+      actionLabel: 'Services',
     },
     {
       state: source.operatorServices?.ok
@@ -14377,7 +18401,7 @@ function localServicesMapData(snapshot) {
         action: 'open-activity-preflight',
         actionLabel: 'Activity',
       }];
-  const allRows = coreRows.concat(serviceRows, modelRows, workRows, safetyRows);
+  const allRows = coreRows.concat(dockerRuntimeRows, serviceRows, containerStatusRows, modelRows, workRows, safetyRows);
   return {
     offline,
     runtime,
@@ -14387,19 +18411,45 @@ function localServicesMapData(snapshot) {
     machine,
     repair,
     serviceSnapshot,
+    servicesPlan,
+    servicesPlanSummary,
+    dockerRuntimePlan,
+    dockerRuntimeSummary,
+    dockerRuntimeOk,
+    dockerRuntimeRows,
+    dockerRuntimeAlertRows,
+    dockerRuntimeEntryRows,
+    dockerRuntimeHandoffRows,
+    dockerRuntimeGateRows,
+    serviceAlertRows,
+    serviceSnapshotAlertRows,
+    checksAlertRows,
+    serviceEntryRows,
+    serviceHandoffRows,
+    containerStatusRows,
     serviceRows,
     coreRows,
     modelRows,
     workRows,
     safetyRows,
     recentRows,
-    errorCount: allRows.filter(row => row.state === 'error').length,
-    warnCount: allRows.filter(row => row.state === 'warn').length,
+    errorCount: allRows.filter(row => row.state === 'error').length + dockerRuntimeAlertRows.filter(row => row.state === 'error').length + dockerRuntimeHandoffRows.filter(row => row.state === 'error').length + serviceAlertRows.filter(row => row.state === 'error').length + serviceHandoffRows.filter(row => row.state === 'error').length + serviceSnapshotAlertRows.filter(row => row.state === 'error').length + checksAlertRows.filter(row => row.state === 'error').length,
+    warnCount: allRows.filter(row => row.state === 'warn').length + dockerRuntimeAlertRows.filter(row => row.state === 'warn').length + dockerRuntimeHandoffRows.filter(row => row.state === 'warn').length + serviceAlertRows.filter(row => row.state === 'warn').length + serviceHandoffRows.filter(row => row.state === 'warn').length + serviceSnapshotAlertRows.filter(row => row.state === 'warn').length + checksAlertRows.filter(row => row.state === 'warn').length,
   };
 }
 
 function localServicesMapStats(snapshot) {
   const data = localServicesMapData(snapshot || {});
+  const routeCount = Number(data.servicesPlanSummary.entry_route_count || data.serviceEntryRows.length || 0);
+  const routeReady = Number(data.servicesPlanSummary.entry_route_ready_count || data.serviceEntryRows.filter(row => row.state === 'ok').length || 0);
+  const dockerRowCount = Number(data.dockerRuntimeSummary.docker_row_count || data.dockerRuntimeRows.length || 0);
+  const dockerReadyCount = Number(data.dockerRuntimeSummary.docker_ready_count || data.dockerRuntimeRows.filter(row => row.state === 'ok').length || 0);
+  const dockerAlertCount = Number(data.dockerRuntimeSummary.docker_runtime_alert_count || data.dockerRuntimeAlertRows.length || 0);
+  const criticalDockerAlertCount = Number(data.dockerRuntimeSummary.critical_docker_runtime_alert_count || data.dockerRuntimeAlertRows.filter(row => row.state === 'error').length || 0);
+  const dockerHandoffCount = Number(data.dockerRuntimeSummary.handoff_count || data.dockerRuntimeHandoffRows.length || 0);
+  const dockerHandoffReady = Number(data.dockerRuntimeSummary.handoff_ready_count || data.dockerRuntimeHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const serviceHandoffCount = Number(data.servicesPlanSummary.handoff_count || data.serviceHandoffRows.length || 0);
+  const serviceHandoffReady = Number(data.servicesPlanSummary.handoff_ready_count || data.serviceHandoffRows.filter(row => row.state === 'ok').length || 0);
   return [
     {
       state: data.errorCount ? 'error' : (data.warnCount ? 'warn' : 'ok'),
@@ -14414,10 +18464,48 @@ function localServicesMapStats(snapshot) {
       detail: 'backend probes ok',
     },
     {
+      state: Number(data.servicesPlanSummary.critical_service_alert_count || data.serviceSnapshot?.summary?.critical_service_snapshot_alert_count || 0) || data.checksAlertRows.some(row => row.state === 'error') ? 'error' : (Number(data.servicesPlanSummary.service_alert_count || data.serviceAlertRows.length || 0) || Number(data.serviceSnapshot?.summary?.service_snapshot_alert_count || data.serviceSnapshotAlertRows.length || 0) || data.checksAlertRows.length ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.servicesPlanSummary.service_alert_count || data.serviceAlertRows.length || 0) + Number(data.serviceSnapshot?.summary?.service_snapshot_alert_count || data.serviceSnapshotAlertRows.length || 0) + data.checksAlertRows.length),
+      detail: 'service/check queues',
+    },
+    {
+      state: Number(data.servicesPlanSummary.unhealthy_container_count || 0)
+        ? 'warn'
+        : (Number(data.servicesPlanSummary.container_status_visible_count || 0) ? 'ok' : 'loading'),
+      label: 'Containers',
+      value: `${Number(data.servicesPlanSummary.running_container_count || 0)}/${Number(data.servicesPlanSummary.container_status_count || data.containerStatusRows.length || 0)}`,
+      detail: data.servicesPlanSummary.container_status_visible_count ? 'captured status' : 'status evidence missing',
+    },
+    {
+      state: routeCount && routeReady >= routeCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: routeCount ? `${routeReady}/${routeCount}` : '0',
+      detail: 'service proof',
+    },
+    {
+      state: serviceHandoffCount && serviceHandoffReady >= serviceHandoffCount ? 'ok' : (serviceHandoffCount ? 'warn' : 'loading'),
+      label: 'Service Handoffs',
+      value: serviceHandoffCount ? `${serviceHandoffReady}/${serviceHandoffCount}` : '0',
+      detail: 'service gates',
+    },
+    {
       state: data.runtime.docker_like ? 'ok' : 'warn',
       label: 'Runtime',
       value: data.runtime.docker_like ? 'Docker' : 'Native',
       detail: data.runtime.hostname || 'local host',
+    },
+    {
+      state: data.dockerRuntimeOk ? (dockerAlertCount ? 'warn' : 'ok') : 'warn',
+      label: 'Docker',
+      value: dockerRowCount ? `${dockerReadyCount}/${dockerRowCount}` : 'Plan',
+      detail: `${plural(dockerAlertCount, 'alert')}; ${plural(criticalDockerAlertCount, 'critical')}`,
+    },
+    {
+      state: dockerHandoffCount && dockerHandoffReady >= dockerHandoffCount ? 'ok' : 'warn',
+      label: 'Docker Handoffs',
+      value: dockerHandoffCount ? `${dockerHandoffReady}/${dockerHandoffCount}` : '0',
+      detail: 'approval paths',
     },
     {
       state: data.model.primaryModel ? 'ok' : 'warn',
@@ -14446,8 +18534,41 @@ function localServicesMapText(snapshot) {
     'Core runtime:',
     ...data.coreRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     '',
+    'Docker runtime operations:',
+    ...data.dockerRuntimeRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`),
+    '',
+    'Docker runtime alerts:',
+    ...(data.dockerRuntimeAlertRows.length ? data.dockerRuntimeAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No Docker runtime alerts visible']),
+    '',
+    'Docker runtime request routes:',
+    ...(data.dockerRuntimeEntryRows.length ? data.dockerRuntimeEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No Docker runtime request route proof visible']),
+    '',
+    'Docker runtime handoffs:',
+    ...(data.dockerRuntimeHandoffRows.length ? data.dockerRuntimeHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No Docker runtime handoffs visible']),
+    '',
+    'Docker deployment gates:',
+    ...(data.dockerRuntimeGateRows.length ? data.dockerRuntimeGateRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No Docker deployment gates visible']),
+    '',
     'Backend service snapshot:',
     ...(data.serviceRows.length ? data.serviceRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend service snapshot visible']),
+    '',
+    'Service alert queue:',
+    ...(data.serviceAlertRows.length ? data.serviceAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend service alerts visible']),
+    '',
+    'Service snapshot alerts:',
+    ...(data.serviceSnapshotAlertRows.length ? data.serviceSnapshotAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend service snapshot alerts visible']),
+    '',
+    'Operator check alerts:',
+    ...(data.checksAlertRows.length ? data.checksAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No operator check alerts visible']),
+    '',
+    'Service request route proof:',
+    ...(data.serviceEntryRows.length ? data.serviceEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No service request route proof visible']),
+    '',
+    'Service handoffs:',
+    ...(data.serviceHandoffRows.length ? data.serviceHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No service handoffs visible']),
+    '',
+    'Container status evidence:',
+    ...(data.containerStatusRows.length ? data.containerStatusRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend container status rows visible']),
     '',
     'Model and context services:',
     ...data.modelRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -14543,8 +18664,52 @@ function renderLocalServicesMap(snapshot) {
       ${briefingList(data.coreRows, 'No core services visible')}
     </section>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Docker runtime operations</div>
+      ${briefingList(data.dockerRuntimeRows, 'No backend Docker runtime plan visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Docker runtime alerts</div>
+      ${briefingList(data.dockerRuntimeAlertRows, 'No Docker runtime alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Docker runtime request routes</div>
+      ${briefingList(data.dockerRuntimeEntryRows, 'No Docker runtime request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Docker runtime handoffs</div>
+      ${briefingList(data.dockerRuntimeHandoffRows, 'No Docker runtime handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Docker deployment gates</div>
+      ${briefingList(data.dockerRuntimeGateRows, 'No Docker deployment gates visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend service snapshot</div>
       ${briefingList(data.serviceRows, 'No backend service snapshot visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Service alert queue</div>
+      ${briefingList(data.serviceAlertRows, 'No backend service alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Service snapshot alerts</div>
+      ${briefingList(data.serviceSnapshotAlertRows, 'No backend service snapshot alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Operator check alerts</div>
+      ${briefingList(data.checksAlertRows, 'No operator check alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Service request route proof</div>
+      ${briefingList(data.serviceEntryRows, 'No service request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Service handoffs</div>
+      ${briefingList(data.serviceHandoffRows, 'No service handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Container status evidence</div>
+      ${briefingList(data.containerStatusRows, 'No backend container status rows visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Model and context services</div>
@@ -14563,7 +18728,7 @@ function renderLocalServicesMap(snapshot) {
       ${briefingList(data.recentRows, 'No service activity recorded')}
     </section>
     <div class="cc-briefing-empty">
-      Local Services Map is read-only. It explains Cleverly app, worker, model, RAG/search, notification, data, and safety routes; it does not restart containers, pull images, change files, send notifications, or use network access.
+      Local Services Map is read-only. It explains Cleverly app, worker, model, RAG/search, notification, Docker runtime, captured container status, data, and safety routes; it does not restart containers, pull images, run Docker, change files, delete volumes, send notifications, or use network access.
     </div>
   `;
 }
@@ -14777,6 +18942,65 @@ function containerRepairStatusData(snapshot) {
   const backendApprovalPacket = operatorRepairApprovalPacketRows(source);
   const backendRepairSummary = backendRepairPlan.summary || {};
   const backendRepairIssues = backendRepairRows.filter(row => row.state === 'error' || row.state === 'warn');
+  const repairAlertRows = asArray(backendRepairPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Repair alert',
+    detail: row.detail || 'backend repair alert',
+    action: row.action || 'open-container-repair-plan',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
+  const repairEntryRows = asArray(backendRepairPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Repair request route proof',
+    detail: [
+      row.detail || 'open-container-repair-plan request route evidence',
+      `command=${row.command_id || 'open-container-repair-plan'}`,
+      `approval=${row.approval_command_id || 'request-container-fix'}`,
+      `docker=${row.runs_docker ? 'runs' : 'plan-only'}`,
+      `repair=${row.repairs_services ? 'yes' : 'no'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-container-repair-plan',
+    actionLabel: row.actionLabel || row.action_label || 'Plan',
+    requiresApproval: row.requires_approval === true,
+    runsDocker: row.runs_docker === true,
+    repairsServices: row.repairs_services === true,
+    changesFiles: row.changes_files === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const repairHandoffRows = asArray(backendRepairPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Repair handoff',
+    detail: [
+      row.detail || 'container repair handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/repair-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'request-container-fix'}`,
+      `docker=${row.runs_docker === true || row.runsDocker === true ? 'yes' : 'no'}`,
+      `repair=${row.repairs_services === true || row.repairsServices === true ? 'yes' : 'no'}`,
+      `shell=${row.runs_shell === true || row.runsShell === true ? 'yes' : 'no'}`,
+      `network=${row.uses_network === true || row.usesNetwork === true ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-container-repair-plan',
+    actionLabel: row.actionLabel || row.action_label || 'Repair',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    runsDocker: row.runs_docker === true || row.runsDocker === true,
+    inspectsLogs: row.inspects_logs === true || row.inspectsLogs === true,
+    restartsServices: row.restarts_services === true || row.restartsServices === true,
+    recreatesServices: row.recreates_services === true || row.recreatesServices === true,
+    startsServices: row.starts_services === true || row.startsServices === true,
+    repairsServices: row.repairs_services === true || row.repairsServices === true,
+    changesFiles: row.changes_files === true || row.changesFiles === true,
+    deletesData: row.deletes_data === true || row.deletesData === true,
+    pullsImages: row.pulls_images === true || row.pullsImages === true,
+    writesActivity: row.writes_activity === true || row.writesActivity === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    gatedOperation: row.gated_operation || row.gatedOperation || {},
+    backendProof: true,
+  }));
   const urgentRows = systemRows.filter(row => row.state === 'error');
   const warnRows = systemRows.filter(row => row.state === 'warn');
   const readinessIssues = readinessItems.filter(item => String(item.status || '').toLowerCase() !== 'ok');
@@ -14870,7 +19094,7 @@ function containerRepairStatusData(snapshot) {
       badge: 'plan',
       title: 'Backend repair plan',
       detail: source.operatorRepairPlan?.ok
-        ? `${backendRepairSummary.next_action || 'read-only repair plan loaded'}; approval ${backendRepairPlan.approval?.required ? 'required' : 'not required'}`
+        ? `${backendRepairSummary.next_action || 'read-only repair plan loaded'}; ${plural(Number(backendRepairSummary.repair_alert_count || 0), 'alert')}; approval ${backendRepairPlan.approval?.required ? 'required' : 'not required'}`
         : readError(source, 'operatorRepairPlan'),
       action: 'open-container-repair-plan',
       actionLabel: 'Plan',
@@ -14982,6 +19206,9 @@ function containerRepairStatusData(snapshot) {
     backendApprovalPacket,
     backendRepairSummary,
     backendRepairIssues,
+    repairAlertRows,
+    repairEntryRows,
+    repairHandoffRows,
     totalIssues,
     rows,
   };
@@ -15014,6 +19241,30 @@ function containerRepairStats(snapshot) {
       value: data.repairMode === 'ask' ? 'Ask' : 'Auto',
       detail: 'repair request',
     },
+    {
+      state: Number(data.backendRepairSummary.critical_repair_alert_count || 0) ? 'error' : (Number(data.backendRepairSummary.repair_alert_count || data.repairAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.backendRepairSummary.repair_alert_count || data.repairAlertRows.length || 0)),
+      detail: 'repair queue',
+    },
+    {
+      state: Number(data.backendRepairSummary.entry_route_count || data.repairEntryRows.length || 0)
+        && Number(data.backendRepairSummary.entry_route_ready_count || 0) >= Number(data.backendRepairSummary.entry_route_count || data.repairEntryRows.length || 0)
+        ? 'ok'
+        : 'warn',
+      label: 'Routes',
+      value: `${Number(data.backendRepairSummary.entry_route_ready_count || data.repairEntryRows.filter(row => row.state === 'ok' || row.state === 'warn').length)}/${Number(data.backendRepairSummary.entry_route_count || data.repairEntryRows.length)}`,
+      detail: 'request proof',
+    },
+    {
+      state: Number(data.backendRepairSummary.handoff_count || data.repairHandoffRows.length || 0)
+        && Number(data.backendRepairSummary.handoff_ready_count || 0) >= Number(data.backendRepairSummary.handoff_count || data.repairHandoffRows.length || 0)
+        ? 'ok'
+        : (data.repairHandoffRows.length ? 'warn' : 'loading'),
+      label: 'Repair Handoffs',
+      value: `${Number(data.backendRepairSummary.handoff_ready_count || data.repairHandoffRows.filter(row => row.state === 'ok').length)}/${Number(data.backendRepairSummary.handoff_count || data.repairHandoffRows.length)}`,
+      detail: 'handoff gates',
+    },
   ];
 }
 
@@ -15031,6 +19282,17 @@ function containerRepairText(snapshot) {
     '',
     'Backend Repair Plan:',
     ...(data.backendRepairRows.length ? data.backendRepairRows.map(row => `- [${row.risk}] [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend repair plan available']),
+    ...(data.repairAlertRows.length ? [
+      '',
+      'Repair alert queue:',
+      ...data.repairAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    ] : []),
+    '',
+    'Request route proof:',
+    ...(data.repairEntryRows.length ? data.repairEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No repair request route proof visible']),
+    '',
+    'Repair handoffs:',
+    ...(data.repairHandoffRows.length ? data.repairHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No repair handoffs visible']),
     '',
     'Backend Service Recommendations:',
     ...(data.backendRepairServiceRows.length ? data.backendRepairServiceRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend service recommendations available']),
@@ -15140,6 +19402,18 @@ function renderContainerRepairPlan(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend repair plan</div>
       ${briefingList(data.backendRepairRows, 'No backend repair plan available')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Repair alert queue</div>
+      ${briefingList(data.repairAlertRows, 'No backend repair alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Request route proof</div>
+      ${briefingList(data.repairEntryRows, 'No repair request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Repair handoffs</div>
+      ${briefingList(data.repairHandoffRows, 'No repair handoffs visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend service recommendations</div>
@@ -15276,6 +19550,8 @@ function modelStatusData(snapshot) {
   const cookbookState = readData(source, 'cookbookState') || {};
   const training = readData(source, 'training') || {};
   const operatorModels = readData(source, 'operatorModels') || {};
+  const aiRuntimePlan = readData(source, 'operatorAiRuntimePlan') || {};
+  const aiRuntimeSummary = aiRuntimePlan.summary || {};
   const modelOpsPlan = readData(source, 'operatorModelOpsPlan') || {};
   const modelOpsSummary = modelOpsPlan.summary || {};
   const ragStats = readData(source, 'ragStats') || {};
@@ -15312,6 +19588,67 @@ function modelStatusData(snapshot) {
   const modelActivity = operatorCommands.readActivity?.(20)
     .filter(item => item.category === 'Models' || /model|ollama|cookbook|training|lora|rag|chroma|search/i.test(`${item.title || ''} ${item.detail || ''}`))
     .slice(0, 3) || [];
+  const aiRuntimeRows = asArray(aiRuntimePlan, ['runtime_rows', 'runtimeRows']).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'ai',
+    title: row.title || row.id || 'Local AI runtime',
+    detail: row.detail || 'Backend local AI runtime evidence',
+    action: row.action || 'open-model-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    backendProof: true,
+  }));
+  const aiRuntimeEntryRows = asArray(aiRuntimePlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || (row.ready ? 'ok' : 'warn'),
+    badge: row.badge || row.entry || 'entry',
+    title: row.title || row.id || 'AI runtime request route',
+    detail: row.detail || 'Backend AI runtime request route proof',
+    action: row.action || 'open-model-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    ready: row.ready === true,
+    backendProof: true,
+  }));
+  const aiRuntimeAlertRows = asArray(aiRuntimePlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'ai',
+    title: row.title || row.id || 'AI runtime alert',
+    detail: row.detail || 'Backend local AI runtime alert',
+    action: row.action || 'open-model-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    backendProof: true,
+  }));
+  const aiRuntimeHandoffRows = asArray(aiRuntimePlan.handoff_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'AI runtime handoff',
+    detail: [
+      row.detail || 'local AI runtime handoff evidence',
+      `target=${row.target_api || row.targetApi || 'local AI runtime plan'}`,
+      `approval=${row.requires_approval === true || row.requiresApproval === true ? 'required' : 'not required'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : (row.network_after_approval || row.networkAfterApproval ? 'after approval' : 'no')}`,
+    ].join('; '),
+    action: row.action || 'open-model-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    startsModels: row.starts_models === true || row.startsModels === true,
+    startsTraining: row.starts_training === true || row.startsTraining === true,
+    downloadsModels: row.downloads_models === true || row.downloadsModels === true,
+    startsServices: row.starts_services === true || row.startsServices === true,
+    restartsServices: row.restarts_services === true || row.restartsServices === true,
+    writesFiles: row.writes_files === true || row.writesFiles === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    networkAfterApproval: row.network_after_approval === true || row.networkAfterApproval === true,
+    backendProof: true,
+  }));
+  const aiRuntimeApiRows = asArray(aiRuntimePlan, ['api_actions', 'apiActions']).map(row => ({
+    state: row.requires_approval || row.requiresApproval ? 'warn' : 'ok',
+    badge: row.method || 'API',
+    title: row.title || row.path || 'AI runtime API gate',
+    detail: `${row.method || 'GET'} ${row.path || ''}${row.starts_models || row.startsModels ? '; starts model' : ''}${row.starts_training || row.startsTraining ? '; starts training' : ''}${row.uses_network || row.usesNetwork ? '; network' : '; local'}`,
+    action: row.requires_approval || row.requiresApproval ? 'open-trust-controls' : 'open-model-preflight',
+    actionLabel: row.requires_approval || row.requiresApproval ? 'Trust' : 'Gate',
+  }));
   const modelOpsRows = asArray(modelOpsPlan.operation_rows).length
     ? asArray(modelOpsPlan.operation_rows).slice(0, 8).map(row => ({
         state: row.state || 'loading',
@@ -15334,6 +19671,71 @@ function modelStatusData(snapshot) {
     badge: row.badge || 'gate',
     title: row.title || 'Model operation guard',
     detail: row.detail || '',
+  }));
+  const modelAlertRows = asArray(modelOpsPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || 'Model operation alert',
+    detail: row.detail || '',
+    action: row.action || 'open-model-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const modelSnapshotAlertRows = asArray(operatorModels.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || 'Model snapshot alert',
+    detail: row.detail || '',
+    action: row.action || 'open-model-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const modelEntryRows = asArray(modelOpsPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Model operation request route proof',
+    detail: [
+      row.detail || 'open-model-preflight model operation route evidence',
+      `command=${row.command_id || 'open-model-preflight'}`,
+      `route=${row.start_command_id || 'open-model-routing-map'}`,
+      `approval=${row.approval_api || '/api/offline-control/models/primary'}`,
+      `download=${row.download_api || '/api/model/download'}`,
+      `serve=${row.serve_api || '/api/model/serve'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-model-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    setsPrimaryModel: row.sets_primary_model === true,
+    downloadsModels: row.downloads_models === true,
+    startsServing: row.starts_serving === true,
+    startsTraining: row.starts_training === true,
+    startsFinetune: row.starts_finetune === true,
+    usesNetwork: row.uses_network === true,
+  }));
+  const modelHandoffRows = asArray(modelOpsPlan.handoff_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Model operation handoff',
+    detail: [
+      row.detail || 'model operation handoff evidence',
+      `approval=${row.requires_approval === true || row.requiresApproval === true ? 'required' : 'not required'}`,
+      `target=${row.target_api || row.targetApi || 'local model preflight'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : (row.network_after_approval || row.networkAfterApproval ? 'after approval' : 'no')}`,
+    ].join('; '),
+    action: row.action || 'open-model-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    setsPrimaryModel: row.sets_primary_model === true || row.setsPrimaryModel === true,
+    downloadsModels: row.downloads_models === true || row.downloadsModels === true,
+    startsServing: row.starts_serving === true || row.startsServing === true,
+    startsTraining: row.starts_training === true || row.startsTraining === true,
+    startsFinetune: row.starts_finetune === true || row.startsFinetune === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    networkAfterApproval: row.network_after_approval === true || row.networkAfterApproval === true,
   }));
   const servingIssueRows = failedCookbook.slice(0, 4).map(job => {
     const title = firstValue(job, ['modelId', 'repoId', 'model', 'name', 'sessionId', 'id']) || 'Model serving job failed';
@@ -15535,17 +19937,42 @@ function modelStatusData(snapshot) {
     enabledLocal,
     modelActivity,
     operatorModels,
+    aiRuntimePlan,
+    aiRuntimeSummary,
+    aiRuntimeRows,
+    aiRuntimeEntryRows,
+    aiRuntimeAlertRows,
+    aiRuntimeHandoffRows,
+    aiRuntimeApiRows,
     modelOpsPlan,
     modelOpsSummary,
     modelOpsRows,
     modelOpsGuardRows,
+    modelAlertRows,
+    modelSnapshotAlertRows,
+    modelEntryRows,
+    modelHandoffRows,
     rows,
   };
 }
 
 function modelPreflightStats(snapshot) {
   const data = modelStatusData(snapshot);
+  const routeCount = Number(data.modelOpsSummary.entry_route_count || data.modelEntryRows.length || 0);
+  const routeReady = Number(data.modelOpsSummary.entry_route_ready_count || data.modelEntryRows.filter(row => row.state === 'ok').length || 0);
+  const handoffCount = Number(data.modelOpsSummary.handoff_count || data.modelHandoffRows.length || 0);
+  const handoffReady = Number(data.modelOpsSummary.handoff_ready_count || data.modelHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const aiHandoffCount = Number(data.aiRuntimeSummary.handoff_count || data.aiRuntimeHandoffRows.length || 0);
+  const aiHandoffReady = Number(data.aiRuntimeSummary.handoff_ready_count || data.aiRuntimeHandoffRows.filter(row => row.state === 'ok').length || 0);
   return [
+    {
+      state: snapshot?.operatorAiRuntimePlan?.ok
+        ? (Number(data.aiRuntimeSummary.critical_ai_runtime_alert_count || 0) ? 'error' : (Number(data.aiRuntimeSummary.ai_runtime_alert_count || 0) ? 'warn' : 'ok'))
+        : 'warn',
+      label: 'AI Runtime',
+      value: data.aiRuntimeSummary.runtime_row_count != null ? `${Number(data.aiRuntimeSummary.runtime_ready_count || 0)}/${Number(data.aiRuntimeSummary.runtime_row_count || 0)}` : '0',
+      detail: snapshot?.operatorAiRuntimePlan?.ok ? 'backend plan' : 'not loaded',
+    },
     {
       state: data.modelOpsPlan?.mode ? stateFromStatus(data.modelOpsSummary.state || 'ok') : 'warn',
       label: 'Plan',
@@ -15565,6 +19992,12 @@ function modelPreflightStats(snapshot) {
       detail: `${plural(data.modelCount, 'model')} visible`,
     },
     {
+      state: Number(data.modelOpsSummary.critical_model_alert_count || data.operatorModels.summary?.critical_model_snapshot_alert_count || 0) ? 'error' : (Number(data.modelOpsSummary.model_alert_count || data.operatorModels.summary?.model_snapshot_alert_count || 0) ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.modelOpsSummary.model_alert_count || data.modelAlertRows.length || 0) + Number(data.operatorModels.summary?.model_snapshot_alert_count || data.modelSnapshotAlertRows.length || 0)),
+      detail: `${plural(Number(data.modelOpsSummary.critical_model_alert_count || 0) + Number(data.operatorModels.summary?.critical_model_snapshot_alert_count || 0), 'critical')}`,
+    },
+    {
       state: data.failedCookbook.length ? 'error' : (data.activeCookbook.length ? 'warn' : 'ok'),
       label: 'Serving',
       value: data.activeCookbook.length ? `${data.activeCookbook.length} active` : String(data.cookbookTasks.length),
@@ -15575,6 +20008,24 @@ function modelPreflightStats(snapshot) {
       label: 'Vector/Search',
       value: data.ragCount != null ? String(data.ragCount) : data.searchProvider,
       detail: data.ragError ? 'RAG limited' : 'local context path',
+    },
+    {
+      state: routeCount && routeReady >= routeCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: routeCount ? `${routeReady}/${routeCount}` : '0',
+      detail: 'request proof',
+    },
+    {
+      state: handoffCount && handoffReady >= handoffCount ? 'ok' : 'warn',
+      label: 'Handoffs',
+      value: handoffCount ? `${handoffReady}/${handoffCount}` : '0',
+      detail: 'model operation paths',
+    },
+    {
+      state: aiHandoffCount && aiHandoffReady >= aiHandoffCount ? 'ok' : 'warn',
+      label: 'AI Handoffs',
+      value: aiHandoffCount ? `${aiHandoffReady}/${aiHandoffCount}` : '0',
+      detail: 'runtime/service paths',
     },
   ];
 }
@@ -15594,11 +20045,43 @@ function modelPreflightText(snapshot) {
     '',
     ...stats.map(item => `${item.label}: ${item.value} - ${item.detail}`),
     '',
+    'Local AI runtime:',
+    ...(data.aiRuntimeRows.length ? data.aiRuntimeRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend local AI runtime plan visible']),
+    '',
+    'AI runtime request routes:',
+    ...(data.aiRuntimeEntryRows.length ? data.aiRuntimeEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No AI runtime request route proof visible']),
+    '',
+    'AI runtime alerts:',
+    ...(data.aiRuntimeAlertRows.length ? data.aiRuntimeAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend AI runtime alerts visible']),
+    '',
+    'AI runtime handoffs:',
+    ...(data.aiRuntimeHandoffRows.length ? data.aiRuntimeHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No AI runtime handoffs visible']),
+    '',
     'Checks:',
     ...data.rows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     '',
     'Backend model-ops plan:',
     ...data.modelOpsRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Model alert queue:',
+    ...(data.modelAlertRows.length
+      ? data.modelAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- [ok] No model operation alerts returned']),
+    '',
+    'Model snapshot alerts:',
+    ...(data.modelSnapshotAlertRows.length
+      ? data.modelSnapshotAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- [ok] No model snapshot alerts returned']),
+    '',
+    'Model request route proof:',
+    ...(data.modelEntryRows.length
+      ? data.modelEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No model operation request route proof visible']),
+    '',
+    'Model operation handoffs:',
+    ...(data.modelHandoffRows.length
+      ? data.modelHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No model operation handoffs visible']),
     '',
     'Model job recovery:',
     ...recoveryLines,
@@ -15686,12 +20169,44 @@ function renderModelPreflight(snapshot) {
       `).join('')}
     </div>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Local AI runtime</div>
+      ${briefingList(data.aiRuntimeRows, 'No backend local AI runtime plan visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">AI runtime request routes</div>
+      ${briefingList(data.aiRuntimeEntryRows, 'No AI runtime request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">AI runtime alerts</div>
+      ${briefingList(data.aiRuntimeAlertRows, 'No backend AI runtime alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">AI runtime handoffs</div>
+      ${briefingList(data.aiRuntimeHandoffRows, 'No AI runtime handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Model checks</div>
       ${briefingList(data.rows, 'Model status unavailable')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend model-ops plan</div>
       ${briefingList(data.modelOpsRows, 'Backend model operations plan unavailable')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Model alert queue</div>
+      ${briefingList(data.modelAlertRows, 'No model operation alerts returned')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Model snapshot alerts</div>
+      ${briefingList(data.modelSnapshotAlertRows, 'No model snapshot alerts returned')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Model request route proof</div>
+      ${briefingList(data.modelEntryRows, 'No model operation request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Model operation handoffs</div>
+      ${briefingList(data.modelHandoffRows, 'No model operation handoffs visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Model job recovery</div>
@@ -16909,6 +21424,9 @@ function codeWorkspaceMapData(snapshot) {
   const backup = backupStatusData(source);
   const model = modelStatusData(source);
   const offline = readData(source, 'offline') || {};
+  const workspacePlan = readData(source, 'operatorWorkspacePlan') || {};
+  const workspacePlanOk = source.operatorWorkspacePlan?.ok === true;
+  const workspaceSummary = workspacePlan.summary || {};
   const runTestsMode = commandMode('run-tests');
   const watchBuildMode = commandMode('watch-build-until-green');
   const explainMode = commandMode('explain-changes-since-yesterday');
@@ -16994,6 +21512,76 @@ function codeWorkspaceMapData(snapshot) {
       actionLabel: 'Explain',
     },
   ];
+  const workspaceOperationRows = workspacePlanOk ? asArray(workspacePlan.workspace_rows).slice(0, 8).map(row => ({
+    state: row.state || 'loading',
+    badge: row.badge || 'work',
+    title: row.title || row.id || 'Workspace operation',
+    detail: row.detail || 'backend workspace operation evidence',
+    action: row.action || 'open-code-workspace-map',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    requiresApproval: row.requires_approval === true,
+  })) : [{
+    state: 'warn',
+    badge: 'backend',
+    title: 'Backend workspace operations plan unavailable',
+    detail: readError(source, 'operatorWorkspacePlan'),
+    action: 'open-code-workspace-map',
+    actionLabel: 'Map',
+  }];
+  const workspaceAlertRows = workspacePlanOk ? asArray(workspacePlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Workspace alert',
+    detail: row.detail || '',
+    action: row.action || 'open-code-workspace-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
+  const workspaceEntryRows = workspacePlanOk ? asArray(workspacePlan, ['entry_rows', 'entryRows']).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'route',
+    title: row.title || row.id || 'Workspace request route',
+    detail: row.detail || 'workspace-plan route evidence',
+    action: row.action || 'open-code-workspace-map',
+    actionLabel: row.actionLabel || row.action_label || 'Open',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
+  const workspaceHandoffRows = workspacePlanOk ? asArray(workspacePlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Workspace handoff',
+    detail: [
+      row.detail || 'local workspace handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/workspace-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'open-code-workspace-map'}`,
+      `shell=${row.runs_shell || row.runsShell ? 'yes' : 'no'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-code-workspace-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    runsTests: row.runs_tests === true || row.runsTests === true,
+    startsBuildWatch: row.starts_build_watch === true || row.startsBuildWatch === true,
+    runsSearch: row.runs_search === true || row.runsSearch === true,
+    startsResearch: row.starts_research === true || row.startsResearch === true,
+    uploadsFiles: row.uploads_files === true || row.uploadsFiles === true,
+    generatesImages: row.generates_images === true || row.generatesImages === true,
+    writesFiles: row.writes_files === true || row.writesFiles === true,
+    deletesFiles: row.deletes_files === true || row.deletesFiles === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    gatedOperation: row.gated_operation || row.gatedOperation || {},
+    backendProof: true,
+  })) : [];
+  const workspaceApiRows = workspacePlanOk ? asArray(workspacePlan.api_actions).slice(0, 8).map(row => ({
+    state: row.requires_approval ? 'warn' : (row.state || 'ok'),
+    badge: row.method || 'api',
+    title: row.title || row.path || 'Workspace API gate',
+    detail: `${row.path || ''}${row.requires_approval ? ' - approval required' : ' - read-only'}`.trim(),
+    action: row.requires_approval ? 'open-trust-controls' : 'open-code-workspace-map',
+    actionLabel: row.requires_approval ? 'Trust' : 'Map',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
   const recoveryRows = [
     {
       state: data.workspaces.length ? 'ok' : 'loading',
@@ -17048,10 +21636,18 @@ function codeWorkspaceMapData(snapshot) {
     backup,
     model,
     offline,
+    workspacePlan,
+    workspacePlanOk,
+    workspaceSummary,
     runTestsMode,
     watchBuildMode,
     explainMode,
     workspaceRows,
+    workspaceOperationRows,
+    workspaceAlertRows,
+    workspaceEntryRows,
+    workspaceHandoffRows,
+    workspaceApiRows,
     executionRows,
     gateRows,
     recoveryRows,
@@ -17061,6 +21657,12 @@ function codeWorkspaceMapData(snapshot) {
 
 function codeWorkspaceMapStats(snapshot) {
   const data = codeWorkspaceMapData(snapshot || {});
+  const workspaceRowCount = Number(data.workspaceSummary.workspace_row_count) || data.workspaceOperationRows.length;
+  const workspaceReadyCount = Number(data.workspaceSummary.workspace_ready_count) || data.workspaceOperationRows.filter(row => row.state === 'ok').length;
+  const workspaceAlertCount = Number(data.workspaceSummary.workspace_alert_count) || data.workspaceAlertRows.length;
+  const criticalWorkspaceAlertCount = Number(data.workspaceSummary.critical_workspace_alert_count) || data.workspaceAlertRows.filter(row => row.state === 'error').length;
+  const workspaceHandoffCount = Number(data.workspaceSummary.handoff_count) || data.workspaceHandoffRows.length;
+  const workspaceHandoffReady = Number(data.workspaceSummary.handoff_ready_count) || data.workspaceHandoffRows.filter(row => row.state === 'ok').length;
   return [
     {
       state: data.workspaces.length ? 'ok' : 'loading',
@@ -17086,6 +21688,18 @@ function codeWorkspaceMapStats(snapshot) {
       value: data.backup.uncoveredTotal ? 'Review' : 'Mapped',
       detail: 'snapshots/backups',
     },
+    {
+      state: data.workspacePlanOk ? (workspaceAlertCount ? 'warn' : 'ok') : 'warn',
+      label: 'Workbench',
+      value: workspaceRowCount ? `${workspaceReadyCount}/${workspaceRowCount}` : 'Plan',
+      detail: `${plural(workspaceAlertCount, 'alert')}; ${plural(criticalWorkspaceAlertCount, 'critical')}`,
+    },
+    {
+      state: workspaceHandoffCount && workspaceHandoffReady >= workspaceHandoffCount ? 'ok' : 'warn',
+      label: 'Workspace Handoffs',
+      value: workspaceHandoffCount ? `${workspaceHandoffReady}/${workspaceHandoffCount}` : '0',
+      detail: 'operation gates',
+    },
   ];
 }
 
@@ -17106,6 +21720,24 @@ function codeWorkspaceMapText(snapshot) {
     '',
     'Test and automation gates:',
     ...data.gateRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Backend workspace operations:',
+    ...data.workspaceOperationRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`),
+    '',
+    'Workspace request routes:',
+    ...(data.workspaceEntryRows.length
+      ? data.workspaceEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No workspace request route proof visible']),
+    '',
+    'Workspace handoffs:',
+    ...(data.workspaceHandoffRows.length
+      ? data.workspaceHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No workspace handoffs visible']),
+    '',
+    'Workspace alert queue:',
+    ...(data.workspaceAlertRows.length
+      ? data.workspaceAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No backend workspace alerts visible']),
     '',
     'Recovery and rollback:',
     ...data.recoveryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -17202,6 +21834,26 @@ function renderCodeWorkspaceMap(snapshot) {
       ${briefingList(data.gateRows, 'No test routes visible')}
     </section>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend workspace operations</div>
+      ${briefingList(data.workspaceOperationRows, 'No backend workspace operations plan visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Workspace alert queue</div>
+      ${briefingList(data.workspaceAlertRows, 'No backend workspace alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Workspace request routes</div>
+      ${briefingList(data.workspaceEntryRows, 'No workspace request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Workspace handoffs</div>
+      ${briefingList(data.workspaceHandoffRows, 'No workspace handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Workspace API gates</div>
+      ${briefingList(data.workspaceApiRows, 'No workspace API gates visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Recovery and rollback</div>
       ${briefingList(data.recoveryRows, 'No recovery routes visible')}
     </section>
@@ -17210,7 +21862,7 @@ function renderCodeWorkspaceMap(snapshot) {
       ${briefingList(data.recentRows, 'No recent code activity recorded')}
     </section>
     <div class="cc-briefing-empty">
-      Code Workspace Map is read-only. It inventories local repos, runner isolation, test/build routes, snapshots, model routing, and recovery gates; it does not run tests, apply diffs, restore snapshots, or change files unless a listed action is explicitly selected and approved.
+      Code Workspace Map is read-only. It inventories local repos, runner isolation, test/build routes, documents, research, gallery, file/data boundaries, snapshots, model routing, and recovery gates; it does not run tests, start build watches, search documents, start research, upload media, generate images, apply diffs, restore snapshots, or change files unless a listed action is explicitly selected and approved.
     </div>
   `;
 }
@@ -17354,6 +22006,59 @@ function codeTestPlanData(snapshot) {
     actionLabel: row.actionLabel || 'Open',
   }));
   const planRows = backendOk && backendSequenceRows.length ? backendSequenceRows : frontendPlanRows;
+  const codeAlertRows = backendOk ? asArray(backendPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Code test alert',
+    detail: row.detail || '',
+    action: row.action || 'run-tests',
+    actionLabel: row.actionLabel || row.action_label || 'Code',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
+  const codeEntryRows = backendOk ? asArray(backendPlan, ['entry_rows', 'entryRows']).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'route',
+    title: row.title || row.id || 'Code request route',
+    detail: row.detail || 'run-tests route evidence',
+    action: row.action || 'run-tests',
+    actionLabel: row.actionLabel || row.action_label || 'Test Plan',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
+  const routeRows = codeEntryRows.length ? codeEntryRows : (backendOk ? asArray(backendPlan.route_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'route',
+    title: row.title || row.id || 'Code route proof',
+    detail: row.detail || 'run-tests route evidence',
+    action: row.action || 'run-tests',
+    actionLabel: row.actionLabel || row.action_label || 'Test Plan',
+    requiresApproval: row.requires_approval === true,
+  })) : []);
+  const codeHandoffRows = backendOk ? asArray(backendPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Code test handoff',
+    detail: [
+      row.detail || 'code test handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/code-test-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'run-tests'}`,
+      `shell=${row.runs_shell || row.runsShell ? 'yes' : 'no'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'run-tests',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    runsTests: row.runs_tests === true || row.runsTests === true,
+    changesFiles: row.changes_files === true || row.changesFiles === true,
+    createsSnapshot: row.creates_snapshot === true || row.createsSnapshot === true,
+    readsDiff: row.reads_diff === true || row.readsDiff === true,
+    restoresSnapshots: row.restores_snapshots === true || row.restoresSnapshots === true,
+    commitsChanges: row.commits_changes === true || row.commitsChanges === true,
+    writesActivity: row.writes_activity === true || row.writesActivity === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    gatedOperation: row.gated_operation || row.gatedOperation || {},
+    backendProof: true,
+  })) : [];
   const gateRows = [
     ...(backendOk ? asArray(backendPlan.api_actions).slice(0, 4).map(action => ({
       state: action.requires_approval ? 'warn' : 'ok',
@@ -17465,6 +22170,10 @@ function codeTestPlanData(snapshot) {
     backendRows,
     workspaceRows,
     commandRows,
+    codeAlertRows,
+    codeEntryRows,
+    routeRows,
+    codeHandoffRows,
     planRows,
     gateRows,
     evidenceRows,
@@ -17478,6 +22187,12 @@ function codeTestPlanStats(snapshot) {
   const workspaceCount = backendHasCounts ? Number(summary.workspace_count) || 0 : data.workspaces.length;
   const runnerValue = backendHasCounts ? (summary.runner || data.runner) : data.runner;
   const runnerState = backendHasCounts ? stateFromStatus(summary.runner_state || data.runnerState) : data.runnerState;
+  const alertCount = backendHasCounts ? Number(summary.code_alert_count) || 0 : data.codeAlertRows.length;
+  const criticalAlertCount = backendHasCounts ? Number(summary.critical_code_alert_count) || 0 : data.codeAlertRows.filter(row => row.state === 'error').length;
+  const routeCount = backendHasCounts ? Number(summary.route_count) || data.routeRows.length : data.routeRows.length;
+  const routeReadyCount = backendHasCounts ? Number(summary.route_ready_count) || 0 : data.routeRows.filter(row => row.state === 'ok').length;
+  const handoffCount = backendHasCounts ? Number(summary.handoff_count) || data.codeHandoffRows.length : data.codeHandoffRows.length;
+  const handoffReady = backendHasCounts ? Number(summary.handoff_ready_count) || 0 : data.codeHandoffRows.filter(row => row.state === 'ok').length;
   return [
     {
       state: workspaceCount ? 'ok' : 'warn',
@@ -17492,16 +22207,28 @@ function codeTestPlanStats(snapshot) {
       detail: runnerValue === 'worker' ? 'isolated' : 'review',
     },
     {
-      state: 'ok',
+      state: routeReadyCount ? 'ok' : 'warn',
       label: 'Route',
-      value: 'Plan',
+      value: routeCount ? `${routeReadyCount}/${routeCount}` : 'Plan',
       detail: 'read-only first',
+    },
+    {
+      state: handoffCount && handoffReady >= handoffCount ? 'ok' : 'warn',
+      label: 'Code Handoffs',
+      value: handoffCount ? `${handoffReady}/${handoffCount}` : '0',
+      detail: 'run gates',
     },
     {
       state: data.backup.uncoveredTotal ? 'warn' : 'ok',
       label: 'Recovery',
       value: data.backup.uncoveredTotal ? 'Review' : 'Mapped',
       detail: 'snapshot gate',
+    },
+    {
+      state: criticalAlertCount ? 'error' : (alertCount ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(alertCount),
+      detail: `${plural(criticalAlertCount, 'critical')}`,
     },
   ];
 }
@@ -17525,6 +22252,21 @@ function codeTestPlanText(snapshot) {
     '',
     'Candidate commands:',
     ...data.commandRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Code alert queue:',
+    ...(data.codeAlertRows.length
+      ? data.codeAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No code test alerts returned']),
+    '',
+    'Code request routes:',
+    ...(data.routeRows.length
+      ? data.routeRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No backend route proof rows visible']),
+    '',
+    'Code test handoffs:',
+    ...(data.codeHandoffRows.length
+      ? data.codeHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No code test handoffs visible']),
     '',
     'Safe sequence:',
     ...data.planRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -17700,6 +22442,18 @@ function renderCodeTestPlan(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Candidate commands</div>
       ${briefingList(data.commandRows, 'No candidate test commands detected')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Code alert queue</div>
+      ${briefingList(data.codeAlertRows, 'No code test alerts returned')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Code request routes</div>
+      ${briefingList(data.routeRows, 'No backend route proof rows visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Code test handoffs</div>
+      ${briefingList(data.codeHandoffRows, 'No code test handoffs visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Safe sequence</div>
@@ -17903,6 +22657,54 @@ function buildWatchPlanData(snapshot) {
     actionLabel: row.actionLabel || 'Open',
   }));
   const sequenceRows = backendOk && backendSequenceRows.length ? backendSequenceRows : frontendSequenceRows;
+  const buildAlertRows = backendOk ? asArray(backendPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Build Watch alert',
+    detail: row.detail || '',
+    action: row.action || 'watch-build-until-green',
+    actionLabel: row.actionLabel || row.action_label || 'Build',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
+  const buildEntryRows = backendOk ? asArray(backendPlan, ['entry_rows', 'entryRows']).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'entry',
+    title: row.title || row.id || 'Build Watch request route',
+    detail: row.detail || 'backend build-watch request route evidence',
+    action: row.action || row.command_id || 'watch-build-until-green',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  })) : [];
+  const buildHandoffRows = backendOk ? asArray(backendPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Build Watch handoff',
+    detail: [
+      row.detail || 'build-watch handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/build-watch-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'request-build-watch-loop'}`,
+      `loop=${row.starts_loop === true || row.startsLoop === true ? 'yes' : 'no'}`,
+      `build=${row.runs_build === true || row.runsBuild === true ? 'yes' : 'no'}`,
+      `shell=${row.runs_shell === true || row.runsShell === true ? 'yes' : 'no'}`,
+      `network=${row.uses_network === true || row.usesNetwork === true ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'watch-build-until-green',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    startsLoop: row.starts_loop === true || row.startsLoop === true,
+    runsBuild: row.runs_build === true || row.runsBuild === true,
+    editsFiles: row.edits_files === true || row.editsFiles === true,
+    createsSnapshot: row.creates_snapshot === true || row.createsSnapshot === true,
+    readsDiff: row.reads_diff === true || row.readsDiff === true,
+    restoresSnapshot: row.restores_snapshot === true || row.restoresSnapshot === true,
+    installsDependencies: row.installs_dependencies === true || row.installsDependencies === true,
+    commitsChanges: row.commits_changes === true || row.commitsChanges === true,
+    writesActivity: row.writes_activity === true || row.writesActivity === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    gatedOperation: row.gated_operation || row.gatedOperation || {},
+    backendProof: true,
+  })) : [];
   const frontendGuardRows = [
     {
       state: 'ok',
@@ -18029,6 +22831,9 @@ function buildWatchPlanData(snapshot) {
     backendPlan,
     backendRows,
     commandRows,
+    buildAlertRows,
+    buildEntryRows,
+    buildHandoffRows,
     workspaceRows,
     loopRows,
     sequenceRows,
@@ -18045,6 +22850,12 @@ function buildWatchPlanStats(snapshot) {
   const maxIterations = backendHasCounts ? Number(summary.max_iterations) || (data.loop.maxIterations || 6) : (data.loop.maxIterations || 6);
   const runnerValue = backendHasCounts ? (summary.runner || data.code.runner) : data.code.runner;
   const runnerState = backendHasCounts ? stateFromStatus(summary.runner_state || data.runnerState) : data.runnerState;
+  const alertCount = backendHasCounts ? Number(summary.build_alert_count) || 0 : data.buildAlertRows.length;
+  const criticalAlertCount = backendHasCounts ? Number(summary.critical_build_alert_count) || 0 : data.buildAlertRows.filter(row => row.state === 'error').length;
+  const entryCount = backendHasCounts ? Number(summary.entry_route_count) || data.buildEntryRows.length : data.buildEntryRows.length;
+  const entryReadyCount = backendHasCounts ? Number(summary.entry_route_ready_count) || 0 : data.buildEntryRows.filter(row => row.state === 'ok').length;
+  const handoffCount = backendHasCounts ? Number(summary.handoff_count) || data.buildHandoffRows.length : data.buildHandoffRows.length;
+  const handoffReadyCount = backendHasCounts ? Number(summary.handoff_ready_count) || 0 : data.buildHandoffRows.filter(row => row.state === 'ok').length;
   return [
     {
       state: workspaceCount ? 'ok' : 'warn',
@@ -18070,6 +22881,24 @@ function buildWatchPlanStats(snapshot) {
       value: runnerValue,
       detail: runnerValue === 'worker' ? 'isolated' : 'review',
     },
+    {
+      state: criticalAlertCount ? 'error' : (alertCount ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(alertCount),
+      detail: `${plural(criticalAlertCount, 'critical')}`,
+    },
+    {
+      state: entryCount && entryReadyCount >= entryCount ? 'ok' : (entryCount ? 'warn' : 'loading'),
+      label: 'Routes',
+      value: entryCount ? `${entryReadyCount}/${entryCount}` : '0',
+      detail: 'entry paths',
+    },
+    {
+      state: handoffCount && handoffReadyCount >= handoffCount ? 'ok' : (handoffCount ? 'warn' : 'loading'),
+      label: 'Build Handoffs',
+      value: handoffCount ? `${handoffReadyCount}/${handoffCount}` : '0',
+      detail: 'handoff gates',
+    },
   ];
 }
 
@@ -18092,6 +22921,21 @@ function buildWatchPlanText(snapshot) {
     '',
     'Candidate build commands:',
     ...(data.commandRows.length ? data.commandRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend build commands detected']),
+    '',
+    'Build alert queue:',
+    ...(data.buildAlertRows.length
+      ? data.buildAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No Build Watch alerts returned']),
+    '',
+    'Build Watch request routes:',
+    ...(data.buildEntryRows.length
+      ? data.buildEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No Build Watch request route proof visible']),
+    '',
+    'Build Watch handoffs:',
+    ...(data.buildHandoffRows.length
+      ? data.buildHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No Build Watch handoffs visible']),
     '',
     'Loop template:',
     ...data.loopRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -18193,6 +23037,18 @@ function renderBuildWatchPlan(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Candidate build commands</div>
       ${briefingList(data.commandRows, 'No backend candidate build commands detected')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Build alert queue</div>
+      ${briefingList(data.buildAlertRows, 'No Build Watch alerts returned')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Build Watch request routes</div>
+      ${briefingList(data.buildEntryRows, 'No Build Watch request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Build Watch handoffs</div>
+      ${briefingList(data.buildHandoffRows, 'No Build Watch handoffs visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Loop template</div>
@@ -18615,6 +23471,88 @@ function trainingRunPlanData(snapshot) {
     actionLabel: row.actionLabel || 'Open',
   }));
   const routeRows = backendOk && backendRouteRows.length ? backendRouteRows : frontendRouteRows;
+  const frontendEntryRows = [
+    {
+      state: training.datasets.length ? 'ok' : 'warn',
+      badge: 'dash',
+      title: 'Command Center dashboard',
+      detail: training.datasets.length
+        ? 'Training Run Plan opens with local dataset candidates visible; approval is still required before any run'
+        : 'Training Run Plan opens first and asks for a local dataset before any run can be approved',
+      action: 'open-training-run-plan',
+      actionLabel: 'Plan',
+      requiresApproval: true,
+    },
+    {
+      state: 'ok',
+      badge: 'text',
+      title: 'Typed operator command',
+      detail: 'The phrase "Train a small model on this dataset" resolves to a read-only training plan before Training Lab actions',
+      action: 'open-training-run-plan',
+      actionLabel: 'Plan',
+      requiresApproval: true,
+    },
+    {
+      state: 'ok',
+      badge: 'cmd',
+      title: 'Global command palette',
+      detail: 'The palette exposes Open Training Run Plan as an approval-gated command route',
+      action: 'open-command-palette',
+      actionLabel: 'Palette',
+      requiresApproval: true,
+    },
+    {
+      state: 'ok',
+      badge: 'voice',
+      title: 'Voice command mode',
+      detail: 'Voice routing can land on the same Training Run Plan without creating datasets or starting jobs',
+      action: 'open-voice-preflight',
+      actionLabel: 'Voice',
+      requiresApproval: true,
+    },
+    {
+      state: training.datasets.length && training.loraReady ? 'ok' : 'warn',
+      badge: 'flow',
+      title: 'Automation workflow handoff',
+      detail: training.datasets.length && training.loraReady
+        ? 'Workflow handoff can review tiny training or LoRA readiness, but cannot start jobs from this panel'
+        : 'Workflow handoff stays in review mode until dataset, dependencies, and trainable base weights are ready',
+      action: 'open-automation-map',
+      actionLabel: 'Workflow',
+      requiresApproval: true,
+    },
+  ];
+  const backendEntryRows = asArray(backendPlan.entry_rows).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Training request route proof',
+    detail: row.detail || 'open-training-run-plan request route evidence',
+    action: row.action || 'open-training-run-plan',
+    actionLabel: row.actionLabel || row.action_label || 'Plan',
+    requiresApproval: row.requires_approval === true,
+  }));
+  const entryRows = backendOk && backendEntryRows.length ? backendEntryRows : frontendEntryRows;
+  const handoffRows = backendOk ? asArray(backendPlan.handoff_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Training handoff',
+    detail: [
+      row.detail || 'backend training handoff evidence',
+      row.target_api ? `api=${row.target_api}` : '',
+      row.approval_api ? `approval=${row.approval_api}` : '',
+      `training=${row.starts_training ? 'starts' : 'plan-only'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].filter(Boolean).join('; '),
+    action: row.action || 'open-training-run-plan',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+    startsTraining: row.starts_training === true,
+    createsDataset: row.creates_dataset === true,
+    createsModel: row.creates_model === true,
+    runsFinetune: row.runs_finetune === true,
+    changesEndpoints: row.changes_endpoints === true,
+    usesNetwork: row.uses_network === true,
+  })) : [];
   const frontendSequenceRows = [
     {
       state: training.datasets.length ? 'ok' : 'warn',
@@ -18664,6 +23602,81 @@ function trainingRunPlanData(snapshot) {
     actionLabel: row.actionLabel || 'Open',
   }));
   const sequenceRows = backendOk && backendSequenceRows.length ? backendSequenceRows : frontendSequenceRows;
+  const frontendAlertRows = [
+    !training.datasets.length ? {
+      state: 'error',
+      badge: 'data',
+      title: 'Dataset required',
+      detail: 'Create or import a local dataset before approving any training run',
+      action: 'open-training',
+      actionLabel: 'Dataset',
+    } : null,
+    training.failedJobs.length ? {
+      state: 'error',
+      badge: 'fail',
+      title: 'Failed training jobs need review',
+      detail: `${plural(training.failedJobs.length, 'failed job')} in the local ledger; inspect logs before another run`,
+      action: 'open-training',
+      actionLabel: 'Jobs',
+    } : null,
+    training.activeJobs.length ? {
+      state: 'warn',
+      badge: 'run',
+      title: 'Training job already active',
+      detail: `${plural(training.activeJobs.length, 'job')} running or queued; avoid overlapping heavy local training unless intentional`,
+      action: 'open-training',
+      actionLabel: 'Jobs',
+    } : null,
+    training.datasets.length && !training.artifacts.length ? {
+      state: 'warn',
+      badge: 'tiny',
+      title: 'No starter artifact yet',
+      detail: 'Approve a bounded tiny-model run first, then sample the output before escalating to LoRA',
+      action: 'open-training',
+      actionLabel: 'Train',
+    } : null,
+    !training.deps.available ? {
+      state: 'warn',
+      badge: 'deps',
+      title: 'Fine-tune dependencies missing',
+      detail: `LoRA cannot start until ${asArray(training.deps.missing).join(', ') || 'optional dependencies'} are available locally`,
+      action: 'open-training',
+      actionLabel: 'Deps',
+    } : null,
+    !training.trainableModels.length ? {
+      state: 'warn',
+      badge: 'base',
+      title: 'Trainable base weights required',
+      detail: 'LoRA needs a local HF-format base model directory; runtime chat manifests are not enough',
+      action: 'open-model-creation-plan',
+      actionLabel: 'Models',
+    } : null,
+    !model.primaryModel ? {
+      state: 'warn',
+      badge: 'chat',
+      title: 'Primary local model not ready',
+      detail: 'Choose an enabled local primary model before relying on trained artifacts in operator workflows',
+      action: 'open-model-routing-map',
+      actionLabel: 'Models',
+    } : null,
+    {
+      state: 'warn',
+      badge: 'ask',
+      title: 'Training run approval required',
+      detail: 'Creating datasets, starting tiny training, sampling artifacts, and starting LoRA jobs remain explicit Training Lab actions',
+      action: 'open-trust-controls',
+      actionLabel: 'Trust',
+    },
+  ].filter(Boolean).slice(0, 8);
+  const backendAlertRows = asArray(backendPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Training alert',
+    detail: row.detail || 'backend training alert',
+    action: row.action || 'open-training',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  }));
+  const alertRows = backendOk && backendAlertRows.length ? backendAlertRows : frontendAlertRows;
   const frontendGuardRows = [
     {
       state: 'ok',
@@ -18819,11 +23832,14 @@ function trainingRunPlanData(snapshot) {
     adaptersDir,
     baseModelsDir,
     datasetRows,
+    entryRows,
     routeRows,
     sequenceRows,
+    alertRows,
     guardRows,
     locationRows,
     evidenceRows,
+    handoffRows,
   };
 }
 
@@ -18837,6 +23853,12 @@ function trainingRunPlanStats(snapshot) {
   const activeJobs = backendHasCounts ? Number(summary.job_counts?.active) || 0 : data.activeJobs.length;
   const failedJobs = backendHasCounts ? Number(summary.job_counts?.failed) || 0 : data.failedJobs.length;
   const totalJobs = backendHasCounts ? Number(summary.job_counts?.total) || 0 : data.jobs.length;
+  const entryRouteCount = backendHasCounts ? Number(summary.entry_route_count) || data.entryRows.length : data.entryRows.length;
+  const entryRouteReadyCount = backendHasCounts ? Number(summary.entry_route_ready_count) || 0 : data.entryRows.filter(row => row.state === 'ok').length;
+  const handoffCount = backendHasCounts ? Number(summary.handoff_count) || data.handoffRows.length : data.handoffRows.length;
+  const handoffReadyCount = backendHasCounts ? Number(summary.handoff_ready_count) || 0 : data.handoffRows.filter(row => row.state === 'ok').length;
+  const alertCount = backendHasCounts ? Number(summary.training_alert_count) || data.alertRows.length : data.alertRows.length;
+  const criticalAlertCount = backendHasCounts ? Number(summary.critical_training_alert_count) || 0 : data.alertRows.filter(row => row.state === 'error').length;
   return [
     {
       state: datasetCount ? 'ok' : 'warn',
@@ -18862,6 +23884,24 @@ function trainingRunPlanStats(snapshot) {
       value: activeJobs ? `${activeJobs} active` : String(totalJobs),
       detail: failedJobs ? 'review failed' : 'ledger',
     },
+    {
+      state: entryRouteReadyCount >= entryRouteCount && entryRouteCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: entryRouteCount ? `${entryRouteReadyCount}/${entryRouteCount}` : '0',
+      detail: 'request proof',
+    },
+    {
+      state: handoffCount && handoffReadyCount >= handoffCount ? 'ok' : 'warn',
+      label: 'Handoffs',
+      value: handoffCount ? `${handoffReadyCount}/${handoffCount}` : '0',
+      detail: 'workflow bridge',
+    },
+    {
+      state: criticalAlertCount ? 'error' : (alertCount ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(alertCount),
+      detail: criticalAlertCount ? 'critical blockers' : 'approval queue',
+    },
   ];
 }
 
@@ -18882,8 +23922,17 @@ function trainingRunPlanText(snapshot) {
     'Dataset candidates:',
     ...data.datasetRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     '',
+    'Request route proof:',
+    ...data.entryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`),
+    '',
+    'Training handoffs:',
+    ...(data.handoffRows.length ? data.handoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No backend training handoffs visible']),
+    '',
     'Training routes:',
     ...data.routeRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Training alert queue:',
+    ...data.alertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     '',
     'Safe sequence:',
     ...data.sequenceRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -18983,8 +24032,20 @@ function renderTrainingRunPlan(snapshot) {
       ${briefingList(data.datasetRows, 'No dataset candidates visible')}
     </section>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Request route proof</div>
+      ${briefingList(data.entryRows, 'No training request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Training handoffs</div>
+      ${briefingList(data.handoffRows, 'No backend training handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Training routes</div>
       ${briefingList(data.routeRows, 'No training routes visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Training alert queue</div>
+      ${briefingList(data.alertRows, 'No training alerts visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Safe sequence</div>
@@ -19726,6 +24787,96 @@ function autonomyMapData(snapshot) {
       actionLabel: row.actionLabel || 'Review',
     })) : []),
   ];
+  const backendEntryRows = backendOk ? asArray(backendPlan, ['entry_rows', 'entryRows']).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Autonomy request route proof',
+    detail: [
+      row.detail || 'open-automation-map autonomy route evidence',
+      `command=${row.command_id || 'open-automation-map'}`,
+      `trust=${row.trust_command_id || 'open-trust-controls'}`,
+      `activity=${row.activity_command_id || 'open-activity-preflight'}`,
+      `route=${row.route_api || '/api/operator/route'}`,
+      `policy=${row.policy_api || '/api/operator/policy'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-automation-map',
+    actionLabel: row.actionLabel || row.action_label || 'Automation',
+    requiresApproval: row.requires_approval === true,
+    routesCommands: row.routes_commands === true,
+    executesCommands: row.executes_commands === true,
+    approvesCommands: row.approves_commands === true,
+    retriesCommands: row.retries_commands === true,
+    startsWorkflows: row.starts_workflows === true,
+    changesPolicy: row.changes_policy === true,
+    usesNetwork: row.uses_network === true,
+  })) : [];
+  const backendDecisionModeRows = backendOk ? asArray(backendPlan, ['decision_mode_rows', 'decisionModeRows']).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.mode || 'mode',
+    title: row.title || row.mode || 'Autonomy decision mode',
+    detail: [
+      row.detail || 'Backend autonomy decision-mode evidence',
+      `mode=${row.mode || row.id || 'unknown'}`,
+      `executes=${row.executes ? 'yes' : 'no'}`,
+      `routes=${row.routes_commands || row.routesCommands ? 'yes' : 'no'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-autonomy-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+  })) : [];
+  const backendPermissionCheckpointRows = backendOk ? asArray(backendPlan, ['permission_checkpoint_rows', 'permissionCheckpointRows']).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.checkpoint || 'gate',
+    title: row.title || row.id || 'Permission checkpoint',
+    detail: [
+      row.detail || 'Backend permission checkpoint evidence',
+      `checkpoint=${row.checkpoint || row.id || 'unknown'}`,
+      `approval=${row.requires_approval || row.requiresApproval ? 'yes' : 'no'}`,
+      `executes=${row.executes || row.executes_commands || row.executesCommands ? 'yes' : 'no'}`,
+      `policy=${row.changes_policy || row.changesPolicy ? 'changes' : 'read-only'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-autonomy-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    executes: row.executes === true,
+    executesCommands: row.executes_commands === true || row.executesCommands === true,
+    changesPolicy: row.changes_policy === true || row.changesPolicy === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+  })) : [];
+  const backendHandoffRows = backendOk ? asArray(backendPlan.handoff_rows).slice(0, 10).map(row => {
+    const gated = row.gated_operation || row.gatedOperation || {};
+    return {
+      state: row.state || 'warn',
+      badge: row.badge || 'handoff',
+      title: row.title || row.id || 'Autonomy handoff',
+      detail: [
+        row.detail || 'autonomy handoff evidence',
+        `target=${row.target_api || row.targetApi || '/api/operator/autonomy-plan'}`,
+        `approval=${row.approval_command_id || row.approvalCommandId || 'none'}`,
+        `routes=${gated.routes_commands === true || gated.routesCommands === true ? 'yes' : 'no'}`,
+        `workflow=${gated.starts_workflows === true || gated.startsWorkflows === true ? 'yes' : 'no'}`,
+        `policy=${gated.changes_policy === true || gated.changesPolicy === true ? 'yes' : 'no'}`,
+        `network=${gated.uses_network === true || gated.usesNetwork === true ? 'yes' : 'no'}`,
+      ].join('; '),
+      action: row.action || 'open-autonomy-map',
+      actionLabel: row.actionLabel || row.action_label || 'Review',
+      requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+      routesCommands: gated.routes_commands === true || gated.routesCommands === true,
+      approvesCommands: gated.approves_commands === true || gated.approvesCommands === true,
+      retriesCommands: gated.retries_commands === true || gated.retriesCommands === true,
+      startsWorkflows: gated.starts_workflows === true || gated.startsWorkflows === true,
+      changesPolicy: gated.changes_policy === true || gated.changesPolicy === true,
+      deletesActivity: gated.deletes_activity === true || gated.deletesActivity === true,
+      writesActivity: gated.writes_activity === true || gated.writesActivity === true,
+      runsShell: gated.runs_shell === true || gated.runsShell === true,
+      modifiesFiles: gated.modifies_files === true || gated.modifiesFiles === true,
+      usesNetwork: gated.uses_network === true || gated.usesNetwork === true,
+      gatedOperation: gated,
+      backendProof: true,
+    };
+  }) : [];
   const backendSafetyRows = safetyOk
     ? asArray(safetyPlan, ['risk_rows', 'riskRows']).map(row => ({
       state: row.state || 'warn',
@@ -19753,6 +24904,78 @@ function autonomyMapData(snapshot) {
       actionLabel: 'Trust',
     }))
     : [];
+  const safetyAlertRows = safetyOk
+    ? asArray(safetyPlan.alert_rows).slice(0, 8).map(row => ({
+      state: row.state || 'warn',
+      badge: row.badge || 'risk',
+      title: row.title || row.id || 'Safety alert',
+      detail: row.detail || 'Safety boundary needs review',
+      action: row.action || 'open-trust-controls',
+      actionLabel: row.actionLabel || row.action_label || 'Trust',
+      requiresApproval: row.requires_approval === true,
+      usesNetwork: row.uses_network === true,
+    }))
+    : [];
+  const safetyEntryRows = safetyOk ? asArray(safetyPlan, ['entry_rows', 'entryRows']).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Safety request route proof',
+    detail: [
+      row.detail || 'open-trust-controls safety route evidence',
+      `command=${row.command_id || 'open-trust-controls'}`,
+      `safety=${row.safety_command_id || 'open-autonomy-map'}`,
+      `offline=${row.offline_command_id || 'open-offline'}`,
+      `activity=${row.activity_command_id || 'open-activity-preflight'}`,
+      `safetyApi=${row.safety_api || '/api/operator/safety-plan'}`,
+      `policy=${row.policy_api || '/api/operator/policy'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-trust-controls',
+    actionLabel: row.actionLabel || row.action_label || 'Trust',
+    requiresApproval: row.requires_approval === true,
+    routesCommands: row.routes_commands === true,
+    executesCommands: row.executes_commands === true,
+    approvesActions: row.approves_actions === true,
+    startsWorkflows: row.starts_workflows === true,
+    startsJobs: row.starts_jobs === true,
+    runsShell: row.runs_shell === true,
+    runsDocker: row.runs_docker === true,
+    writesFiles: row.writes_files === true,
+    readsCredentials: row.reads_credentials === true,
+    exportsData: row.exports_data === true,
+    deletesRecords: row.deletes_records === true,
+    usesNetwork: row.uses_network === true,
+  })) : [];
+  const safetyHandoffRows = safetyOk ? asArray(safetyPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Safety handoff',
+    detail: [
+      row.detail || 'safety boundary handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/safety-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'open-trust-controls'}`,
+      `networkAfterApproval=${row.network_after_approval || row.networkAfterApproval ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-trust-controls',
+    actionLabel: row.actionLabel || row.action_label || 'Trust',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    routesCommands: row.routes_commands === true || row.routesCommands === true,
+    executesCommands: row.executes_commands === true || row.executesCommands === true,
+    approvesActions: row.approves_actions === true || row.approvesActions === true,
+    startsWorkflows: row.starts_workflows === true || row.startsWorkflows === true,
+    startsJobs: row.starts_jobs === true || row.startsJobs === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    runsDocker: row.runs_docker === true || row.runsDocker === true,
+    writesFiles: row.writes_files === true || row.writesFiles === true,
+    readsCredentials: row.reads_credentials === true || row.readsCredentials === true,
+    exportsData: row.exports_data === true || row.exportsData === true,
+    deletesRecords: row.deletes_records === true || row.deletesRecords === true,
+    restartsServices: row.restarts_services === true || row.restartsServices === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    networkAfterApproval: row.network_after_approval === true || row.networkAfterApproval === true,
+    gatedOperation: row.gated_operation || row.gatedOperation || {},
+    backendProof: true,
+  })) : [];
   const rows = [
     {
       state: askTiers.length >= 3 ? 'ok' : 'warn',
@@ -19865,17 +25088,36 @@ function autonomyMapData(snapshot) {
     backendSummary,
     backendOk,
     backendRows,
+    backendEntryRows,
+    backendDecisionModeRows,
+    backendPermissionCheckpointRows,
+    backendHandoffRows,
     safetyPlan,
     safetySummary,
     safetyOk,
     backendSafetyRows,
     backendSafetyGuardRows,
+    safetyAlertRows,
+    safetyEntryRows,
+    safetyHandoffRows,
     rows,
   };
 }
 
 function autonomyMapStats() {
   const data = autonomyMapData();
+  const routeCount = Number(data.backendSummary.entry_route_count || data.backendEntryRows.length || 0);
+  const routeReady = Number(data.backendSummary.entry_route_ready_count || data.backendEntryRows.filter(row => row.state === 'ok').length || 0);
+  const decisionModeCount = Number(data.backendSummary.decision_mode_count || data.backendDecisionModeRows.length || 0);
+  const decisionModeReady = Number(data.backendSummary.decision_mode_ready_count || data.backendDecisionModeRows.filter(row => row.state === 'ok').length || 0);
+  const checkpointCount = Number(data.backendSummary.permission_checkpoint_count || data.backendPermissionCheckpointRows.length || 0);
+  const checkpointReady = Number(data.backendSummary.permission_checkpoint_ready_count || data.backendPermissionCheckpointRows.filter(row => row.state === 'ok').length || 0);
+  const handoffCount = Number(data.backendSummary.handoff_count || data.backendHandoffRows.length || 0);
+  const handoffReady = Number(data.backendSummary.handoff_ready_count || data.backendHandoffRows.filter(row => row.state === 'ok').length || 0);
+  const safetyRouteCount = Number(data.safetySummary.entry_route_count || data.safetyEntryRows.length || 0);
+  const safetyRouteReady = Number(data.safetySummary.entry_route_ready_count || data.safetyEntryRows.filter(row => row.state === 'ok').length || 0);
+  const safetyHandoffCount = Number(data.safetySummary.handoff_count || data.safetyHandoffRows.length || 0);
+  const safetyHandoffReady = Number(data.safetySummary.handoff_ready_count || data.safetyHandoffRows.filter(row => row.state === 'ok').length || 0);
   return [
     {
       state: data.commands.length ? 'ok' : 'loading',
@@ -19902,12 +25144,54 @@ function autonomyMapStats() {
       detail: data.pending.length ? 'pending approvals' : (data.failed.length ? 'failures' : 'clear'),
     },
     {
+      state: routeCount && routeReady >= routeCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: routeCount ? `${routeReady}/${routeCount}` : '0',
+      detail: 'request proof',
+    },
+    {
+      state: decisionModeCount && decisionModeReady >= decisionModeCount ? 'ok' : 'warn',
+      label: 'Modes',
+      value: decisionModeCount ? `${decisionModeReady}/${decisionModeCount}` : '0',
+      detail: 'suggest/ask/execute/auto',
+    },
+    {
+      state: checkpointCount && checkpointReady >= checkpointCount ? 'ok' : 'warn',
+      label: 'Checkpoints',
+      value: checkpointCount ? `${checkpointReady}/${checkpointCount}` : '0',
+      detail: 'permission flow',
+    },
+    {
+      state: handoffCount && handoffReady >= handoffCount ? 'ok' : 'warn',
+      label: 'Autonomy Handoffs',
+      value: handoffCount ? `${handoffReady}/${handoffCount}` : '0',
+      detail: 'handoff gates',
+    },
+    {
+      state: safetyRouteCount && safetyRouteReady >= safetyRouteCount ? 'ok' : 'warn',
+      label: 'Safety Routes',
+      value: safetyRouteCount ? `${safetyRouteReady}/${safetyRouteCount}` : '0',
+      detail: 'request proof',
+    },
+    {
+      state: safetyHandoffCount && safetyHandoffReady >= safetyHandoffCount ? 'ok' : 'warn',
+      label: 'Safety Handoffs',
+      value: safetyHandoffCount ? `${safetyHandoffReady}/${safetyHandoffCount}` : '0',
+      detail: 'risk checkpoints',
+    },
+    {
       state: data.safetyOk ? (Number(data.safetySummary.issue_count || 0) ? 'warn' : 'ok') : 'warn',
       label: 'Safety',
       value: data.safetyOk
         ? `${data.safetySummary.ready_count ?? data.backendSafetyRows.filter(row => row.state === 'ok').length}/${data.safetySummary.risk_count ?? data.backendSafetyRows.length}`
         : '0/0',
       detail: data.safetyOk ? 'risk classes' : 'plan unavailable',
+    },
+    {
+      state: Number(data.safetySummary.critical_safety_alert_count || 0) ? 'error' : (Number(data.safetySummary.safety_alert_count || data.safetyAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.safetySummary.safety_alert_count || data.safetyAlertRows.length || 0)),
+      detail: `${plural(Number(data.safetySummary.critical_safety_alert_count || 0), 'critical')}`,
     },
   ];
 }
@@ -19930,8 +25214,33 @@ function autonomyMapText() {
     'Checks:',
     ...data.rows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
     '',
+    'Autonomy request route proof:',
+    ...(data.backendEntryRows.length ? data.backendEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No autonomy request route proof visible']),
+    '',
+    'Autonomy decision modes:',
+    ...(data.backendDecisionModeRows.length ? data.backendDecisionModeRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No autonomy decision mode proof visible']),
+    '',
+    'Permission checkpoints:',
+    ...(data.backendPermissionCheckpointRows.length ? data.backendPermissionCheckpointRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No permission checkpoint proof visible']),
+    '',
+    'Autonomy handoffs:',
+    ...(data.backendHandoffRows.length ? data.backendHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No autonomy handoffs visible']),
+    '',
     'Backend safety plan:',
     ...data.backendSafetyRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
+    '',
+    'Safety request route proof:',
+    ...(data.safetyEntryRows.length ? data.safetyEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No safety request route proof visible']),
+    '',
+    'Safety handoffs:',
+    ...(data.safetyHandoffRows.length
+      ? data.safetyHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No safety handoffs visible']),
+    '',
+    'Safety alert queue:',
+    ...(data.safetyAlertRows.length
+      ? data.safetyAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No safety alerts returned']),
     ...(data.backendSafetyGuardRows.length ? [
       '',
       'Safety guard rails:',
@@ -20021,8 +25330,36 @@ function renderAutonomyMap() {
       ${briefingList(data.backendRows, 'Backend autonomy plan unavailable')}
     </section>
     <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Autonomy request route proof</div>
+      ${briefingList(data.backendEntryRows, 'No autonomy request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Autonomy decision modes</div>
+      ${briefingList(data.backendDecisionModeRows, 'No autonomy decision mode proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Permission checkpoints</div>
+      ${briefingList(data.backendPermissionCheckpointRows, 'No permission checkpoint proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Autonomy handoffs</div>
+      ${briefingList(data.backendHandoffRows, 'No autonomy handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend safety plan</div>
       ${briefingList(data.backendSafetyRows, 'Backend safety plan unavailable')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Safety request route proof</div>
+      ${briefingList(data.safetyEntryRows, 'No safety request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Safety handoffs</div>
+      ${briefingList(data.safetyHandoffRows, 'No safety handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Safety alert queue</div>
+      ${briefingList(data.safetyAlertRows, 'No safety alerts returned')}
     </section>
     ${data.backendSafetyGuardRows.length ? `
       <section class="cc-briefing-section">
@@ -20083,6 +25420,45 @@ function recoveryMapData(snapshot) {
   const research = researchStatusData(source);
   const localData = localDataMapData(source);
   const autonomy = autonomyMapData();
+  const recoveryPlan = readData(source, 'operatorRecoveryPlan') || {};
+  const recoverySummary = recoveryPlan.summary || {};
+  const recoveryPlanRows = asArray(recoveryPlan.recovery_rows).slice(0, 10).map(row => ({
+    state: row.state || 'loading',
+    badge: row.badge || 'recover',
+    title: row.title || row.id || 'Recovery plan row',
+    detail: row.detail || 'Backend recovery evidence',
+    action: row.action || 'open-recovery-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  }));
+  const recoveryAlertRows = asArray(recoveryPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Recovery alert',
+    detail: row.detail || 'Backend recovery alert',
+    action: row.action || 'open-recovery-map',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true,
+  }));
+  const recoveryEntryRows = asArray(recoveryPlan, ['entry_rows', 'entryRows']).slice(0, 7).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || row.entry || 'route',
+    title: row.title || row.id || 'Recovery request route proof',
+    detail: [
+      row.detail || 'open-recovery-map recovery route evidence',
+      `command=${row.command_id || 'open-recovery-map'}`,
+      `activity=${row.activity_command_id || 'open-activity-preflight'}`,
+      `backup=${row.backup_command_id || 'open-backup-preflight'}`,
+      `trust=${row.trust_command_id || 'open-trust-controls'}`,
+      `recovery=${row.recovery_api || '/api/operator/recovery-plan'}`,
+      `retry=${row.retries_commands ? 'yes' : 'no'}`,
+      `restore=${row.restores_data ? 'yes' : 'no'}`,
+      `network=${row.uses_network ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || row.command_id || 'open-recovery-map',
+    actionLabel: row.actionLabel || row.action_label || 'Recovery',
+    requiresApproval: row.requires_approval === true,
+  }));
   const recoveryActivity = recoveryActivityItems();
   const activeFailures = queue.failureCount + activity.issueCount;
   const snapshotReady = source.workspaces?.ok && code.workspaces.length > 0;
@@ -20223,6 +25599,11 @@ function recoveryMapData(snapshot) {
     research,
     localData,
     autonomy,
+    recoveryPlan,
+    recoverySummary,
+    recoveryPlanRows,
+    recoveryAlertRows,
+    recoveryEntryRows,
     recoveryActivity,
     activeFailures,
     snapshotReady,
@@ -20234,6 +25615,8 @@ function recoveryMapData(snapshot) {
 
 function recoveryMapStats(snapshot) {
   const data = recoveryMapData(snapshot || {});
+  const routeCount = Number(data.recoverySummary.entry_route_count || data.recoveryEntryRows.length || 0);
+  const routeReady = Number(data.recoverySummary.entry_route_ready_count || data.recoveryEntryRows.filter(row => row.state === 'ok').length || 0);
   return [
     {
       state: data.activeFailures ? 'error' : 'ok',
@@ -20259,6 +25642,18 @@ function recoveryMapStats(snapshot) {
       value: data.backupNeedsSnapshot ? 'Review' : 'Mapped',
       detail: data.backupNeedsSnapshot ? 'full snapshot' : 'restore drill',
     },
+    {
+      state: Number(data.recoverySummary.critical_recovery_alert_count || 0) ? 'error' : (Number(data.recoverySummary.recovery_alert_count || data.recoveryAlertRows.length || 0) ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(Number(data.recoverySummary.recovery_alert_count || data.recoveryAlertRows.length || 0)),
+      detail: 'backend plan',
+    },
+    {
+      state: routeCount && routeReady >= routeCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: routeCount ? `${routeReady}/${routeCount}` : '0',
+      detail: 'request proof',
+    },
   ];
 }
 
@@ -20270,6 +25665,15 @@ function recoveryMapText(snapshot) {
     `Generated: ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`,
     '',
     ...stats.map(item => `${item.label}: ${item.value} - ${item.detail}`),
+    '',
+    'Backend recovery plan:',
+    ...(data.recoveryPlanRows.length ? data.recoveryPlanRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- Backend Recovery Plan unavailable']),
+    '',
+    'Recovery alert queue:',
+    ...(data.recoveryAlertRows.length ? data.recoveryAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No backend recovery alerts visible']),
+    '',
+    'Recovery request route proof:',
+    ...(data.recoveryEntryRows.length ? data.recoveryEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`) : ['- No Recovery request route proof visible']),
     '',
     'Recovery paths:',
     ...data.rows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -20353,6 +25757,18 @@ function renderRecoveryMap(snapshot) {
         </div>
       `).join('')}
     </div>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Backend recovery plan</div>
+      ${briefingList(data.recoveryPlanRows, 'Backend Recovery Plan unavailable')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Recovery alert queue</div>
+      ${briefingList(data.recoveryAlertRows, 'No backend recovery alerts visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Recovery request route proof</div>
+      ${briefingList(data.recoveryEntryRows, 'No Recovery request route proof visible')}
+    </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Recovery paths</div>
       ${briefingList(data.rows, 'Recovery status unavailable')}
@@ -20608,6 +26024,50 @@ function activityStatusData(snapshot) {
     action: row.action || 'open-activity-preflight',
     actionLabel: row.actionLabel || 'Inspect',
   })) : [];
+  const activityAlertRows = backendOk ? asArray(backendPlan.alert_rows).slice(0, 8).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'alert',
+    title: row.title || row.id || 'Activity alert',
+    detail: row.detail || '',
+    action: row.action || 'open-activity-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Activity',
+    requiresApproval: row.requires_approval === true,
+    destructive: row.destructive === true,
+  })) : [];
+  const activityEntryRows = backendOk ? asArray(backendPlan, ['entry_rows', 'entryRows']).map(row => ({
+    state: row.state || (row.ready ? 'ok' : 'warn'),
+    badge: row.badge || row.entry || 'entry',
+    title: row.title || row.id || 'Activity request route',
+    detail: row.detail || 'Backend activity request route evidence',
+    action: row.action || row.command_id || 'open-activity-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    ready: row.ready === true,
+    backendProof: true,
+  })) : [];
+  const activityHandoffRows = backendOk ? asArray(backendPlan.handoff_rows).slice(0, 10).map(row => ({
+    state: row.state || 'warn',
+    badge: row.badge || 'handoff',
+    title: row.title || row.id || 'Activity handoff',
+    detail: [
+      row.detail || 'activity handoff evidence',
+      `target=${row.target_api || row.targetApi || '/api/operator/activity-plan'}`,
+      `approval=${row.approval_command_id || row.approvalCommandId || 'open-activity-preflight'}`,
+      `network=${row.uses_network || row.usesNetwork ? 'yes' : 'no'}`,
+    ].join('; '),
+    action: row.action || 'open-activity-preflight',
+    actionLabel: row.actionLabel || row.action_label || 'Review',
+    requiresApproval: row.requires_approval === true || row.requiresApproval === true,
+    writesActivity: row.writes_activity === true || row.writesActivity === true,
+    deletesActivity: row.deletes_activity === true || row.deletesActivity === true,
+    retriesCommands: row.retries_commands === true || row.retriesCommands === true,
+    runsCommands: row.runs_commands === true || row.runsCommands === true,
+    approvesActions: row.approves_actions === true || row.approvesActions === true,
+    restoresData: row.restores_data === true || row.restoresData === true,
+    restartsServices: row.restarts_services === true || row.restartsServices === true,
+    runsShell: row.runs_shell === true || row.runsShell === true,
+    usesNetwork: row.uses_network === true || row.usesNetwork === true,
+    backendProof: true,
+  })) : [];
   const backendRecentRows = backendOk ? asArray(backendPlan.recent_rows).slice(0, 8).map(row => ({
     state: row.state || 'loading',
     badge: row.badge || 'activity',
@@ -20616,6 +26076,67 @@ function activityStatusData(snapshot) {
     action: row.action || 'open-activity-preflight',
     actionLabel: row.actionLabel || 'Details',
   })) : [];
+  const backendActionRows = backendOk ? asArray(backendPlan.action_rows).slice(0, 6).flatMap(row => {
+    const title = row.title || row.id || 'Activity action affordance';
+    const state = row.state || 'loading';
+    const base = {
+      badge: row.badge || 'acts',
+      title,
+      activityId: row.activity_id || row.activityId || '',
+      backendProof: true,
+    };
+    const rows = [
+      {
+        ...base,
+        state,
+        title: `${title} details`,
+        detail: row.detail || 'details, log copy, retry, and rollback evidence',
+        action: row.detail_action || row.detailAction || row.action || 'open-activity-preflight',
+        actionLabel: 'Details',
+      },
+    ];
+    if (row.copy_log_action || row.copyLogAction) {
+      rows.push({
+        ...base,
+        state: row.log_ready || row.logReady ? 'ok' : 'warn',
+        badge: 'copy',
+        title: `${title} copy log`,
+        detail: row.log_ready || row.logReady
+          ? 'Copy status, result, error, events, and recovery notes from the local ledger.'
+          : 'Log evidence is incomplete; inspect the activity record before copying.',
+        action: row.copy_log_action || row.copyLogAction,
+        actionLabel: 'Copy',
+      });
+    }
+    if (row.retry_action || row.retryAction) {
+      rows.push({
+        ...base,
+        state: row.retryable ? 'warn' : 'loading',
+        badge: 'retry',
+        title: `${title} retry checkpoint`,
+        detail: row.retryable
+          ? 'Open a permission checkpoint before replaying this command through the current trust policy.'
+          : 'No retry route is available for this record.',
+        action: row.retry_action || row.retryAction,
+        actionLabel: 'Retry',
+        requiresApproval: row.retry_requires_approval === true || row.retryRequiresApproval === true || row.requires_approval === true,
+      });
+    }
+    if (row.recovery_action || row.recoveryAction) {
+      rows.push({
+        ...base,
+        state: row.needs_recovery || row.needsRecovery || !row.rollback_ready ? 'warn' : 'ok',
+        badge: 'recover',
+        title: `${title} recovery review`,
+        detail: row.rollback_ready || row.rollbackReady
+          ? 'Recovery or rollback guidance is available before changing local state.'
+          : 'Rollback guidance is missing; review Recovery Map before continuing.',
+        action: row.recovery_action || row.recoveryAction,
+        actionLabel: 'Recovery',
+      });
+    }
+    return rows;
+  }) : [];
   const latestDetail = latest
     ? `${latest.title || 'Command'} - ${latest.detail || latest.status || 'recorded'}`
     : 'No command activity recorded yet';
@@ -20728,7 +26249,11 @@ function activityStatusData(snapshot) {
     backendSummary,
     backendRows,
     backendGapRows,
+    activityAlertRows,
+    activityEntryRows,
+    activityHandoffRows,
     backendRecentRows,
+    backendActionRows,
     rows,
     recentRecords,
   };
@@ -20743,6 +26268,14 @@ function activityPreflightStats(snapshot) {
   const issueCount = backendHasCounts
     ? (Number(data.backendSummary.failure_count) || 0) + (Number(data.backendSummary.pending_count) || 0)
     : data.issueCount;
+  const alertCount = backendHasCounts ? Number(data.backendSummary.activity_alert_count) || 0 : data.activityAlertRows.length;
+  const criticalAlertCount = backendHasCounts ? Number(data.backendSummary.critical_activity_alert_count) || 0 : data.activityAlertRows.filter(row => row.state === 'error').length;
+  const logCount = backendHasCounts ? Number(data.backendSummary.log_evidence_count) || 0 : data.withDetail.length;
+  const rollbackCount = backendHasCounts ? Number(data.backendSummary.rollback_ready_count) || 0 : data.recentRecords.length;
+  const entryCount = backendHasCounts ? Number(data.backendSummary.entry_route_count) || data.activityEntryRows.length : data.activityEntryRows.length;
+  const entryReadyCount = backendHasCounts ? Number(data.backendSummary.entry_route_ready_count) || 0 : data.activityEntryRows.filter(row => row.ready).length;
+  const handoffCount = backendHasCounts ? Number(data.backendSummary.handoff_count) || data.activityHandoffRows.length : data.activityHandoffRows.length;
+  const handoffReadyCount = backendHasCounts ? Number(data.backendSummary.handoff_ready_count) || 0 : data.activityHandoffRows.filter(row => row.state === 'ok').length;
   return [
     {
       state: recordCount ? 'ok' : 'warn',
@@ -20763,10 +26296,40 @@ function activityPreflightStats(snapshot) {
       detail: backendHasCounts ? 'events' : 'local sources',
     },
     {
+      state: logCount >= recordCount && recordCount ? 'ok' : (recordCount ? 'warn' : 'loading'),
+      label: 'Logs',
+      value: `${logCount}/${recordCount}`,
+      detail: 'copy evidence',
+    },
+    {
+      state: rollbackCount >= recordCount && recordCount ? 'ok' : (recordCount ? 'warn' : 'loading'),
+      label: 'Rollback',
+      value: `${rollbackCount}/${recordCount}`,
+      detail: 'guidance',
+    },
+    {
       state: issueCount ? 'error' : 'ok',
       label: 'Issues',
       value: String(issueCount),
       detail: issueCount ? 'visible failures' : 'none visible',
+    },
+    {
+      state: criticalAlertCount ? 'error' : (alertCount ? 'warn' : 'ok'),
+      label: 'Alerts',
+      value: String(alertCount),
+      detail: `${plural(criticalAlertCount, 'critical')}`,
+    },
+    {
+      state: entryCount && entryReadyCount >= entryCount ? 'ok' : 'warn',
+      label: 'Routes',
+      value: entryCount ? `${entryReadyCount}/${entryCount}` : '0',
+      detail: 'entry paths',
+    },
+    {
+      state: handoffCount && handoffReadyCount >= handoffCount ? 'ok' : 'warn',
+      label: 'Handoffs',
+      value: handoffCount ? `${handoffReadyCount}/${handoffCount}` : '0',
+      detail: 'review gates',
     },
   ];
 }
@@ -20788,6 +26351,22 @@ function activityPreflightText(snapshot) {
     '',
     'Backend timeline gaps:',
     ...(data.backendGapRows.length ? data.backendGapRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend timeline gaps visible']),
+    '',
+    'Activity alert queue:',
+    ...(data.activityAlertRows.length
+      ? data.activityAlertRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No activity alerts returned']),
+    '',
+    'Activity request routes:',
+    ...(data.activityEntryRows.length ? data.activityEntryRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No Activity request route proof visible']),
+    '',
+    'Activity handoffs:',
+    ...(data.activityHandoffRows.length
+      ? data.activityHandoffRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}${row.requiresApproval ? ' (approval required)' : ''}`)
+      : ['- No Activity handoffs visible']),
+    '',
+    'Activity action affordances:',
+    ...(data.backendActionRows.length ? data.backendActionRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`) : ['- No backend action affordance rows visible']),
     '',
     'Evidence source coverage:',
     ...data.sourceRows.map(row => `- [${row.state}] ${row.title}: ${row.detail}`),
@@ -21022,6 +26601,20 @@ function ensureActivityPreflight() {
       openActivityDetails(activityId);
       return;
     }
+    if (action.startsWith('copy-activity-log:')) {
+      copyActivityLogById(action.slice('copy-activity-log:'.length))
+        .catch(error => console.error('Activity preflight copy log failed:', error));
+      return;
+    }
+    if (action.startsWith('retry-activity:')) {
+      closeActivityPreflight();
+      openActivityRetryCheckpoint(action.slice('retry-activity:'.length), 'activity-preflight');
+      return;
+    }
+    if (handleDashboardInternalAction(action)) {
+      closeActivityPreflight();
+      return;
+    }
     closeActivityPreflight();
     operatorCommands.executeCommand(action, { source: 'activity-preflight' })
       .then(() => setTimeout(refresh, 500))
@@ -21068,6 +26661,22 @@ function renderActivityPreflight(snapshot) {
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Backend timeline gaps</div>
       ${briefingList(data.backendGapRows, 'No backend timeline gaps visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Activity alert queue</div>
+      ${briefingList(data.activityAlertRows, 'No activity alerts returned')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Activity request routes</div>
+      ${briefingList(data.activityEntryRows, 'No Activity request route proof visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Activity handoffs</div>
+      ${briefingList(data.activityHandoffRows, 'No Activity handoffs visible')}
+    </section>
+    <section class="cc-briefing-section">
+      <div class="cc-briefing-section-title">Activity action affordances</div>
+      ${briefingList(data.backendActionRows, 'No backend action affordance rows visible')}
     </section>
     <section class="cc-briefing-section">
       <div class="cc-briefing-section-title">Evidence source coverage</div>
@@ -22438,6 +28047,15 @@ function handleDashboardInternalAction(action) {
     openActivityDetails(action.slice('activity-detail:'.length));
     return true;
   }
+  if (action.startsWith('copy-activity-log:')) {
+    copyActivityLogById(action.slice('copy-activity-log:'.length))
+      .catch(error => console.error('Activity log copy failed:', error));
+    return true;
+  }
+  if (action.startsWith('retry-activity:')) {
+    openActivityRetryCheckpoint(action.slice('retry-activity:'.length), 'automation-map');
+    return true;
+  }
   if (action === 'copy-latest-activity-log') {
     const latest = operatorActivityItems(1)[0];
     if (!latest?.id) {
@@ -22931,6 +28549,12 @@ function init(apiBase = '') {
     renderCommandRoutePreview();
   } catch (error) {
     recordCommandCenterInitWarning('event binding', error);
+  }
+  try {
+    renderCommandReadiness(_lastSnapshot);
+    renderTargetCommands(_lastSnapshot);
+  } catch (error) {
+    recordCommandCenterInitWarning('initial command render', error);
   }
   refresh().finally(() => {
     if (_readyState === 'initializing') {

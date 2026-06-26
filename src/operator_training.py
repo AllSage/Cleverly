@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from src.operator_models import run_operator_model_snapshot
-
 
 MAX_ROWS = 8
 
@@ -250,6 +248,86 @@ def _training_routes(
     ]
 
 
+def _entry_rows(dataset_count: int, lora_ready: bool) -> list[dict[str, Any]]:
+    dataset_detail = (
+        "Training Run Plan can open with local dataset candidates visible; explicit approval is still required before any run."
+        if dataset_count
+        else "Training Run Plan opens first and asks for a local dataset before any run can be approved."
+    )
+    lora_detail = (
+        "Workflow handoff can review tiny training or LoRA readiness, but it cannot start jobs from this endpoint."
+        if lora_ready
+        else "Workflow handoff stays in review mode until dataset, dependencies, and trainable base weights are ready."
+    )
+    return [
+        {
+            "id": "training-dashboard-entry",
+            "entry": "dashboard",
+            "state": "ok" if dataset_count else "warn",
+            "badge": "dash",
+            "title": "Command Center dashboard",
+            "detail": dataset_detail,
+            "command_id": "open-training-run-plan",
+            "action": "open-training-run-plan",
+            "actionLabel": "Plan",
+            "requires_approval": True,
+            "executes": False,
+        },
+        {
+            "id": "training-text-entry",
+            "entry": "text",
+            "state": "ok",
+            "badge": "text",
+            "title": "Typed operator command",
+            "detail": "The phrase 'Train a small model on this dataset' resolves to a read-only training plan before Training Lab actions.",
+            "command_id": "open-training-run-plan",
+            "action": "open-training-run-plan",
+            "actionLabel": "Plan",
+            "requires_approval": True,
+            "executes": False,
+        },
+        {
+            "id": "training-palette-entry",
+            "entry": "palette",
+            "state": "ok",
+            "badge": "cmd",
+            "title": "Global command palette",
+            "detail": "The palette exposes Open Training Run Plan as an approval-gated command route.",
+            "command_id": "open-training-run-plan",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+            "requires_approval": True,
+            "executes": False,
+        },
+        {
+            "id": "training-voice-entry",
+            "entry": "voice",
+            "state": "ok",
+            "badge": "voice",
+            "title": "Voice command mode",
+            "detail": "Voice routing can land on the same Training Run Plan without creating datasets, starting jobs, or speaking approvals.",
+            "command_id": "open-training-run-plan",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+            "requires_approval": True,
+            "executes": False,
+        },
+        {
+            "id": "training-workflow-entry",
+            "entry": "workflow",
+            "state": "ok" if dataset_count and lora_ready else "warn",
+            "badge": "flow",
+            "title": "Automation workflow handoff",
+            "detail": lora_detail,
+            "command_id": "open-training-run-plan",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+            "requires_approval": True,
+            "executes": False,
+        },
+    ]
+
+
 def _sequence_rows(
     dataset_count: int,
     artifact_count: int,
@@ -341,6 +419,104 @@ def _sequence_rows(
     ]
 
 
+def _handoff_rows(
+    *,
+    dataset_count: int,
+    artifact_count: int,
+    job_counts: dict[str, int],
+    lora_ready: bool,
+    primary_model: str,
+) -> list[dict[str, Any]]:
+    common = {
+        "requires_approval": False,
+        "executes": False,
+        "creates_dataset": False,
+        "starts_training": False,
+        "creates_model": False,
+        "runs_finetune": False,
+        "pulls_models": False,
+        "changes_endpoints": False,
+        "writes_artifacts": False,
+        "uses_network": False,
+    }
+    return [
+        {
+            **common,
+            "id": "training-dataset-review-handoff",
+            "state": "ok" if dataset_count else "warn",
+            "badge": "data",
+            "title": "Dataset review handoff",
+            "detail": f"{dataset_count} local dataset(s) visible; select the exact dataset in Training Lab before approval.",
+            "action": "open-training",
+            "actionLabel": "Dataset",
+            "target_api": "/api/training/status",
+        },
+        {
+            **common,
+            "id": "training-approval-checkpoint-handoff",
+            "state": "warn" if dataset_count else "loading",
+            "badge": "ask",
+            "title": "Training approval checkpoint",
+            "detail": "Tiny training, artifact sampling, and LoRA jobs stay in Training Lab behind explicit owner approval.",
+            "action": "open-trust-controls",
+            "actionLabel": "Trust",
+            "target_api": "/api/training/train",
+            "approval_api": "/api/training/train",
+            "requires_approval": True,
+        },
+        {
+            **common,
+            "id": "training-job-monitor-handoff",
+            "state": "error" if _count(job_counts.get("failed"), 0) else ("warn" if _count(job_counts.get("active"), 0) else "ok"),
+            "badge": "jobs",
+            "title": "Training job monitor handoff",
+            "detail": f"{job_counts.get('active', 0)} active and {job_counts.get('failed', 0)} failed job(s) visible before another run.",
+            "action": "open-training",
+            "actionLabel": "Jobs",
+            "target_api": "/api/training/finetune/status",
+        },
+        {
+            **common,
+            "id": "training-artifact-sampling-handoff",
+            "state": "ok" if artifact_count else "loading",
+            "badge": "sample",
+            "title": "Artifact sampling handoff",
+            "detail": f"{artifact_count} starter artifact(s) visible; sample output and record quality before reuse.",
+            "action": "open-training",
+            "actionLabel": "Sample",
+            "target_api": "/api/training/generate",
+            "requires_approval": True,
+        },
+        {
+            **common,
+            "id": "training-model-routing-handoff",
+            "state": "ok" if primary_model and (artifact_count or lora_ready) else "warn",
+            "badge": "route",
+            "title": "Model routing review handoff",
+            "detail": (
+                f"{primary_model} stays primary while trained artifacts are reviewed before any route change."
+                if primary_model
+                else "Choose a primary local model and review trained artifacts before route changes."
+            ),
+            "action": "open-model-routing-map",
+            "actionLabel": "Models",
+            "target_api": "/api/operator/model-ops-plan",
+            "requires_approval": True,
+        },
+        {
+            **common,
+            "id": "training-activity-evidence-handoff",
+            "state": "ok",
+            "badge": "log",
+            "title": "Activity evidence handoff",
+            "detail": "Keep dataset id, run type, output path, logs, sample output, and pass/fail notes in Activity.",
+            "action": "open-activity-preflight",
+            "actionLabel": "Activity",
+            "target_api": "/api/operator/activity-plan",
+        },
+    ]
+
+
 def _api_actions() -> list[dict[str, Any]]:
     return [
         {
@@ -398,6 +574,123 @@ def _api_actions() -> list[dict[str, Any]]:
     ]
 
 
+def _training_alert_rows(
+    dataset_count: int,
+    artifact_count: int,
+    job_counts: dict[str, int],
+    deps: dict[str, Any],
+    trainable_count: int,
+    primary_model: str,
+    local_enabled: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if dataset_count < 1:
+        rows.append(
+            {
+                "id": "dataset-required",
+                "state": "error",
+                "badge": "data",
+                "title": "Dataset required",
+                "detail": "Create or import a local dataset before approving any training run.",
+                "action": "open-training",
+                "actionLabel": "Dataset",
+                "requires_approval": False,
+            }
+        )
+    if _count(job_counts.get("failed"), 0):
+        rows.append(
+            {
+                "id": "failed-training-jobs",
+                "state": "error",
+                "badge": "fail",
+                "title": "Failed training jobs need review",
+                "detail": f"{job_counts.get('failed', 0)} failed job(s) are in the local fine-tune ledger; inspect logs before another run.",
+                "action": "open-training",
+                "actionLabel": "Jobs",
+                "requires_approval": True,
+            }
+        )
+    if _count(job_counts.get("active"), 0):
+        rows.append(
+            {
+                "id": "active-training-jobs",
+                "state": "warn",
+                "badge": "run",
+                "title": "Training job already active",
+                "detail": f"{job_counts.get('active', 0)} job(s) are running or queued; avoid overlapping heavy local training unless intentional.",
+                "action": "open-training",
+                "actionLabel": "Jobs",
+                "requires_approval": True,
+            }
+        )
+    if dataset_count and artifact_count < 1:
+        rows.append(
+            {
+                "id": "starter-artifact-missing",
+                "state": "warn",
+                "badge": "tiny",
+                "title": "No starter artifact yet",
+                "detail": "Approve a bounded tiny-model run first, then sample the output before escalating to LoRA.",
+                "action": "open-training",
+                "actionLabel": "Train",
+                "requires_approval": True,
+            }
+        )
+    if deps.get("available") is False:
+        missing = ", ".join(_trim(item, 80) for item in deps.get("missing") or []) or "optional fine-tuning dependencies"
+        rows.append(
+            {
+                "id": "finetune-dependencies-missing",
+                "state": "warn",
+                "badge": "deps",
+                "title": "Fine-tune dependencies missing",
+                "detail": f"LoRA cannot start until {missing} are available inside the local runtime.",
+                "action": "open-training",
+                "actionLabel": "Deps",
+                "requires_approval": False,
+            }
+        )
+    if trainable_count < 1:
+        rows.append(
+            {
+                "id": "base-weights-required",
+                "state": "warn",
+                "badge": "base",
+                "title": "Trainable base weights required",
+                "detail": "LoRA needs a local HF-format base model directory; runtime chat manifests are not enough.",
+                "action": "open-model-creation-plan",
+                "actionLabel": "Models",
+                "requires_approval": False,
+            }
+        )
+    if not (primary_model and local_enabled):
+        rows.append(
+            {
+                "id": "primary-model-required",
+                "state": "warn",
+                "badge": "chat",
+                "title": "Primary local model not ready",
+                "detail": "Choose an enabled local primary model before relying on trained artifacts in operator workflows.",
+                "action": "open-model-routing-map",
+                "actionLabel": "Models",
+                "requires_approval": False,
+            }
+        )
+    rows.append(
+        {
+            "id": "run-approval-required",
+            "state": "warn",
+            "badge": "ask",
+            "title": "Training run approval required",
+            "detail": "Creating datasets, starting tiny training, sampling artifacts, and starting LoRA jobs remain explicit Training Lab actions.",
+            "action": "open-trust-controls",
+            "actionLabel": "Trust",
+            "requires_approval": True,
+        }
+    )
+    return rows[:MAX_ROWS]
+
+
 def run_operator_training_plan(
     owner: str = "local",
     *,
@@ -405,7 +698,12 @@ def run_operator_training_plan(
 ) -> dict[str, Any]:
     """Return read-only evidence for a local model training request."""
     owner = owner or "local"
-    snapshot = model_snapshot if model_snapshot is not None else run_operator_model_snapshot()
+    if model_snapshot is not None:
+        snapshot = model_snapshot
+    else:
+        from src.operator_models import run_operator_model_snapshot
+
+        snapshot = run_operator_model_snapshot()
     training = _as_dict(snapshot.get("training"))
     finetune = _as_dict(snapshot.get("finetune"))
     endpoints = _as_dict(snapshot.get("endpoints"))
@@ -440,6 +738,15 @@ def run_operator_training_plan(
 
     sequence_rows = _sequence_rows(dataset_count, artifact_count, job_counts, lora_ready, lora_blockers)
     route_rows = _training_routes(dataset_count, artifact_count, lora_ready, lora_blockers, primary_model)
+    entry_rows = _entry_rows(dataset_count, lora_ready)
+    handoff_rows = _handoff_rows(
+        dataset_count=dataset_count,
+        artifact_count=artifact_count,
+        job_counts=job_counts,
+        lora_ready=lora_ready,
+        primary_model=primary_model,
+    )
+    alert_rows = _training_alert_rows(dataset_count, artifact_count, job_counts, deps, trainable_count, primary_model, local_enabled)
     evidence_rows = [
         {
             "id": "dataset-ledger",
@@ -501,6 +808,12 @@ def run_operator_training_plan(
             "primary_model": primary_model,
             "local_model_ready": bool(primary_model and local_enabled),
             "lora_ready": lora_ready,
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
+            "training_alert_count": len(alert_rows),
+            "critical_training_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
             "creates_dataset": False,
             "starts_training": False,
             "creates_model": False,
@@ -513,8 +826,11 @@ def run_operator_training_plan(
         },
         "dataset_rows": _dataset_rows(datasets, dataset_count),
         "artifact_rows": _artifact_rows(artifacts, artifact_count),
+        "entry_rows": entry_rows,
+        "handoff_rows": handoff_rows,
         "route_rows": route_rows,
         "sequence_rows": sequence_rows,
+        "alert_rows": alert_rows,
         "evidence_rows": evidence_rows,
         "api_actions": _api_actions(),
         "approval": {

@@ -4,7 +4,7 @@ import voiceRecorder from './voiceRecorder.js?v=20260620-voice-setup';
 
 const ACTIVITY_KEY = 'cleverly-operator-activity-v1';
 const TRUST_POLICY_KEY = 'cleverly-operator-trust-policy-v1';
-const CATALOG_VERSION = '20260621-code-run-backend-ledger';
+const CATALOG_VERSION = '20260626-operator-console';
 const MAX_ACTIVITY = 80;
 const MAX_CATALOG_KEYWORDS = 24;
 const TRUST_LEVELS = ['local', 'approval', 'network', 'danger'];
@@ -82,6 +82,8 @@ const TRUST_PRESETS = Object.freeze([
     policy: { local: 'auto', approval: 'auto', network: 'ask', danger: 'ask' },
   },
 ]);
+const ACTIVITY_RECOVERY_RE = /\b(backup|build|code|container|delete|docker|file|fix|model|repair|restore|retry|shell|snapshot|train|workspace)\b/i;
+const ACTIVITY_FAILURE_RE = /\b(fail|failed|error|exception|blocked)\b/i;
 
 let _apiBase = '';
 let _backendActivity = [];
@@ -199,6 +201,43 @@ function routeProofSummary(route) {
     trust_mode: selected?.trust_mode || fallback?.trust_mode || 'auto',
     approval_required: selected?.approval_required === true,
     path: '/api/operator/route',
+  };
+}
+
+function activityRetryableCommandId(commandId) {
+  const id = String(commandId || '').trim();
+  return Boolean(id && id !== 'chat-command');
+}
+
+function activityActionMetadata(record = {}, preview = null) {
+  const commandId = String(record.command_id || record.commandId || '').trim();
+  const trust = trustLevel(record.trust || preview?.trust || 'local');
+  const trustMode = TRUST_MODES.includes(record.trust_mode) ? record.trust_mode : (preview?.trust_mode || 'auto');
+  const retryable = activityRetryableCommandId(commandId);
+  const text = [
+    commandId,
+    record.title,
+    record.category,
+    record.status,
+    record.state,
+    record.detail,
+    record.result,
+    record.error,
+  ].filter(Boolean).join(' ');
+  const elevated = trust !== 'local' || trustMode === 'ask';
+  const needsRecovery = ACTIVITY_FAILURE_RE.test(text) || ACTIVITY_RECOVERY_RE.test(text) || trust === 'danger';
+  return {
+    retryable,
+    retry_command_id: retryable ? commandId : '',
+    retry_requires_approval: elevated || record.requires_approval === true || record.approval_required === true,
+    deletable: true,
+    clear_requires_approval: true,
+    recovery_hint: needsRecovery
+      ? 'Inspect the activity details, retry through the current trust policy, or use the Recovery Map before changing local state.'
+      : (retryable ? 'This command can be replayed through the current command route and trust policy.' : 'No command retry route is attached to this activity.'),
+    rollback_hint: needsRecovery
+      ? 'Use a tool-specific rollback, snapshot, backup, or owner review before destructive follow-up.'
+      : '',
   };
 }
 
@@ -649,6 +688,16 @@ function startActivity(command, source, detail = '', patch = {}) {
     created_at: nowIso(),
     updated_at: nowIso(),
     preview,
+    ...activityActionMetadata({
+      command_id: command.id,
+      title: command.title,
+      category: command.category || 'Command',
+      status: 'running',
+      state: 'warn',
+      trust: commandTrust(command),
+      trust_mode: commandTrustMode(command),
+      detail: initialDetail,
+    }, preview),
     events: [activityEvent(
       patch.status || 'running',
       `${initialDetail || 'Command started'} - ${preview.policy}`,
@@ -704,6 +753,7 @@ function recordActivity(record = {}) {
       ? record.events
       : [activityEvent(status, detail || record.title || 'Activity recorded', state)],
   };
+  Object.assign(activity, activityActionMetadata(activity));
   const items = mergeActivityRecords([activity], readStoredActivity());
   writeStoredActivity(items);
   mirrorActivityRecord(activity);
@@ -863,6 +913,42 @@ function noteText(note) {
 function noteDraftName(note) {
   const title = String(note?.title || '').trim() || 'Latest Note';
   return `Follow up: ${title}`.slice(0, 80);
+}
+
+function activityText(value, max = 160) {
+  const text = String(value || '').trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 3).trim()}...`;
+}
+
+function recordNoteTaskDraftActivity(note, draft = {}) {
+  const hasNote = Boolean(note);
+  const noteTitle = String(note?.title || note?.id || 'latest note').trim();
+  const title = hasNote ? noteTitle : 'manual note task draft';
+  const detail = hasNote
+    ? `Opened task draft from "${activityText(title, 120)}"; review before saving.`
+    : 'Opened manual note task draft; review before saving.';
+  return recordActivity({
+    command_id: 'draft-task-from-note',
+    title: hasNote ? 'Note Task Draft Opened' : 'Manual Note Task Draft Opened',
+    category: 'Automation',
+    source: 'note-task-draft-fallback',
+    status: 'drafted',
+    state: 'ok',
+    trust: 'local',
+    trust_mode: 'auto',
+    detail,
+    note_id: activityText(note?.id || '', 120),
+    note_title: activityText(title, 160),
+    draft_name: activityText(draft?.name || '', 160),
+    draft_task_type: activityText(draft?.task_type || '', 60),
+    draft_schedule: activityText(draft?.schedule || '', 60),
+    draft_trigger_type: activityText(draft?.trigger_type || '', 60),
+    draft_scheduled_date: activityText(draft?.scheduled_date || '', 120),
+    draft_prompt_chars: String(draft?.prompt || '').length,
+    approval_required_to_save: true,
+    privacy_note: 'Full note text and draft prompt are not stored in the activity ledger.',
+  });
 }
 
 function latestNote(notes) {
@@ -2072,7 +2158,7 @@ const COMMANDS = [
       const note = latestNote(notes);
       const text = note ? noteText(note) : '';
       if (!note || !text) {
-        openTaskDraft({
+        const draft = {
           name: 'Follow up: local note',
           task_type: 'llm',
           trigger_type: 'schedule',
@@ -2084,10 +2170,12 @@ const COMMANDS = [
             'Review the local note I paste or select before saving this task.',
             'Turn it into concrete next actions, blocked items, and any recurring task recommendation.',
           ].join('\n'),
-        });
+        };
+        openTaskDraft(draft);
+        recordNoteTaskDraftActivity(null, draft);
         return { detail: 'Opened note-to-task draft; no saved note text was available' };
       }
-      openTaskDraft({
+      const draft = {
         name: noteDraftName(note),
         task_type: 'llm',
         trigger_type: 'schedule',
@@ -2101,7 +2189,9 @@ const COMMANDS = [
           '',
           text,
         ].join('\n'),
-      });
+      };
+      openTaskDraft(draft);
+      recordNoteTaskDraftActivity(note, draft);
       return { detail: `Drafted task from note: ${note.title || note.id || 'latest note'}` };
     },
   },

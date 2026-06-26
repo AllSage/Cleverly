@@ -191,6 +191,196 @@ def _evidence_commands(workspace_rows: list[dict[str, Any]], start_iso: str) -> 
     return commands[:MAX_COMMANDS]
 
 
+def _entry_rows(total_changes: int, workspace_count: int, activity_count: int) -> list[dict[str, Any]]:
+    evidence_detail = (
+        f"Change Brief opens with {total_changes} local change signal(s) from workspace metadata and activity records."
+        if total_changes
+        else "Change Brief opens first and reports that no local change signals are visible in the selected window."
+    )
+    workflow_detail = (
+        "Workflow handoff can summarize local change evidence and route deeper inspection to Activity or Code Workspace."
+        if workspace_count or activity_count
+        else "Workflow handoff stays in review mode until local activity or Code Workspace evidence is visible."
+    )
+    return [
+        {
+            "id": "change-brief-dashboard-entry",
+            "entry": "dashboard",
+            "state": "ok" if total_changes else "loading",
+            "badge": "dash",
+            "title": "Command Center dashboard",
+            "detail": evidence_detail,
+            "command_id": "explain-changes-since-yesterday",
+            "action": "explain-changes-since-yesterday",
+            "actionLabel": "Brief",
+            "executes": False,
+            "runs_shell": False,
+            "uses_network": False,
+        },
+        {
+            "id": "change-brief-text-entry",
+            "entry": "text",
+            "state": "ok",
+            "badge": "text",
+            "title": "Typed operator command",
+            "detail": "The phrase 'Explain what changed since yesterday' resolves to a local metadata brief before any repo command is run.",
+            "command_id": "explain-changes-since-yesterday",
+            "action": "explain-changes-since-yesterday",
+            "actionLabel": "Brief",
+            "executes": False,
+            "runs_shell": False,
+            "uses_network": False,
+        },
+        {
+            "id": "change-brief-palette-entry",
+            "entry": "palette",
+            "state": "ok",
+            "badge": "cmd",
+            "title": "Global command palette",
+            "detail": "The palette exposes Explain Changes Since Yesterday as a read-only local activity and workspace route.",
+            "command_id": "explain-changes-since-yesterday",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+            "executes": False,
+            "runs_shell": False,
+            "uses_network": False,
+        },
+        {
+            "id": "change-brief-voice-entry",
+            "entry": "voice",
+            "state": "ok",
+            "badge": "voice",
+            "title": "Voice command mode",
+            "detail": "Voice routing can open the same Change Brief without running git, shell commands, or network requests.",
+            "command_id": "explain-changes-since-yesterday",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+            "executes": False,
+            "runs_shell": False,
+            "uses_network": False,
+        },
+        {
+            "id": "change-brief-workflow-entry",
+            "entry": "workflow",
+            "state": "ok" if workspace_count or activity_count else "warn",
+            "badge": "flow",
+            "title": "Automation workflow handoff",
+            "detail": workflow_detail,
+            "command_id": "explain-changes-since-yesterday",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+            "executes": False,
+            "runs_shell": False,
+            "uses_network": False,
+        },
+    ]
+
+
+def _change_alert_rows(
+    workspace_rows: list[dict[str, Any]],
+    changed_workspaces: list[dict[str, Any]],
+    activity_rows: list[dict[str, Any]],
+    evidence_rows: list[dict[str, Any]],
+    workspace_error: str,
+    activity_error: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if workspace_error:
+        rows.append(
+            {
+                "id": "workspace-source-error",
+                "state": "error",
+                "badge": "code",
+                "title": "Workspace evidence unavailable",
+                "detail": workspace_error,
+                "action": "open-code-preflight",
+                "actionLabel": "Code",
+                "requires_approval": False,
+            }
+        )
+    if activity_error:
+        rows.append(
+            {
+                "id": "activity-source-error",
+                "state": "error",
+                "badge": "log",
+                "title": "Activity evidence unavailable",
+                "detail": activity_error,
+                "action": "open-activity-preflight",
+                "actionLabel": "Activity",
+                "requires_approval": False,
+            }
+        )
+    if not workspace_rows:
+        rows.append(
+            {
+                "id": "workspace-context-missing",
+                "state": "warn",
+                "badge": "code",
+                "title": "No code workspace context",
+                "detail": "Import or open a Code Workspace to include repo status, diff, and recent commit evidence.",
+                "action": "open-code-workspace-map",
+                "actionLabel": "Code",
+                "requires_approval": False,
+            }
+        )
+    elif not changed_workspaces:
+        rows.append(
+            {
+                "id": "no-workspace-changes",
+                "state": "loading",
+                "badge": "git",
+                "title": "No changed workspaces in window",
+                "detail": "Workspace metadata did not change in this window; open Code Workspace for exact git status if needed.",
+                "action": "open-code-preflight",
+                "actionLabel": "Code",
+                "requires_approval": False,
+            }
+        )
+    failed_activity = [row for row in activity_rows if row.get("state") == "error"]
+    if failed_activity:
+        first = failed_activity[0]
+        rows.append(
+            {
+                "id": "failed-activity-in-window",
+                "state": "error",
+                "badge": "fail",
+                "title": "Failed activity in change window",
+                "detail": first.get("detail") or first.get("title") or "A recent operator activity failed and needs review.",
+                "action": "open-activity-preflight",
+                "actionLabel": "Activity",
+                "requires_approval": False,
+            }
+        )
+    if not activity_rows and not changed_workspaces:
+        rows.append(
+            {
+                "id": "no-local-changes-visible",
+                "state": "loading",
+                "badge": "quiet",
+                "title": "No local changes visible",
+                "detail": "No activity or changed workspace evidence is visible for this window from local metadata.",
+                "action": "open-activity-preflight",
+                "actionLabel": "Activity",
+                "requires_approval": False,
+            }
+        )
+    if evidence_rows:
+        rows.append(
+            {
+                "id": "git-evidence-read-only",
+                "state": "warn",
+                "badge": "read",
+                "title": "Exact git evidence requires Code Workspace",
+                "detail": "This plan lists status/diff/log evidence commands but does not execute git; open Code Workspace to run approved checks.",
+                "action": "open-code-preflight",
+                "actionLabel": "Code",
+                "requires_approval": False,
+            }
+        )
+    return rows[:MAX_ROWS]
+
+
 def run_operator_change_brief(
     owner: str = "local",
     *,
@@ -215,7 +405,16 @@ def run_operator_change_brief(
     workspace_rows.sort(key=lambda row: _timestamp(row.get("updated_at")), reverse=True)
     changed_workspaces = [row for row in workspace_rows if row.get("changed_since")]
     evidence = _evidence_commands(workspace_rows, window["start"])
+    alert_rows = _change_alert_rows(
+        workspace_rows,
+        changed_workspaces,
+        activity_rows,
+        evidence,
+        workspace_error,
+        activity_error,
+    )
     total_changes = len(changed_workspaces) + len(activity_rows)
+    entry_rows = _entry_rows(total_changes, len(workspace_rows), len(activity_rows))
     state = "ok" if total_changes else ("warn" if workspace_rows or normalized_activity else "loading")
     return {
         "mode": "read-only-change-brief",
@@ -233,13 +432,20 @@ def run_operator_change_brief(
             "activity_count": len(activity_rows),
             "activity_total": len(normalized_activity),
             "total_change_count": total_changes,
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
+            "change_alert_count": len(alert_rows),
+            "critical_change_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
             "creates_changes": False,
             "runs_shell": False,
+            "uses_network": False,
             "next_action": "Open Code Workspace for exact git status/diff before acting." if workspace_rows else "Create or import a Code Workspace to inspect repo changes.",
         },
         "workspace_rows": workspace_rows[:MAX_ROWS],
         "changed_workspace_rows": changed_workspaces[:MAX_ROWS],
         "activity_rows": activity_rows,
+        "entry_rows": entry_rows,
+        "alert_rows": alert_rows,
         "evidence_commands": evidence,
         "errors": {
             "workspaces": workspace_error,

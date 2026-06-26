@@ -1,6 +1,6 @@
 // Command Center voice controller: transcribe once, then route through commands.
 
-import operatorCommands from './operatorCommands.js?v=20260621-code-run-backend-ledger';
+import operatorCommands from './operatorCommands.js?v=20260626-operator-console';
 import voiceRecorder from './voiceRecorder.js?v=20260620-voice-setup';
 
 let _initialized = false;
@@ -8,6 +8,8 @@ let _button = null;
 let _statusNode = null;
 let _recording = false;
 let _status = 'idle';
+let _activityId = '';
+let _activityEvents = [];
 
 function el(id) {
   return document.getElementById(id);
@@ -74,24 +76,92 @@ function resetSoon(delay = 2200) {
   }, delay);
 }
 
+function voiceActivityId() {
+  return `voice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function voiceActivityEvent(status, state, detail) {
+  return {
+    at: new Date().toISOString(),
+    status: status || 'event',
+    state: state || 'warn',
+    detail: detail || '',
+  };
+}
+
+function terminalVoiceStatus(status) {
+  return ['routed', 'cancelled', 'error', 'no_speech', 'unavailable', 'off'].includes(status);
+}
+
+function recordVoiceActivity(status, state, detail, patch = {}) {
+  if (!operatorCommands.recordActivity) return null;
+  if (!_activityId || status === 'starting' || status === 'unavailable') {
+    _activityId = voiceActivityId();
+    _activityEvents = [];
+  }
+  _activityEvents.push(voiceActivityEvent(status, state, detail));
+  const activity = operatorCommands.recordActivity({
+    id: _activityId,
+    command_id: 'start-voice-command',
+    title: 'Voice Command',
+    category: 'Operator',
+    source: 'voice-command',
+    status,
+    state,
+    trust: 'local',
+    trust_mode: 'auto',
+    detail,
+    provider: currentProvider(),
+    controller_status: _status,
+    recording: _recording,
+    transcript_chars: Number(patch.transcript_chars || 0),
+    transcript_stored: false,
+    audio_saved: false,
+    privacy_note: 'Voice controller activity stores provider/status metadata only; no audio is stored.',
+    events: _activityEvents.slice(),
+    ...patch,
+  });
+  if (terminalVoiceStatus(status)) {
+    _activityId = '';
+    _activityEvents = [];
+  }
+  return activity;
+}
+
 async function routeTranscript(text, options = {}) {
   const transcript = String(text || '').trim();
   if (!transcript) {
     setStatus('idle', 'No speech');
+    recordVoiceActivity('no_speech', 'warn', 'Voice command stopped without recognized speech.');
     return { skipped: true, reason: 'empty-transcript' };
   }
   setCommandInput(transcript);
   setStatus('processing', 'Routing');
+  recordVoiceActivity('transcribed', 'warn', 'Voice transcript received; routing through the local operator command catalog.', {
+    transcript_chars: transcript.length,
+    transcript_provider: options.provider || currentProvider(),
+  });
   try {
     const result = await operatorCommands.routeText(transcript, {
       source: options.source || 'voice-command',
       detail: transcript.slice(0, 120),
     });
-    setStatus(result?.cancelled ? 'cancelled' : 'routed');
+    const routedStatus = result?.cancelled ? 'cancelled' : 'routed';
+    setStatus(routedStatus);
+    recordVoiceActivity(routedStatus, result?.cancelled ? 'warn' : 'ok', result?.cancelled
+      ? 'Voice transcript routing was cancelled by the current trust gate.'
+      : 'Voice transcript routed through the local operator command system.', {
+        transcript_chars: transcript.length,
+        route_cancelled: result?.cancelled === true,
+        route_detail: String(result?.detail || '').slice(0, 240),
+      });
     resetSoon();
     return result;
   } catch (error) {
     setStatus('error');
+    recordVoiceActivity('error', 'error', `Voice command route failed: ${String(error?.message || error || 'unknown error').slice(0, 240)}`, {
+      transcript_chars: transcript.length,
+    });
     showError('Voice command failed: ' + (error?.message || error));
     resetSoon(3000);
     throw error;
@@ -102,12 +172,18 @@ function ensureReady() {
   const provider = currentProvider();
   if (provider === 'disabled') {
     setStatus('off', 'STT off');
+    recordVoiceActivity('unavailable', 'warn', 'Voice command unavailable: speech-to-text is disabled.', {
+      unavailable_reason: 'stt-disabled',
+    });
     showToast('Speech-to-text is disabled', 3000);
     resetSoon(3000);
     return false;
   }
   if (provider === 'browser' && !browserSpeechAvailable()) {
     setStatus('off', 'Unavailable');
+    recordVoiceActivity('unavailable', 'error', 'Voice command unavailable: browser speech recognition is not supported.', {
+      unavailable_reason: 'browser-speech-unavailable',
+    });
     showError('Browser speech recognition is not supported');
     resetSoon(3000);
     return false;
@@ -121,6 +197,9 @@ function start() {
 
   _recording = true;
   setStatus('starting', 'Start');
+  recordVoiceActivity('starting', 'warn', 'Voice command requested; browser microphone permission may be required.', {
+    requires_browser_permission: true,
+  });
   voiceRecorder.startRecording(
     null,
     showToast,
@@ -130,6 +209,10 @@ function start() {
       onStart: () => {
         _recording = true;
         setStatus('listening', 'Listening');
+        recordVoiceActivity('listening', 'warn', 'Voice command listening for one local transcript.', {
+          records_audio_temporarily: true,
+          audio_saved: false,
+        });
       },
       onTranscription: async (transcript, meta) => {
         await routeTranscript(transcript, {
@@ -140,10 +223,12 @@ function start() {
       onNoSpeech: () => {
         _recording = false;
         setStatus('idle', 'No speech');
+        recordVoiceActivity('no_speech', 'warn', 'Voice command stopped without recognized speech.');
       },
       onError: (error) => {
         _recording = false;
         setStatus('error');
+        recordVoiceActivity('error', 'error', `Voice command failed: ${String(error?.message || error || 'unknown error').slice(0, 240)}`);
         resetSoon(3000);
         console.warn('Voice command error:', error);
       },
@@ -162,6 +247,7 @@ function stop() {
   voiceRecorder.stopRecording();
   _recording = false;
   setStatus('processing', 'Routing');
+  recordVoiceActivity('stopped', 'warn', 'Voice command stop requested; routing any available transcript.');
   return { stopped: true };
 }
 

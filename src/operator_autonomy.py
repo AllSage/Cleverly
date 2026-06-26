@@ -112,6 +112,595 @@ def _api_action(
     }
 
 
+def _entry_rows(*, configured: dict[str, bool], command_count: int, workflow_count: int) -> list[dict[str, Any]]:
+    ready = configured.get("commands", command_count > 0) and configured.get("policy", True)
+    workflow_ready = configured.get("workflows", workflow_count > 0) and workflow_count > 0
+    common = {
+        "command_id": "open-automation-map",
+        "trust_command_id": "open-trust-controls",
+        "activity_command_id": "open-activity-preflight",
+        "palette_command_id": "open-command-palette",
+        "route_api": "/api/operator/route",
+        "routes_api": "/api/operator/routes",
+        "policy_api": "/api/operator/policy",
+        "workflows_api": "/api/operator/workflows",
+        "activity_api": "/api/operator/activity",
+        "requires_approval": True,
+        "executes": False,
+        "routes_commands": False,
+        "executes_commands": False,
+        "approves_commands": False,
+        "retries_commands": False,
+        "starts_workflows": False,
+        "changes_policy": False,
+        "deletes_activity": False,
+        "runs_shell": False,
+        "modifies_files": False,
+        "uses_network": False,
+    }
+    state = "ok" if ready else "warn"
+    workflow_state = "ok" if ready and workflow_ready else "warn"
+    return [
+        {
+            **common,
+            "id": "autonomy-dashboard-route",
+            "entry": "dashboard",
+            "state": state,
+            "badge": "dash",
+            "title": "Dashboard autonomy route",
+            "detail": f"The Automation dashboard opens policy, route, approval, workflow, and activity evidence first; {command_count} command(s) visible.",
+            "action": "open-automation-map",
+            "actionLabel": "Automation",
+        },
+        {
+            **common,
+            "id": "autonomy-text-route",
+            "entry": "text",
+            "state": state,
+            "badge": "text",
+            "title": "Typed autonomy request route",
+            "detail": "Typed automation requests route through read-only command matching and trust policy evidence before any command can run.",
+            "action": "open-automation-map",
+            "actionLabel": "Automation",
+        },
+        {
+            **common,
+            "id": "autonomy-palette-route",
+            "entry": "palette",
+            "state": state,
+            "badge": "cmd",
+            "title": "Palette autonomy route",
+            "detail": "The command palette can inspect route proof and ask gates without approving, retrying, starting workflows, or changing policy.",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+        },
+        {
+            **common,
+            "id": "autonomy-voice-route",
+            "entry": "voice",
+            "state": state,
+            "badge": "voice",
+            "title": "Voice autonomy route",
+            "detail": "Voice requests can open autonomy preflight and trust controls without executing commands, speaking approvals, or using network access.",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+        },
+        {
+            **common,
+            "id": "autonomy-workflow-route",
+            "entry": "workflow",
+            "state": workflow_state,
+            "badge": "flow",
+            "title": "Workflow autonomy route",
+            "detail": f"Workflow handoffs review {workflow_count} persisted workflow route(s), ask gates, and activity evidence before any loop or workflow starts.",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+        },
+    ]
+
+
+def _decision_mode_rows(
+    *,
+    clean_commands: list[dict[str, Any]],
+    ask_commands: list[dict[str, Any]],
+    auto_commands: list[dict[str, Any]],
+    pending: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+    failed: list[dict[str, Any]],
+    trust_policy: dict[str, str],
+) -> list[dict[str, Any]]:
+    network_danger_ask = trust_policy.get("network") == "ask" and trust_policy.get("danger") == "ask"
+    return [
+        {
+            "id": "suggest",
+            "mode": "suggest",
+            "state": "ok" if clean_commands else "warn",
+            "badge": "suggest",
+            "title": "Suggest",
+            "detail": f"{len(clean_commands)} command{'s' if len(clean_commands) != 1 else ''} can be suggested with preview, route, trust, and recovery context before execution.",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+            "executes": False,
+            "routes_commands": False,
+            "approves_commands": False,
+            "starts_workflows": False,
+            "uses_network": False,
+        },
+        {
+            "id": "ask",
+            "mode": "ask",
+            "state": "ok" if ask_commands and network_danger_ask else "warn",
+            "badge": "ask",
+            "title": "Ask",
+            "detail": f"{len(ask_commands)} command{'s' if len(ask_commands) != 1 else ''} ask under current policy; network={trust_policy.get('network')}; danger={trust_policy.get('danger')}.",
+            "action": "open-trust-controls",
+            "actionLabel": "Trust",
+            "executes": False,
+            "routes_commands": False,
+            "approves_commands": False,
+            "starts_workflows": False,
+            "uses_network": False,
+        },
+        {
+            "id": "execute-once",
+            "mode": "execute",
+            "state": "ok" if decisions or pending else "loading",
+            "badge": "exec",
+            "title": "Execute after approval",
+            "detail": f"{len(decisions)} approval decision record{'s' if len(decisions) != 1 else ''}; {len(pending)} pending/running/queued command{'s' if len(pending) != 1 else ''} visible in Activity.",
+            "action": "open-activity-preflight",
+            "actionLabel": "Activity",
+            "executes": False,
+            "routes_commands": False,
+            "approves_commands": False,
+            "starts_workflows": False,
+            "uses_network": False,
+        },
+        {
+            "id": "auto-execute",
+            "mode": "auto-execute",
+            "state": "ok" if auto_commands and network_danger_ask and not failed else "warn",
+            "badge": "auto",
+            "title": "Auto-execute within trust tier",
+            "detail": f"{len(auto_commands)} command{'s' if len(auto_commands) != 1 else ''} auto under policy; {len(failed)} failed record{'s' if len(failed) != 1 else ''} require review before broader autonomy.",
+            "action": "open-autonomy-map",
+            "actionLabel": "Autonomy",
+            "executes": False,
+            "routes_commands": False,
+            "approves_commands": False,
+            "starts_workflows": False,
+            "uses_network": False,
+        },
+    ]
+
+
+def _permission_checkpoint_rows(
+    *,
+    clean_commands: list[dict[str, Any]],
+    ask_commands: list[dict[str, Any]],
+    auto_commands: list[dict[str, Any]],
+    workflow_commands: list[dict[str, Any]],
+    workflow_ask: list[dict[str, Any]],
+    pending: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+    failed: list[dict[str, Any]],
+    retryable: list[dict[str, Any]],
+    trust_policy: dict[str, str],
+) -> list[dict[str, Any]]:
+    network_danger_ask = trust_policy.get("network") == "ask" and trust_policy.get("danger") == "ask"
+    local_auto_only = bool(auto_commands) and all(_trust_level(command) == "local" for command in auto_commands)
+    common = {
+        "executes": False,
+        "routes_commands": False,
+        "executes_commands": False,
+        "approves_commands": False,
+        "retries_commands": False,
+        "starts_workflows": False,
+        "changes_policy": False,
+        "deletes_activity": False,
+        "runs_shell": False,
+        "modifies_files": False,
+        "uses_network": False,
+    }
+    return [
+        {
+            **common,
+            "id": "checkpoint-suggest-route-preview",
+            "checkpoint": "suggest",
+            "state": "ok" if clean_commands else "warn",
+            "badge": "suggest",
+            "title": "Suggest checkpoint",
+            "detail": f"{len(clean_commands)} command(s) can be previewed with route, trust tier, and recovery context before any execution path.",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+            "requires_approval": False,
+        },
+        {
+            **common,
+            "id": "checkpoint-ask-evidence-review",
+            "checkpoint": "ask",
+            "state": "ok" if ask_commands and network_danger_ask else "warn",
+            "badge": "ask",
+            "title": "Ask checkpoint",
+            "detail": f"{len(ask_commands)} ask-gated command(s); network={trust_policy.get('network')}; danger={trust_policy.get('danger')}.",
+            "action": "open-trust-controls",
+            "actionLabel": "Trust",
+            "requires_approval": True,
+        },
+        {
+            **common,
+            "id": "checkpoint-execute-ledger",
+            "checkpoint": "execute",
+            "state": "ok" if decisions or pending else "loading",
+            "badge": "exec",
+            "title": "Execute checkpoint",
+            "detail": f"{len(decisions)} decision record(s), {len(pending)} pending record(s), and {len(retryable)} retryable command record(s) are visible in Activity.",
+            "action": "open-activity-preflight",
+            "actionLabel": "Activity",
+            "requires_approval": True,
+        },
+        {
+            **common,
+            "id": "checkpoint-auto-local-scope",
+            "checkpoint": "auto-execute",
+            "state": "ok" if local_auto_only and network_danger_ask and not failed else "warn",
+            "badge": "auto",
+            "title": "Auto-execute scope checkpoint",
+            "detail": f"{len(auto_commands)} auto command(s); auto scope should remain local-only while network and high-risk tiers stay ask-gated.",
+            "action": "open-autonomy-map",
+            "actionLabel": "Autonomy",
+            "requires_approval": False,
+        },
+        {
+            **common,
+            "id": "checkpoint-workflow-handoff",
+            "checkpoint": "workflow",
+            "state": "ok" if workflow_commands and len(workflow_ask) == len(workflow_commands) else ("loading" if not workflow_commands else "warn"),
+            "badge": "flow",
+            "title": "Workflow handoff checkpoint",
+            "detail": f"{len(workflow_ask)}/{len(workflow_commands)} workflow command(s) ask before loop or automation handoff.",
+            "action": "open-automation-map",
+            "actionLabel": "Automation",
+            "requires_approval": bool(workflow_commands),
+        },
+    ]
+
+
+def _handoff_row(
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    *,
+    target_api: str,
+    approval_command_id: str = "",
+    requires_approval: bool = False,
+    routes_commands: bool = False,
+    approves_commands: bool = False,
+    retries_commands: bool = False,
+    starts_workflows: bool = False,
+    changes_policy: bool = False,
+    deletes_activity: bool = False,
+    writes_activity: bool = False,
+    runs_shell: bool = False,
+    modifies_files: bool = False,
+    uses_network: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state if state in {"ok", "warn", "error", "loading"} else "warn",
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "target_api": target_api,
+        "approval_command_id": approval_command_id,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "routes_commands": False,
+        "executes_commands": False,
+        "approves_commands": False,
+        "retries_commands": False,
+        "starts_workflows": False,
+        "changes_policy": False,
+        "deletes_activity": False,
+        "writes_activity": False,
+        "runs_shell": False,
+        "modifies_files": False,
+        "uses_network": False,
+        "gated_operation": {
+            "routes_commands": routes_commands,
+            "approves_commands": approves_commands,
+            "retries_commands": retries_commands,
+            "starts_workflows": starts_workflows,
+            "changes_policy": changes_policy,
+            "deletes_activity": deletes_activity,
+            "writes_activity": writes_activity,
+            "runs_shell": runs_shell,
+            "modifies_files": modifies_files,
+            "uses_network": uses_network,
+        },
+    }
+
+
+def _handoff_rows(
+    *,
+    clean_commands: list[dict[str, Any]],
+    ask_commands: list[dict[str, Any]],
+    workflow_commands: list[dict[str, Any]],
+    workflow_ask: list[dict[str, Any]],
+    pending: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+    failed: list[dict[str, Any]],
+    retryable: list[dict[str, Any]],
+    trust_policy: dict[str, str],
+    configured: dict[str, bool],
+) -> list[dict[str, Any]]:
+    network_ask = trust_policy.get("network") == "ask"
+    danger_ask = trust_policy.get("danger") == "ask"
+    policy_ready = bool(configured.get("policy", True))
+    workflow_ready = bool(workflow_commands) and len(workflow_ask) == len(workflow_commands)
+    activity_ready = bool(pending or decisions or failed or retryable)
+    return [
+        _handoff_row(
+            "autonomy-route-preview-handoff",
+            "ok" if clean_commands else "warn",
+            "route",
+            "Route preview handoff",
+            "Suggested commands can move through backend route proof before the browser executes any command.",
+            "open-command-palette",
+            "Palette",
+            target_api="/api/operator/route",
+            routes_commands=True,
+        ),
+        _handoff_row(
+            "autonomy-ask-approval-handoff",
+            "ok" if ask_commands and network_ask and danger_ask else "warn",
+            "ask",
+            "Ask and approval handoff",
+            f"{len(ask_commands)} ask-gated command(s) can hand off to approval evidence before execution.",
+            "open-trust-controls",
+            "Trust",
+            target_api="/api/operator/approval-plan",
+            approval_command_id="request-approval-decision",
+            requires_approval=True,
+            approves_commands=True,
+        ),
+        _handoff_row(
+            "autonomy-workflow-start-handoff",
+            "ok" if workflow_ready else "warn",
+            "flow",
+            "Workflow start handoff",
+            f"{len(workflow_ask)}/{len(workflow_commands)} workflow command(s) are ask-gated before loop or automation start.",
+            "open-automation-map",
+            "Automation",
+            target_api="/api/operator/loops-plan",
+            approval_command_id="request-workflow-start",
+            requires_approval=True,
+            routes_commands=True,
+            starts_workflows=True,
+        ),
+        _handoff_row(
+            "autonomy-activity-ledger-handoff",
+            "ok" if activity_ready else "loading",
+            "log",
+            "Activity ledger handoff",
+            "Approved or attempted autonomous work can be reviewed with status, route proof, trust mode, logs, retry, and recovery metadata.",
+            "open-activity-preflight",
+            "Activity",
+            target_api="/api/operator/activity-plan",
+            writes_activity=True,
+        ),
+        _handoff_row(
+            "autonomy-retry-recovery-handoff",
+            "warn" if failed else ("ok" if retryable else "loading"),
+            "retry",
+            "Retry and recovery handoff",
+            f"{len(retryable)} retryable record(s) and {len(failed)} failure(s) can hand off to recovery before replay.",
+            "open-activity-preflight",
+            "Recovery",
+            target_api="/api/operator/recovery-plan",
+            approval_command_id="request-recovery-action",
+            requires_approval=True,
+            retries_commands=True,
+        ),
+        _handoff_row(
+            "autonomy-trust-policy-handoff",
+            "ok" if policy_ready and network_ask and danger_ask else "warn",
+            "cfg",
+            "Trust policy handoff",
+            "Policy changes remain separate from this audit and route through Trust Controls before changing local autonomy behavior.",
+            "open-trust-controls",
+            "Trust",
+            target_api="/api/operator/policy",
+            approval_command_id="request-policy-change",
+            requires_approval=True,
+            changes_policy=True,
+        ),
+        _handoff_row(
+            "autonomy-network-offline-handoff",
+            "ok" if network_ask else "warn",
+            "net",
+            "Network and offline handoff",
+            f"Network tier is {trust_policy.get('network')}; network-capable commands stay behind Offline Control and approval policy.",
+            "open-offline",
+            "Offline",
+            target_api="/api/operator/safety-plan",
+            approval_command_id="request-network-break-glass",
+            requires_approval=True,
+            uses_network=True,
+        ),
+        _handoff_row(
+            "autonomy-safety-boundary-handoff",
+            "ok" if danger_ask else "error",
+            "risk",
+            "Safety boundary handoff",
+            f"High-risk tier is {trust_policy.get('danger')}; destructive, shell, filesystem, and cleanup actions require safety review.",
+            "open-trust-controls",
+            "Safety",
+            target_api="/api/operator/safety-plan",
+            approval_command_id="request-approval-decision",
+            requires_approval=True,
+            deletes_activity=True,
+            runs_shell=True,
+            modifies_files=True,
+        ),
+    ]
+
+
+def _automation_alert_rows(
+    *,
+    clean_commands: list[dict[str, Any]],
+    clean_workflows: list[dict[str, Any]],
+    workflow_commands: list[dict[str, Any]],
+    workflow_ask: list[dict[str, Any]],
+    trust_policy: dict[str, str],
+    pending: list[dict[str, Any]],
+    failed: list[dict[str, Any]],
+    retryable: list[dict[str, Any]],
+    unresolved: int,
+    matrix_summary: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not clean_commands:
+        rows.append(
+            {
+                "id": "command-catalog-missing",
+                "state": "error",
+                "badge": "cmd",
+                "title": "Command catalog missing",
+                "detail": "No persisted operator commands are visible for palette, voice, dashboard, or workflow routing.",
+                "action": "open-command-palette",
+                "actionLabel": "Palette",
+                "requires_approval": False,
+            }
+        )
+    if not clean_workflows:
+        rows.append(
+            {
+                "id": "workflow-catalog-missing",
+                "state": "warn",
+                "badge": "flow",
+                "title": "Workflow catalog not published",
+                "detail": "No persisted workflow target phrases are visible in data/operator_workflows.json.",
+                "action": "open-automation-map",
+                "actionLabel": "Map",
+                "requires_approval": False,
+            }
+        )
+    if unresolved:
+        rows.append(
+            {
+                "id": "workflow-route-unresolved",
+                "state": "error",
+                "badge": "route",
+                "title": "Workflow route proof needs review",
+                "detail": f"{unresolved} workflow target(s) do not resolve to the expected command.",
+                "action": "open-capability-map",
+                "actionLabel": "Proof",
+                "requires_approval": False,
+            }
+        )
+    if workflow_commands and not workflow_ask:
+        rows.append(
+            {
+                "id": "workflow-ask-gate-missing",
+                "state": "warn",
+                "badge": "ask",
+                "title": "Workflow ask gate missing",
+                "detail": "Workflow commands can route without an ask gate under the current trust policy.",
+                "action": "open-trust-controls",
+                "actionLabel": "Trust",
+                "requires_approval": True,
+            }
+        )
+    if trust_policy["network"] != "ask":
+        rows.append(
+            {
+                "id": "network-auto-enabled",
+                "state": "warn",
+                "badge": "net",
+                "title": "Network tier is not ask-gated",
+                "detail": f"Network command policy is {trust_policy['network']}; local-first operation expects ask.",
+                "action": "open-offline",
+                "actionLabel": "Offline",
+                "requires_approval": True,
+            }
+        )
+    if trust_policy["danger"] != "ask":
+        rows.append(
+            {
+                "id": "danger-auto-enabled",
+                "state": "error",
+                "badge": "risk",
+                "title": "High-risk tier is not ask-gated",
+                "detail": f"High-risk command policy is {trust_policy['danger']}; destructive actions should ask by default.",
+                "action": "open-trust-controls",
+                "actionLabel": "Trust",
+                "requires_approval": True,
+            }
+        )
+    if pending:
+        rows.append(
+            {
+                "id": "pending-automation-approvals",
+                "state": "warn",
+                "badge": "hold",
+                "title": "Pending automation approvals",
+                "detail": f"{len(pending)} command(s) are waiting, running, queued, or pending approval.",
+                "action": "open-activity-preflight",
+                "actionLabel": "Activity",
+                "requires_approval": False,
+            }
+        )
+    if failed:
+        rows.append(
+            {
+                "id": "failed-automation-commands",
+                "state": "error",
+                "badge": "fail",
+                "title": "Automation command failures",
+                "detail": f"{len(failed)} failed command record(s) need recovery review before retry.",
+                "action": "open-activity-preflight",
+                "actionLabel": "Inspect",
+                "requires_approval": False,
+            }
+        )
+    if retryable:
+        rows.append(
+            {
+                "id": "retryable-automation-commands",
+                "state": "warn",
+                "badge": "retry",
+                "title": "Retryable command records",
+                "detail": f"{len(retryable)} routed command record(s) have retry evidence; retry still follows the current trust policy.",
+                "action": "open-activity-preflight",
+                "actionLabel": "Retry",
+                "requires_approval": True,
+            }
+        )
+    approval_gated = int(matrix_summary.get("approval_gated") or 0)
+    approval_ready = int(matrix_summary.get("approval_ready") or 0)
+    if approval_gated and approval_ready < approval_gated:
+        rows.append(
+            {
+                "id": "approval-route-incomplete",
+                "state": "warn",
+                "badge": "ask",
+                "title": "Approval route incomplete",
+                "detail": f"{approval_ready}/{approval_gated} approval-gated workflow target(s) are route-ready.",
+                "action": "open-trust-controls",
+                "actionLabel": "Trust",
+                "requires_approval": True,
+            }
+        )
+    return rows[:12]
+
+
 def run_operator_autonomy_plan(
     owner: str = "local",
     *,
@@ -150,6 +739,27 @@ def run_operator_autonomy_plan(
         if _trim(record.get("command_id"), 160) and _trim(record.get("command_id"), 160) != "chat-command"
     ]
     decisions = [record for record in clean_activity if _is_decision(record)]
+    decision_mode_rows = _decision_mode_rows(
+        clean_commands=clean_commands,
+        ask_commands=ask_commands,
+        auto_commands=auto_commands,
+        pending=pending,
+        decisions=decisions,
+        failed=failed,
+        trust_policy=trust_policy,
+    )
+    permission_checkpoint_rows = _permission_checkpoint_rows(
+        clean_commands=clean_commands,
+        ask_commands=ask_commands,
+        auto_commands=auto_commands,
+        workflow_commands=workflow_commands,
+        workflow_ask=workflow_ask,
+        pending=pending,
+        decisions=decisions,
+        failed=failed,
+        retryable=retryable,
+        trust_policy=trust_policy,
+    )
 
     policy_rows = [
         {
@@ -374,6 +984,35 @@ def run_operator_autonomy_plan(
     ]
 
     unresolved = int(matrix_summary.get("unresolved") or 0)
+    alert_rows = _automation_alert_rows(
+        clean_commands=clean_commands,
+        clean_workflows=clean_workflows,
+        workflow_commands=workflow_commands,
+        workflow_ask=workflow_ask,
+        trust_policy=trust_policy,
+        pending=pending,
+        failed=failed,
+        retryable=retryable,
+        unresolved=unresolved,
+        matrix_summary=matrix_summary,
+    )
+    entry_rows = _entry_rows(
+        configured=configured,
+        command_count=len(clean_commands),
+        workflow_count=len(clean_workflows),
+    )
+    handoff_rows = _handoff_rows(
+        clean_commands=clean_commands,
+        ask_commands=ask_commands,
+        workflow_commands=workflow_commands,
+        workflow_ask=workflow_ask,
+        pending=pending,
+        decisions=decisions,
+        failed=failed,
+        retryable=retryable,
+        trust_policy=trust_policy,
+        configured=configured,
+    )
     state = "error" if failed else ("warn" if unresolved or not clean_commands or trust_policy["network"] != "ask" or trust_policy["danger"] != "ask" else "ok")
     return {
         "mode": "read-only-autonomy-plan",
@@ -400,6 +1039,16 @@ def run_operator_autonomy_plan(
             "failure_count": len(failed),
             "retryable_count": len(retryable),
             "decision_count": len(decisions),
+            "decision_mode_count": len(decision_mode_rows),
+            "decision_mode_ready_count": len([row for row in decision_mode_rows if row.get("state") == "ok"]),
+            "permission_checkpoint_count": len(permission_checkpoint_rows),
+            "permission_checkpoint_ready_count": len([row for row in permission_checkpoint_rows if row.get("state") == "ok"]),
+            "automation_alert_count": len(alert_rows),
+            "critical_automation_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
             "routes_commands": False,
             "executes_commands": False,
             "approves_commands": False,
@@ -407,6 +1056,7 @@ def run_operator_autonomy_plan(
             "starts_workflows": False,
             "changes_policy": False,
             "deletes_activity": False,
+            "writes_activity": False,
             "runs_shell": False,
             "uses_network": False,
             "next_action": "Open Autonomy Map or Trust Controls to review ask/auto tiers, route proof, workflow gates, and activity decisions before running commands.",
@@ -421,7 +1071,12 @@ def run_operator_autonomy_plan(
         "route_rows": route_rows,
         "workflow_rows": workflow_rows,
         "activity_rows": activity_rows,
+        "decision_mode_rows": decision_mode_rows,
+        "permission_checkpoint_rows": permission_checkpoint_rows,
         "permission_rows": permission_rows,
+        "alert_rows": alert_rows,
+        "entry_rows": entry_rows,
+        "handoff_rows": handoff_rows,
         "api_actions": api_actions,
         "evidence_rows": evidence_rows,
         "route_matrix": route_matrix,

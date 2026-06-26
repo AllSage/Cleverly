@@ -134,6 +134,16 @@ try {
         Add-Result "health" "fail" "unexpected status $($health.StatusCode)"
     }
 
+    $operatorRouteReport = "/app/logs/operator-route-smoke.json"
+    & docker exec cleverly python /app/ci/operator_route_smoke.py --owner smoke --limit 20 --report $operatorRouteReport
+    if ($LASTEXITCODE -eq 0) {
+        Add-Result "operator-route-smoke" "ok" "read-only operator route surfaces loaded inside Docker"
+        $operatorRouteReportHost = Join-Path $Root "dist\operator-route-smoke.json"
+        & docker cp "cleverly:$operatorRouteReport" $operatorRouteReportHost 2>$null
+    } else {
+        Add-Result "operator-route-smoke" "fail" "operator route smoke failed inside Docker"
+    }
+
     $ps = docker ps --filter "name=cleverly-proxy" --format "{{.Ports}}"
     if ($ps -match ("127\.0\.0\.1:{0}" -f $UrlPort)) {
         Add-Result "proxy-bind" "ok" "proxy is bound to loopback"

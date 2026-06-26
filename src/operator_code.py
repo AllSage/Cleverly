@@ -203,6 +203,335 @@ def _sequence_rows(workspace_count: int, command_count: int, runner_state: str) 
     ]
 
 
+def _code_alert_rows(
+    workspace_count: int,
+    command_count: int,
+    runner: dict[str, Any],
+    command_rows: list[dict[str, Any]],
+    workspace_error: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if workspace_error:
+        rows.append(
+            {
+                "id": "workspace-source-error",
+                "state": "error",
+                "badge": "code",
+                "title": "Code workspace evidence unavailable",
+                "detail": workspace_error,
+                "action": "open-code-workspace-map",
+                "actionLabel": "Code",
+                "requires_approval": False,
+            }
+        )
+    if workspace_count < 1:
+        rows.append(
+            {
+                "id": "workspace-required",
+                "state": "error",
+                "badge": "repo",
+                "title": "Code workspace required",
+                "detail": "Import or open a sealed Code Workspace before planning test execution.",
+                "action": "open-code",
+                "actionLabel": "Code",
+                "requires_approval": False,
+            }
+        )
+    if workspace_count and command_count < 1:
+        rows.append(
+            {
+                "id": "manual-test-command-required",
+                "state": "warn",
+                "badge": "cmd",
+                "title": "Manual test command required",
+                "detail": "No common local test command was detected; choose the exact command in Code Workspace.",
+                "action": "open-code",
+                "actionLabel": "Command",
+                "requires_approval": True,
+            }
+        )
+    if runner.get("state") != "ok":
+        rows.append(
+            {
+                "id": "runner-isolation-review",
+                "state": "warn",
+                "badge": "run",
+                "title": "Runner isolation needs review",
+                "detail": runner.get("detail") or "Review runner isolation before approving local test commands.",
+                "action": "open-code-workspace-map",
+                "actionLabel": "Map",
+                "requires_approval": False,
+            }
+        )
+    if any(not row.get("command") for row in command_rows):
+        rows.append(
+            {
+                "id": "manual-candidate-present",
+                "state": "warn",
+                "badge": "manual",
+                "title": "Manual command candidate present",
+                "detail": "At least one workspace needs an explicit operator-selected test command.",
+                "action": "open-code",
+                "actionLabel": "Command",
+                "requires_approval": True,
+            }
+        )
+    rows.extend(
+        [
+            {
+                "id": "snapshot-approval-required",
+                "state": "warn" if workspace_count else "loading",
+                "badge": "snap",
+                "title": "Snapshot approval required",
+                "detail": "Create a recovery snapshot before approving test commands that may inform follow-up edits.",
+                "action": "open-code",
+                "actionLabel": "Snapshot",
+                "requires_approval": True,
+            },
+            {
+                "id": "test-run-approval-required",
+                "state": "warn",
+                "badge": "ask",
+                "title": "Test run approval required",
+                "detail": "Running tests stays inside Code Workspace and requires approving the exact command.",
+                "action": "open-code",
+                "actionLabel": "Run",
+                "requires_approval": True,
+            },
+        ]
+    )
+    return rows[:8]
+
+
+def _route_rows() -> list[dict[str, Any]]:
+    common = {
+        "run_api": "/api/code-workspaces/{workspace_id}/run",
+        "snapshot_api": "/api/code-workspaces/{workspace_id}/snapshots",
+        "status_api": "/api/code-workspaces/{workspace_id}/status",
+        "diff_api": "/api/code-workspaces/{workspace_id}/diff",
+        "executes": False,
+        "requires_approval": True,
+        "runs_tests": False,
+        "changes_files": False,
+        "creates_snapshot": False,
+        "applies_diffs": False,
+        "restores_snapshots": False,
+        "commits_changes": False,
+        "runs_shell": False,
+        "uses_network": False,
+    }
+    return [
+        {
+            **common,
+            "id": "dashboard-code-chip",
+            "state": "ok",
+            "badge": "dash",
+            "title": "Dashboard code test chip",
+            "detail": "Command Center code controls route test requests to this read-only Code Test Plan.",
+            "entry": "dashboard",
+            "command_id": "run-tests",
+            "action": "run-tests",
+            "actionLabel": "Test Plan",
+        },
+        {
+            **common,
+            "id": "text-command",
+            "state": "ok",
+            "badge": "text",
+            "title": "Typed command route",
+            "detail": "Text such as 'Open my code workspace and run the tests' opens this plan before any exact command approval.",
+            "entry": "text",
+            "command_id": "run-tests",
+            "action": "run-tests",
+            "actionLabel": "Test Plan",
+        },
+        {
+            **common,
+            "id": "command-palette",
+            "state": "ok",
+            "badge": "pal",
+            "title": "Command palette route",
+            "detail": "The global command palette exposes Run Tests as an approval-tier Code command.",
+            "entry": "palette",
+            "command_id": "run-tests",
+            "action": "run-tests",
+            "actionLabel": "Palette",
+        },
+        {
+            **common,
+            "id": "voice-command",
+            "state": "ok",
+            "badge": "voice",
+            "title": "Voice command route",
+            "detail": "Voice input follows the same route preflight and resolves the target phrase to run-tests.",
+            "entry": "voice",
+            "command_id": "run-tests",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+        },
+        {
+            **common,
+            "id": "workflow-handoff",
+            "state": "ok",
+            "badge": "flow",
+            "title": "Agent workflow handoff",
+            "detail": "Agent and build-watch workflows can hand off to run-tests while execution remains approval-gated in Code Workspace.",
+            "entry": "workflow",
+            "command_id": "run-tests",
+            "action": "open-automation-map",
+            "actionLabel": "Automation",
+        },
+    ]
+
+
+def _handoff_row(
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    *,
+    target_api: str,
+    approval_command_id: str = "run-tests",
+    requires_approval: bool = True,
+    runs_tests: bool = False,
+    changes_files: bool = False,
+    creates_snapshot: bool = False,
+    reads_diff: bool = False,
+    restores_snapshots: bool = False,
+    commits_changes: bool = False,
+    writes_activity: bool = False,
+    runs_shell: bool = False,
+    uses_network: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state if state in {"ok", "warn", "error", "loading"} else "warn",
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "target_api": target_api,
+        "approval_command_id": approval_command_id,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "runs_tests": False,
+        "changes_files": False,
+        "creates_snapshot": False,
+        "reads_diff": False,
+        "restores_snapshots": False,
+        "commits_changes": False,
+        "writes_activity": False,
+        "runs_shell": False,
+        "uses_network": False,
+        "gated_operation": {
+            "runs_tests": runs_tests,
+            "changes_files": changes_files,
+            "creates_snapshot": creates_snapshot,
+            "reads_diff": reads_diff,
+            "restores_snapshots": restores_snapshots,
+            "commits_changes": commits_changes,
+            "writes_activity": writes_activity,
+            "runs_shell": runs_shell,
+            "uses_network": uses_network,
+        },
+    }
+
+
+def _handoff_rows(workspace_count: int, command_count: int, runner_state: str) -> list[dict[str, Any]]:
+    workspace_state = "ok" if workspace_count else "warn"
+    command_state = "warn" if command_count else "loading"
+    runner_ready = runner_state == "ok"
+    return [
+        _handoff_row(
+            "code-workspace-selection-handoff",
+            workspace_state,
+            "repo",
+            "Workspace selection handoff",
+            f"{workspace_count} sealed workspace(s) are visible; choose the exact repo before any command can be staged.",
+            "open-code",
+            "Code",
+            target_api="/api/code-workspaces",
+            requires_approval=False,
+        ),
+        _handoff_row(
+            "code-status-diff-handoff",
+            workspace_state,
+            "diff",
+            "Status and diff review handoff",
+            "Status and diff review should precede test approval so the operator sees pending local changes.",
+            "open-code-workspace-map",
+            "Map",
+            target_api="/api/code-workspaces/{workspace_id}/diff",
+            requires_approval=False,
+            reads_diff=True,
+        ),
+        _handoff_row(
+            "code-snapshot-checkpoint-handoff",
+            "warn" if workspace_count else "loading",
+            "snap",
+            "Snapshot checkpoint handoff",
+            "Snapshot creation writes rollback evidence before test commands or follow-up edits.",
+            "open-code",
+            "Snapshot",
+            target_api="/api/code-workspaces/{workspace_id}/snapshots",
+            creates_snapshot=True,
+            changes_files=True,
+        ),
+        _handoff_row(
+            "code-exact-command-approval-handoff",
+            command_state,
+            "ask",
+            "Exact command approval handoff",
+            f"{command_count} candidate command(s) are visible; approve the exact command in Code Workspace before execution.",
+            "run-tests",
+            "Approve",
+            target_api="/api/code-workspaces/{workspace_id}/run",
+            runs_tests=True,
+            runs_shell=True,
+        ),
+        _handoff_row(
+            "code-runner-isolation-handoff",
+            "ok" if runner_ready else "warn",
+            "run",
+            "Runner isolation handoff",
+            "Worker-sidecar execution is preferred; in-process runner mode needs policy review before commands run.",
+            "open-code-workspace-map",
+            "Runner",
+            target_api="/api/operator/runtime-plan",
+            requires_approval=not runner_ready,
+            runs_shell=True,
+        ),
+        _handoff_row(
+            "code-activity-output-handoff",
+            "ok",
+            "log",
+            "Activity output handoff",
+            "Approved test runs should preserve stdout, stderr, status, and recovery notes in the local activity timeline.",
+            "open-activity-preflight",
+            "Activity",
+            target_api="/api/operator/activity",
+            requires_approval=False,
+            writes_activity=True,
+        ),
+        _handoff_row(
+            "code-recovery-rollback-handoff",
+            "warn" if workspace_count else "loading",
+            "recover",
+            "Recovery and rollback handoff",
+            "Failed tests, generated changes, or agent edits should route through Recovery Map before restore or retry.",
+            "open-recovery-map",
+            "Recovery",
+            target_api="/api/operator/recovery-plan",
+            restores_snapshots=True,
+            changes_files=True,
+        ),
+    ]
+
+
 def run_operator_code_test_plan(
     owner: str = "local",
     *,
@@ -226,6 +555,9 @@ def run_operator_code_test_plan(
     command_rows = command_rows[:MAX_COMMANDS]
     candidate_count = sum(1 for item in command_rows if item.get("command"))
     sequence_rows = _sequence_rows(len(workspace_rows), candidate_count, runner["state"])
+    alert_rows = _code_alert_rows(len(workspace_rows), candidate_count, runner, command_rows, workspace_error)
+    route_rows = _route_rows()
+    handoff_rows = _handoff_rows(len(workspace_rows), candidate_count, runner["state"])
     return {
         "mode": "read-only-code-test-plan",
         "generated_at": _utc_now(),
@@ -236,6 +568,14 @@ def run_operator_code_test_plan(
             "candidate_command_count": candidate_count,
             "runner": runner["runner"],
             "runner_state": runner["state"],
+            "code_alert_count": len(alert_rows),
+            "critical_code_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
+            "route_count": len(route_rows),
+            "route_ready_count": len([row for row in route_rows if row.get("state") == "ok"]),
+            "entry_route_count": len(route_rows),
+            "entry_route_ready_count": len([row for row in route_rows if row.get("state") == "ok"]),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
             "runs_tests": False,
             "changes_files": False,
             "creates_snapshot": False,
@@ -247,6 +587,10 @@ def run_operator_code_test_plan(
         "workspace_rows": workspace_rows,
         "candidate_commands": command_rows,
         "sequence_rows": sequence_rows,
+        "route_rows": route_rows,
+        "entry_rows": route_rows,
+        "handoff_rows": handoff_rows,
+        "alert_rows": alert_rows,
         "evidence_rows": [
             {
                 "id": "activity",

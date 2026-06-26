@@ -174,6 +174,21 @@ for missing_media in ("chat.webm", "chat.mp4", "email.webm", "email.mp4"):
         Add-Result "offline-routes" "fail" "one or more local offline-control routes failed"
     }
 
+    $operatorRouteReport = "/tmp/operator-route-smoke.json"
+    if (-not (Test-ContainerRunning)) {
+        Add-Result "operator-route-smoke" "fail" "container is not running"
+    } else {
+        & docker exec $ContainerName python /app/ci/operator_route_smoke.py --owner smoke --limit 20 --report $operatorRouteReport
+        $routeSmokeExit = $LASTEXITCODE
+        if ($routeSmokeExit -eq 0) {
+            Add-Result "operator-route-smoke" "ok" "read-only operator route surfaces loaded without network"
+            $operatorRouteReportHost = Join-Path $Root "dist\operator-route-smoke.json"
+            & docker cp "$ContainerName`:$operatorRouteReport" $operatorRouteReportHost 2>$null
+        } else {
+            Add-Result "operator-route-smoke" "fail" "operator route smoke failed with exit code $routeSmokeExit"
+        }
+    }
+
     $denyCode = @'
 from src import code_workspace as cw
 

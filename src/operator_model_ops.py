@@ -71,6 +71,152 @@ def _api_action(
     }
 
 
+def _model_alert_rows(
+    primary_model: str,
+    local_enabled: int,
+    external_enabled: int,
+    external_allowed: bool,
+    offline_mode: bool,
+    job_counts: dict[str, int],
+    dataset_count: int,
+    artifact_count: int,
+    deps_ready: bool,
+    trainable_count: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if not primary_model:
+        rows.append(
+            {
+                "id": "primary-model-required",
+                "state": "warn",
+                "badge": "model",
+                "title": "Primary local model not selected",
+                "detail": "Choose and verify a local primary model before approving autonomous model-backed work.",
+                "action": "open-cookbook",
+                "actionLabel": "Choose",
+                "requires_approval": False,
+            }
+        )
+    if local_enabled < 1:
+        rows.append(
+            {
+                "id": "local-endpoint-required",
+                "state": "error",
+                "badge": "local",
+                "title": "No enabled local model endpoint",
+                "detail": "Enable or register a local endpoint before relying on Cleverly as a local-first operator.",
+                "action": "open-model-routing-map",
+                "actionLabel": "Routes",
+                "requires_approval": False,
+            }
+        )
+    if external_enabled and external_allowed and not offline_mode:
+        rows.append(
+            {
+                "id": "external-model-endpoints-enabled",
+                "state": "warn",
+                "badge": "egress",
+                "title": "External model endpoints enabled",
+                "detail": f"{external_enabled} external endpoint(s) can leave local-only mode; review Offline Control before autonomous routing.",
+                "action": "open-offline",
+                "actionLabel": "Policy",
+                "requires_approval": True,
+                "uses_network": True,
+            }
+        )
+    if _count(job_counts.get("failed"), 0):
+        rows.append(
+            {
+                "id": "failed-model-jobs",
+                "state": "error",
+                "badge": "fail",
+                "title": "Failed model jobs need review",
+                "detail": f"{job_counts.get('failed', 0)} fine-tune job(s) failed; inspect local logs before retrying or changing routes.",
+                "action": "open-training-run-plan",
+                "actionLabel": "Jobs",
+                "requires_approval": True,
+            }
+        )
+    if _count(job_counts.get("active"), 0):
+        rows.append(
+            {
+                "id": "active-model-jobs",
+                "state": "warn",
+                "badge": "run",
+                "title": "Model job already active",
+                "detail": f"{job_counts.get('active', 0)} model job(s) are running or queued; avoid overlapping heavy local work unless intentional.",
+                "action": "open-training",
+                "actionLabel": "Jobs",
+                "requires_approval": True,
+            }
+        )
+    if dataset_count < 1:
+        rows.append(
+            {
+                "id": "training-dataset-missing",
+                "state": "warn",
+                "badge": "data",
+                "title": "No local training dataset",
+                "detail": "Training and fine-tuning routes need an approved local dataset before a model operation can start.",
+                "action": "open-training",
+                "actionLabel": "Dataset",
+                "requires_approval": False,
+            }
+        )
+    elif artifact_count < 1:
+        rows.append(
+            {
+                "id": "starter-artifact-missing",
+                "state": "warn",
+                "badge": "tiny",
+                "title": "No starter model artifact",
+                "detail": "Approve a bounded tiny-model run and sample its output before escalating local training workflows.",
+                "action": "open-training-run-plan",
+                "actionLabel": "Plan",
+                "requires_approval": True,
+            }
+        )
+    if not deps_ready:
+        rows.append(
+            {
+                "id": "finetune-dependencies-limited",
+                "state": "warn",
+                "badge": "deps",
+                "title": "Fine-tune dependencies limited",
+                "detail": "LoRA routes remain blocked until optional fine-tuning dependencies are available inside the local runtime.",
+                "action": "open-training-run-plan",
+                "actionLabel": "LoRA",
+                "requires_approval": False,
+            }
+        )
+    if trainable_count < 1:
+        rows.append(
+            {
+                "id": "trainable-base-required",
+                "state": "warn",
+                "badge": "base",
+                "title": "Trainable base weights required",
+                "detail": "Fine-tuning needs a local HF-format base model directory; runtime chat manifests are not enough.",
+                "action": "open-model-creation-plan",
+                "actionLabel": "Models",
+                "requires_approval": False,
+            }
+        )
+    rows.append(
+        {
+            "id": "model-operation-approval-required",
+            "state": "warn",
+            "badge": "ask",
+            "title": "Model operation approval required",
+            "detail": "Setting defaults, registering endpoints, pulling models, serving, benchmarking, training, and fine-tuning remain explicit actions.",
+            "action": "open-trust-controls",
+            "actionLabel": "Trust",
+            "requires_approval": True,
+        }
+    )
+    return rows[:MAX_ROWS]
+
+
 def _job_counts(finetune: dict[str, Any]) -> dict[str, int]:
     counts = _as_dict(finetune.get("job_counts"))
     jobs = _as_list(finetune.get("jobs"))
@@ -92,6 +238,218 @@ def _job_counts(finetune: dict[str, Any]) -> dict[str, int]:
         "failed": sum(1 for job in jobs if has(job, ("fail", "error", "dead"))),
         "complete": sum(1 for job in jobs if has(job, ("complete", "success", "done"))),
     }
+
+
+def _entry_rows() -> list[dict[str, Any]]:
+    common = {
+        "command_id": "open-model-preflight",
+        "start_command_id": "open-model-routing-map",
+        "approval_api": "/api/offline-control/models/primary",
+        "download_api": "/api/model/download",
+        "serve_api": "/api/model/serve",
+        "training_api": "/api/training/train",
+        "finetune_api": "/api/training/finetune/jobs",
+        "requires_approval": True,
+        "executes": False,
+        "sets_primary_model": False,
+        "auto_selects_primary_model": False,
+        "registers_endpoints": False,
+        "deletes_endpoints": False,
+        "pulls_models": False,
+        "downloads_models": False,
+        "starts_serving": False,
+        "benchmarks_models": False,
+        "starts_training": False,
+        "starts_finetune": False,
+        "changes_settings": False,
+        "uses_network": False,
+        "runs_shell": False,
+    }
+    return [
+        {
+            **common,
+            "id": "model-dashboard-route",
+            "entry": "dashboard",
+            "state": "ok",
+            "badge": "dash",
+            "title": "Dashboard model preflight",
+            "detail": "The Models card opens read-only model operation posture before any model route, endpoint, serving, or training change.",
+            "action": "open-model-preflight",
+            "actionLabel": "Preflight",
+        },
+        {
+            **common,
+            "id": "model-text-route",
+            "entry": "text",
+            "state": "ok",
+            "badge": "text",
+            "title": "Typed model request route",
+            "detail": "Typed model requests route to Model Operations Preflight before any primary model, endpoint, download, serving, benchmark, or training API.",
+            "action": "open-model-preflight",
+            "actionLabel": "Preflight",
+        },
+        {
+            **common,
+            "id": "model-palette-route",
+            "entry": "palette",
+            "state": "ok",
+            "badge": "cmd",
+            "title": "Palette model route",
+            "detail": "The command palette separates model review from write-capable model, endpoint, serving, download, and training actions.",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+        },
+        {
+            **common,
+            "id": "model-voice-route",
+            "entry": "voice",
+            "state": "ok",
+            "badge": "voice",
+            "title": "Voice model route",
+            "detail": "Voice transcripts use the same local route and open model preflight before any model operation can start.",
+            "action": "start-voice-command",
+            "actionLabel": "Voice",
+        },
+        {
+            **common,
+            "id": "model-workflow-route",
+            "entry": "workflow",
+            "state": "ok",
+            "badge": "flow",
+            "title": "Workflow model handoff",
+            "detail": "Workflow handoff can review model routes, jobs, endpoints, and training evidence, but execution stays behind explicit approval.",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+        },
+    ]
+
+
+def _handoff_rows(
+    *,
+    primary_model: str,
+    local_enabled: int,
+    external_enabled: int,
+    external_allowed: bool,
+    offline_mode: bool,
+    model_count: int,
+    dataset_count: int,
+    artifact_count: int,
+    deps_ready: bool,
+    trainable_count: int,
+    job_counts: dict[str, int],
+) -> list[dict[str, Any]]:
+    common = {
+        "requires_approval": False,
+        "executes": False,
+        "sets_primary_model": False,
+        "auto_selects_primary_model": False,
+        "registers_endpoints": False,
+        "tests_endpoints": False,
+        "deletes_endpoints": False,
+        "pulls_models": False,
+        "downloads_models": False,
+        "starts_serving": False,
+        "benchmarks_models": False,
+        "starts_training": False,
+        "starts_finetune": False,
+        "changes_settings": False,
+        "writes_files": False,
+        "runs_shell": False,
+        "uses_network": False,
+    }
+    endpoint_egress = external_enabled and external_allowed and not offline_mode
+    job_state = "error" if _count(job_counts.get("failed")) else ("warn" if _count(job_counts.get("active")) else "ok")
+    return [
+        {
+            **common,
+            "id": "model-primary-review-handoff",
+            "state": "ok" if primary_model else "warn",
+            "badge": "model",
+            "title": "Primary model review handoff",
+            "detail": (
+                f"{primary_model} is selected; verification and route changes stay approval-gated."
+                if primary_model
+                else "Choose a local primary model before approving autonomous model-backed work."
+            ),
+            "action": "verify-model" if primary_model else "open-cookbook",
+            "actionLabel": "Verify" if primary_model else "Choose",
+            "target_api": "/api/offline-control/models/primary",
+            "approval_api": "/api/offline-control/models/primary",
+            "requires_approval": True,
+        },
+        {
+            **common,
+            "id": "model-endpoint-routing-handoff",
+            "state": "warn" if endpoint_egress else ("ok" if local_enabled else "error"),
+            "badge": "route",
+            "title": "Endpoint routing handoff",
+            "detail": (
+                f"{local_enabled} local endpoint(s), {external_enabled} external endpoint(s), and {model_count} model(s) are visible; external routing needs policy review."
+                if endpoint_egress
+                else f"{local_enabled} local endpoint(s) and {model_count} model(s) are visible for local-first routing review."
+            ),
+            "action": "open-model-routing-map",
+            "actionLabel": "Routes",
+            "target_api": "/api/model-endpoints",
+            "approval_api": "/api/model-endpoints",
+            "requires_approval": endpoint_egress,
+            "network_after_approval": endpoint_egress,
+        },
+        {
+            **common,
+            "id": "model-serving-download-handoff",
+            "state": "ok" if local_enabled and model_count else "warn",
+            "badge": "serve",
+            "title": "Serving and download approval handoff",
+            "detail": "Model pulls, downloads, serving, and benchmarks are long-running local actions that require explicit approval.",
+            "action": "open-cookbook",
+            "actionLabel": "Cookbook",
+            "target_api": "/api/model/serve",
+            "approval_api": "/api/model/download",
+            "requires_approval": True,
+        },
+        {
+            **common,
+            "id": "model-training-handoff",
+            "state": job_state if job_state != "ok" else ("ok" if dataset_count and artifact_count and deps_ready and trainable_count else "warn"),
+            "badge": "train",
+            "title": "Training and fine-tune handoff",
+            "detail": f"{dataset_count} dataset(s), {artifact_count} artifact(s), {trainable_count} trainable base model(s), {job_counts.get('active', 0)} active job(s), and {job_counts.get('failed', 0)} failed job(s) are visible before another run.",
+            "action": "open-training-run-plan",
+            "actionLabel": "Training",
+            "target_api": "/api/operator/training-plan",
+            "approval_api": "/api/training/train",
+            "requires_approval": True,
+        },
+        {
+            **common,
+            "id": "model-context-retrieval-handoff",
+            "state": "ok",
+            "badge": "rag",
+            "title": "Context and retrieval handoff",
+            "detail": "ChromaDB/RAG and SearXNG evidence stay in separate local preflights before retrieval or research workflows use model context.",
+            "action": "open-embedding-preflight",
+            "actionLabel": "RAG",
+            "target_api": "/api/operator/ai-runtime-plan",
+        },
+        {
+            **common,
+            "id": "model-network-policy-handoff",
+            "state": "warn" if endpoint_egress else "ok",
+            "badge": "net",
+            "title": "Offline and network policy handoff",
+            "detail": (
+                "External model endpoints are enabled while offline mode is not active; owner policy review is required before model egress."
+                if endpoint_egress
+                else "Offline/features policy keeps model egress explicit; this plan does not use network access."
+            ),
+            "action": "open-offline",
+            "actionLabel": "Policy",
+            "target_api": "/api/offline-control/audit",
+            "requires_approval": endpoint_egress,
+            "network_after_approval": endpoint_egress,
+        },
+    ]
 
 
 def run_operator_model_ops_plan(
@@ -284,6 +642,32 @@ def run_operator_model_ops_plan(
         {"label": "Ollama store", "path": "data/ollama or /root/.ollama", "detail": f"{ollama_runtime_count} runtime model manifest(s) visible"},
         {"label": "Activity", "path": "data/operator_activity.json", "detail": "verification, recovery, and command results"},
     ]
+    alert_rows = _model_alert_rows(
+        primary_model,
+        local_enabled,
+        external_enabled,
+        external_allowed,
+        offline_mode,
+        job_counts,
+        dataset_count,
+        artifact_count,
+        deps_ready,
+        trainable_count,
+    )
+    entry_rows = _entry_rows()
+    handoff_rows = _handoff_rows(
+        primary_model=primary_model,
+        local_enabled=local_enabled,
+        external_enabled=external_enabled,
+        external_allowed=external_allowed,
+        offline_mode=offline_mode,
+        model_count=model_count,
+        dataset_count=dataset_count,
+        artifact_count=artifact_count,
+        deps_ready=deps_ready,
+        trainable_count=trainable_count,
+        job_counts=job_counts,
+    )
     state = "error" if blockers else ("warn" if warnings else "ok")
     return {
         "mode": "read-only-model-ops-plan",
@@ -309,6 +693,12 @@ def run_operator_model_ops_plan(
             "offline": bool(offline_mode),
             "blocker_count": len(blockers),
             "warning_count": len(warnings),
+            "model_alert_count": len(alert_rows),
+            "critical_model_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
             "sets_primary_model": False,
             "auto_selects_primary_model": False,
             "registers_endpoints": False,
@@ -330,6 +720,9 @@ def run_operator_model_ops_plan(
         "operation_rows": operation_rows,
         "endpoint_rows": endpoint_rows,
         "guard_rows": guard_rows,
+        "alert_rows": alert_rows,
+        "entry_rows": entry_rows,
+        "handoff_rows": handoff_rows,
         "api_actions": api_actions,
         "evidence_rows": evidence_rows,
         "approval": {

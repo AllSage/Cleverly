@@ -189,6 +189,151 @@ def _readiness(
     }
 
 
+def _model_alert_row(
+    *,
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str = "open-model-preflight",
+    action_label: str = "Review",
+    requires_approval: bool = False,
+    uses_network: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state,
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "routes_commands": False,
+        "starts_models": False,
+        "starts_training": False,
+        "starts_finetune": False,
+        "downloads_models": False,
+        "changes_settings": False,
+        "runs_shell": False,
+        "uses_network": uses_network,
+    }
+
+
+def _alert_rows(
+    primary: dict[str, Any],
+    endpoints: dict[str, Any],
+    datasets: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]],
+    finetune: dict[str, Any],
+    features: dict[str, Any],
+    readiness: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    counts = endpoints.get("counts") if isinstance(endpoints.get("counts"), dict) else {}
+    deps = finetune.get("dependencies") if isinstance(finetune.get("dependencies"), dict) else {}
+    trainable = finetune.get("trainable_models") if isinstance(finetune.get("trainable_models"), list) else []
+    job_counts = readiness.get("job_counts") if isinstance(readiness.get("job_counts"), dict) else {}
+
+    if not primary.get("configured"):
+        rows.append(_model_alert_row(
+            row_id="model-primary-missing",
+            state="error",
+            badge="model",
+            title="Primary model not selected",
+            detail="Choose a local primary model before relying on chat, routing, or automation defaults.",
+            action="open-model-routing-map",
+            action_label="Models",
+        ))
+    if int(counts.get("enabled") or 0) < 1:
+        rows.append(_model_alert_row(
+            row_id="model-endpoints-missing",
+            state="error",
+            badge="endpt",
+            title="No enabled model endpoint",
+            detail="At least one enabled local endpoint is needed for local-first model operation.",
+            action="open-model-routing-map",
+            action_label="Models",
+        ))
+    if int(counts.get("local_enabled") or 0) < 1:
+        rows.append(_model_alert_row(
+            row_id="model-local-endpoint-missing",
+            state="warn",
+            badge="local",
+            title="No enabled local model endpoint",
+            detail="Local-first operation is weaker until Ollama or another local endpoint is enabled.",
+            action="open-model-routing-map",
+            action_label="Models",
+        ))
+    if int(counts.get("external_enabled") or 0) and features.get("external_model_endpoints") is not False:
+        rows.append(_model_alert_row(
+            row_id="model-external-endpoint-enabled",
+            state="warn",
+            badge="net",
+            title="External model endpoint enabled",
+            detail=f"{int(counts.get('external_enabled') or 0)} external endpoint(s) are enabled; review privacy and network policy before routing.",
+            action="open-offline",
+            action_label="Policy",
+            requires_approval=True,
+            uses_network=True,
+        ))
+    if not datasets:
+        rows.append(_model_alert_row(
+            row_id="model-training-dataset-missing",
+            state="warn",
+            badge="data",
+            title="No local training dataset",
+            detail="Training Lab has no saved dataset for local model experiments.",
+            action="open-training",
+            action_label="Training",
+        ))
+    if not artifacts:
+        rows.append(_model_alert_row(
+            row_id="model-training-artifact-missing",
+            state="warn",
+            badge="tiny",
+            title="No tiny local training artifact",
+            detail="No saved tiny-model artifact is visible in local training storage.",
+            action="open-training",
+            action_label="Training",
+        ))
+    if deps.get("available") is False:
+        missing = ", ".join(str(item) for item in deps.get("missing") or []) or "optional fine-tuning dependencies"
+        rows.append(_model_alert_row(
+            row_id="model-finetune-deps-missing",
+            state="warn",
+            badge="deps",
+            title="LoRA fine-tuning dependencies missing",
+            detail=f"Fine-tuning is limited until dependencies are available: {missing}.",
+            action="open-training-run-plan",
+            action_label="Plan",
+        ))
+    if not trainable:
+        rows.append(_model_alert_row(
+            row_id="model-trainable-base-missing",
+            state="warn",
+            badge="base",
+            title="No trainable base model",
+            detail="Add HF-format base weights before starting a LoRA adapter job.",
+            action="open-model-creation-plan",
+            action_label="Models",
+        ))
+    if int(job_counts.get("failed") or 0):
+        rows.append(_model_alert_row(
+            row_id="model-finetune-job-failed",
+            state="error",
+            badge="job",
+            title="Fine-tuning job failed",
+            detail=f"{int(job_counts.get('failed') or 0)} fine-tuning job(s) failed; review logs before retrying.",
+            action="open-training-run-plan",
+            action_label="Plan",
+            requires_approval=True,
+        ))
+    return rows[:10]
+
+
 def run_operator_model_snapshot() -> dict[str, Any]:
     """Return read-only model/training evidence for the operator console."""
     settings = load_settings()
@@ -204,6 +349,7 @@ def run_operator_model_snapshot() -> dict[str, Any]:
     }
     primary = _primary_model(settings)
     readiness = _readiness(primary, endpoints, datasets, artifacts, finetune, features)
+    alert_rows = _alert_rows(primary, endpoints, datasets, artifacts, finetune, features, readiness)
     jobs = finetune.get("jobs") if isinstance(finetune.get("jobs"), list) else []
     deps = finetune.get("dependencies") if isinstance(finetune.get("dependencies"), dict) else {}
 
@@ -246,4 +392,26 @@ def run_operator_model_snapshot() -> dict[str, Any]:
             "offline": bool(os.getenv("CLEVERLY_OFFLINE")),
         },
         "readiness": readiness,
+        "alert_rows": alert_rows,
+        "summary": {
+            "state": readiness["state"],
+            "model_snapshot_alert_count": len(alert_rows),
+            "critical_model_snapshot_alert_count": sum(1 for row in alert_rows if row.get("state") == "error"),
+            "primary_model_configured": bool(primary.get("configured")),
+            "enabled_endpoint_count": endpoints["counts"]["enabled"],
+            "local_enabled_endpoint_count": endpoints["counts"]["local_enabled"],
+            "external_enabled_endpoint_count": endpoints["counts"]["external_enabled"],
+            "dataset_count": len(datasets),
+            "artifact_count": len(artifacts),
+            "trainable_count": len(finetune.get("trainable_models") or []),
+            "failed_finetune_count": readiness["job_counts"]["failed"],
+            "executes": False,
+            "starts_models": False,
+            "starts_training": False,
+            "starts_finetune": False,
+            "downloads_models": False,
+            "changes_settings": False,
+            "runs_shell": False,
+            "uses_network": False,
+        },
     }

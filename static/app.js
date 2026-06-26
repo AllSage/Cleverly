@@ -37,10 +37,10 @@ import themeModule from './js/theme.js';
 // unversioned so this can't recur.
 import cookbookModule from './js/cookbook.js';
 import trainingLabModule from './js/trainingLab.js';
-import codeWorkspaceModule from './js/codeWorkspace.js?v=20260621-code-run-backend-ledger';
+import codeWorkspaceModule from './js/codeWorkspace.js?v=20260626-operator-console';
 import offlineControlModule from './js/offlineControl.js';
-import commandCenterModule from './js/commandCenter.js?v=20260621-code-run-backend-ledger';
-import commandPaletteModule from './js/commandPalette.js?v=20260621-code-run-backend-ledger';
+import commandCenterModule from './js/commandCenter.js?v=20260626-operator-console';
+import commandPaletteModule from './js/commandPalette.js?v=20260626-operator-console';
 import setupWizardModule from './js/setupWizard.js';
 import tutorialsModule from './js/tutorials.js';
 import agentLoopsModule from './js/agentLoops.js';

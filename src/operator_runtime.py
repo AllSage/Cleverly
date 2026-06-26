@@ -16,6 +16,104 @@ from src.settings import offline_mode
 LOW_SPACE_PERCENT = 10.0
 LOW_SPACE_BYTES = 5 * 1024 * 1024 * 1024
 LOW_MEMORY_PERCENT = 15.0
+SEALED_RUNTIME_ITEMS: list[dict[str, Any]] = [
+    {
+        "id": "volume-cleverly-data",
+        "kind": "volume",
+        "badge": "vol",
+        "title": "cleverly-data volume",
+        "detail": "Primary SQLite data, settings, memory, uploads, documents, tasks, training data, and workspace state",
+        "mount": "/app/data",
+        "required": True,
+    },
+    {
+        "id": "volume-cleverly-logs",
+        "kind": "volume",
+        "badge": "vol",
+        "title": "cleverly-logs volume",
+        "detail": "Application logs, audit traces, job output, and operator activity evidence",
+        "mount": "/app/logs",
+        "required": True,
+    },
+    {
+        "id": "volume-cleverly-cache",
+        "kind": "volume",
+        "badge": "vol",
+        "title": "cleverly-cache volume",
+        "detail": "Local runtime, embedding, browser, package, and helper caches",
+        "mount": "/root/.cache",
+        "required": False,
+    },
+    {
+        "id": "volume-cleverly-ollama",
+        "kind": "volume",
+        "badge": "vol",
+        "title": "cleverly-ollama volume",
+        "detail": "Ollama local model store for bundled and user-imported local models",
+        "mount": "/root/.ollama",
+        "required": False,
+    },
+    {
+        "id": "volume-cleverly-chromadb-data",
+        "kind": "volume",
+        "badge": "vol",
+        "title": "cleverly-chromadb-data volume",
+        "detail": "ChromaDB vector indexes and local retrieval metadata",
+        "mount": "/data",
+        "required": False,
+    },
+    {
+        "id": "volume-cleverly-searxng-data",
+        "kind": "volume",
+        "badge": "vol",
+        "title": "cleverly-searxng-data volume",
+        "detail": "SearXNG local settings and search integration state",
+        "mount": "/etc/searxng",
+        "required": False,
+    },
+    {
+        "id": "volume-cleverly-searxng-cache",
+        "kind": "volume",
+        "badge": "vol",
+        "title": "cleverly-searxng-cache volume",
+        "detail": "SearXNG local cache data kept inside the Docker runtime",
+        "mount": "/var/cache/searxng",
+        "required": False,
+    },
+    {
+        "id": "service-ollama",
+        "kind": "support-service",
+        "badge": "svc",
+        "title": "Ollama support service",
+        "detail": "Bundled local model runtime endpoint used by the model operator surfaces",
+        "required": False,
+    },
+    {
+        "id": "service-chromadb",
+        "kind": "support-service",
+        "badge": "svc",
+        "title": "ChromaDB vector service",
+        "detail": "Local vector database for document, memory, and research retrieval",
+        "required": False,
+    },
+    {
+        "id": "service-searxng",
+        "kind": "support-service",
+        "badge": "svc",
+        "title": "SearXNG research service",
+        "detail": "Network-capable research/search service governed by Offline Control and explicit egress gates",
+        "required": False,
+        "network_capable": True,
+    },
+    {
+        "id": "service-ntfy",
+        "kind": "support-service",
+        "badge": "svc",
+        "title": "ntfy notification service",
+        "detail": "Optional local notification channel for completed work and operator alerts",
+        "required": False,
+    },
+]
 
 
 def _trim(value: Any, limit: int = 500) -> str:
@@ -268,6 +366,226 @@ def _api_action(method: str, path: str, title: str, *, writes: bool = False, req
     }
 
 
+def _runtime_alert_rows(
+    *,
+    disk_rows: list[dict[str, Any]],
+    resource_rows: list[dict[str, Any]],
+    missing_required: list[dict[str, Any]],
+    low_space: list[dict[str, Any]],
+    in_docker: bool,
+    offline: bool,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in missing_required[:4]:
+        rows.append(
+            {
+                "id": f"missing-runtime-root-{row['id']}",
+                "state": "error",
+                "badge": "disk",
+                "title": f"Missing required runtime root: {row['title']}",
+                "detail": f"{row['path']} is not visible; verify Docker volume or host-data mount before starting jobs.",
+                "action": "open-local-data-map",
+                "actionLabel": "Data",
+                "requires_approval": True,
+            }
+        )
+    for row in low_space[:4]:
+        rows.append(
+            {
+                "id": f"low-space-{row['id']}",
+                "state": "warn",
+                "badge": "disk",
+                "title": f"Low runtime storage: {row['title']}",
+                "detail": f"{row['detail']}; avoid large training, model, backup, or code jobs until reviewed.",
+                "action": "open-machine-preflight",
+                "actionLabel": "Resources",
+                "requires_approval": True,
+            }
+        )
+    for row in [item for item in resource_rows if item.get("state") == "warn"][:4]:
+        rows.append(
+            {
+                "id": f"resource-warning-{row['id']}",
+                "state": "warn",
+                "badge": row.get("badge") or "res",
+                "title": row.get("title") or "Runtime resource warning",
+                "detail": f"{row.get('detail') or 'Resource warning'}; heavy jobs remain approval-gated.",
+                "action": "open-machine-preflight",
+                "actionLabel": "Resources",
+                "requires_approval": True,
+            }
+        )
+    if not in_docker:
+        rows.append(
+            {
+                "id": "runtime-boundary-native",
+                "state": "warn",
+                "badge": "dock",
+                "title": "Docker runtime boundary not detected",
+                "detail": "Cleverly appears to be running native or without a container marker; verify local data and service boundaries.",
+                "action": "open-system-status",
+                "actionLabel": "System",
+                "requires_approval": False,
+            }
+        )
+    if not offline:
+        rows.append(
+            {
+                "id": "runtime-network-enabled",
+                "state": "warn",
+                "badge": "net",
+                "title": "Runtime network mode enabled",
+                "detail": "Network mode is enabled or not declared offline; review egress before autonomous jobs.",
+                "action": "open-offline",
+                "actionLabel": "Policy",
+                "requires_approval": False,
+            }
+        )
+    rows.append(
+        {
+            "id": "heavy-job-approval-gate",
+            "state": "warn",
+            "badge": "ask",
+            "title": "Heavy jobs require approval",
+            "detail": "Training, model import/download, backup/export, service repair, and workspace command runs remain explicit actions.",
+            "action": "open-trust-controls",
+            "actionLabel": "Trust",
+            "requires_approval": True,
+        }
+    )
+    return rows[:12]
+
+
+def _sealed_runtime_rows(*, in_docker: bool, offline: bool) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in SEALED_RUNTIME_ITEMS:
+        kind = _trim(item.get("kind"), 80)
+        required = item.get("required") is True
+        network_capable = item.get("network_capable") is True
+        if in_docker:
+            state = "ok"
+        elif required:
+            state = "error"
+        else:
+            state = "warn"
+        posture = "offline-gated" if offline or network_capable else "local-first"
+        mount = _trim(item.get("mount"), 160)
+        detail_parts = [
+            _trim(item.get("detail"), 260),
+            f"mount={mount}" if mount else "",
+            "required" if required else "optional",
+            posture,
+        ]
+        rows.append(
+            {
+                "id": _trim(item.get("id"), 120),
+                "kind": kind,
+                "state": state,
+                "badge": _trim(item.get("badge") or ("vol" if kind == "volume" else "svc"), 24),
+                "title": _trim(item.get("title"), 160),
+                "detail": "; ".join(part for part in detail_parts if part),
+                "mount": mount,
+                "required": required,
+                "network_capable": network_capable,
+                "offline_gated": offline or network_capable,
+                "executes": False,
+                "starts_services": False,
+                "runs_shell": False,
+                "writes_files": False,
+                "deletes_files": False,
+                "pulls_images": False,
+                "uses_network": False,
+                "action": "open-local-data-map" if kind == "volume" else "open-local-services-map",
+                "actionLabel": "Data" if kind == "volume" else "Services",
+            }
+        )
+    return rows
+
+
+def _entry_rows(*, runtime_state: str, in_docker: bool, offline: bool) -> list[dict[str, Any]]:
+    state = "ok" if runtime_state == "ok" and in_docker and offline else ("warn" if runtime_state != "error" else "error")
+    common = {
+        "command_id": "open-machine-preflight",
+        "offline_command_id": "open-offline",
+        "data_command_id": "open-local-data-map",
+        "trust_command_id": "open-trust-controls",
+        "activity_command_id": "open-activity-preflight",
+        "runtime_api": "/api/operator/runtime-plan",
+        "status_api": "/api/runtime",
+        "offline_api": "/api/offline-control/status",
+        "services_api": "/api/operator/services",
+        "requires_approval": True,
+        "executes": False,
+        "starts_jobs": False,
+        "runs_shell": False,
+        "reads_file_contents": False,
+        "writes_files": False,
+        "deletes_files": False,
+        "downloads_models": False,
+        "pulls_images": False,
+        "restarts_services": False,
+        "changes_settings": False,
+        "uses_network": False,
+    }
+    return [
+        {
+            **common,
+            "id": "runtime-dashboard-route",
+            "entry": "dashboard",
+            "state": state,
+            "badge": "dash",
+            "title": "Dashboard runtime preflight",
+            "detail": "The Command Center opens Machine Operations Preflight before any heavy job, shell, model, service, or cleanup action.",
+            "action": "open-machine-preflight",
+            "actionLabel": "Resources",
+        },
+        {
+            **common,
+            "id": "runtime-text-route",
+            "entry": "text",
+            "state": state,
+            "badge": "text",
+            "title": "Typed runtime request route",
+            "detail": "Typed machine, resource, storage, or heavy-job requests route to read-only runtime evidence before work starts.",
+            "action": "open-machine-preflight",
+            "actionLabel": "Review",
+        },
+        {
+            **common,
+            "id": "runtime-palette-route",
+            "entry": "palette",
+            "state": state,
+            "badge": "cmd",
+            "title": "Palette runtime route",
+            "detail": "The command palette can open runtime, offline, data, and trust review without starting jobs or changing settings.",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+        },
+        {
+            **common,
+            "id": "runtime-voice-route",
+            "entry": "voice",
+            "state": state,
+            "badge": "voice",
+            "title": "Voice runtime route",
+            "detail": "Voice mode can open machine preflight without running shell commands, restarting services, or using network access.",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+        },
+        {
+            **common,
+            "id": "runtime-workflow-route",
+            "entry": "workflow",
+            "state": state,
+            "badge": "flow",
+            "title": "Workflow runtime handoff",
+            "detail": "Automation handoffs can show resource headroom, offline state, and heavy-job gates before a workflow starts local work.",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+        },
+    ]
+
+
 def run_operator_runtime_plan(
     owner: str = "local",
     *,
@@ -292,7 +610,18 @@ def run_operator_runtime_plan(
     low_space = [row for row in disk_rows if row.get("low_space")]
     missing_required = [row for row in disk_rows if row.get("required") and not row.get("exists")]
     memory_warnings = [row for row in resource_rows if row["state"] == "warn"]
+    offline = offline_mode()
+    alert_rows = _runtime_alert_rows(
+        disk_rows=disk_rows,
+        resource_rows=resource_rows,
+        missing_required=missing_required,
+        low_space=low_space,
+        in_docker=in_docker,
+        offline=offline,
+    )
     runtime_state = "error" if missing_required else ("warn" if low_space or memory_warnings else "ok")
+    entry_rows = _entry_rows(runtime_state=runtime_state, in_docker=in_docker, offline=offline)
+    sealed_runtime_rows = _sealed_runtime_rows(in_docker=in_docker, offline=offline)
 
     machine_rows = [
         {
@@ -427,12 +756,23 @@ def run_operator_runtime_plan(
         "summary": {
             "state": runtime_state,
             "docker_like": in_docker,
-            "offline": offline_mode(),
+            "offline": offline,
             "root_count": len(disk_rows),
             "existing_root_count": sum(1 for row in disk_rows if row["exists"]),
             "missing_required_count": len(missing_required),
             "low_space_root_count": len(low_space),
             "memory_warning_count": len(memory_warnings),
+            "runtime_alert_count": len(alert_rows),
+            "critical_runtime_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
+            "sealed_runtime_count": len(sealed_runtime_rows),
+            "sealed_runtime_ready_count": len([row for row in sealed_runtime_rows if row.get("state") == "ok"]),
+            "sealed_volume_count": len([row for row in sealed_runtime_rows if row.get("kind") == "volume"]),
+            "support_service_count": len([row for row in sealed_runtime_rows if row.get("kind") == "support-service"]),
+            "network_capable_support_count": len(
+                [row for row in sealed_runtime_rows if row.get("kind") == "support-service" and row.get("network_capable")]
+            ),
             "starts_jobs": False,
             "runs_shell": False,
             "reads_file_contents": False,
@@ -448,6 +788,9 @@ def run_operator_runtime_plan(
         "disk_rows": disk_rows,
         "job_rows": job_rows,
         "guard_rows": guard_rows,
+        "entry_rows": entry_rows,
+        "sealed_runtime_rows": sealed_runtime_rows,
+        "alert_rows": alert_rows,
         "api_actions": api_actions,
         "evidence_rows": evidence_rows,
         "runtime": {

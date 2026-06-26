@@ -1,5 +1,5 @@
 import * as Modals from './modalManager.js';
-import operatorCommands from './operatorCommands.js?v=20260621-code-run-backend-ledger';
+import operatorCommands from './operatorCommands.js?v=20260626-operator-console';
 import uiModule from './ui.js';
 
 const API = '/api/code-workspaces';

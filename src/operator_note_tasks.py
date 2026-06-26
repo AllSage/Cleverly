@@ -139,6 +139,137 @@ def _load_recent_notes(owner: str, limit: int = MAX_CANDIDATES) -> list[dict[str
         db.close()
 
 
+def _entry_rows(candidate_count: int, selected: bool) -> list[dict[str, Any]]:
+    source_detail = (
+        f"Note To Task Draft opens with {candidate_count} local candidate note(s); saving still happens from Tasks review."
+        if candidate_count
+        else "Note To Task Draft opens first and asks for a local note before any task can be saved."
+    )
+    selected_detail = (
+        "Workflow handoff can pass a selected note into a draft payload, but it cannot save, schedule, or run a task from this endpoint."
+        if selected
+        else "Workflow handoff stays in manual draft mode until a local note source is selected."
+    )
+    return [
+        {
+            "id": "note-task-dashboard-entry",
+            "entry": "dashboard",
+            "state": "ok" if candidate_count else "warn",
+            "badge": "dash",
+            "title": "Command Center dashboard",
+            "detail": source_detail,
+            "command_id": "draft-task-from-note",
+            "action": "draft-task-from-note",
+            "actionLabel": "Draft",
+            "requires_review": True,
+            "executes": False,
+            "creates_task": False,
+        },
+        {
+            "id": "note-task-text-entry",
+            "entry": "text",
+            "state": "ok",
+            "badge": "text",
+            "title": "Typed operator command",
+            "detail": "The phrase 'Create a task from this note' resolves to a draft payload and Tasks review before any save.",
+            "command_id": "draft-task-from-note",
+            "action": "draft-task-from-note",
+            "actionLabel": "Draft",
+            "requires_review": True,
+            "executes": False,
+            "creates_task": False,
+        },
+        {
+            "id": "note-task-palette-entry",
+            "entry": "palette",
+            "state": "ok",
+            "badge": "cmd",
+            "title": "Global command palette",
+            "detail": "The palette exposes Create Task From Note as a local draft route, not an auto-save route.",
+            "command_id": "draft-task-from-note",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+            "requires_review": True,
+            "executes": False,
+            "creates_task": False,
+        },
+        {
+            "id": "note-task-voice-entry",
+            "entry": "voice",
+            "state": "ok",
+            "badge": "voice",
+            "title": "Voice command mode",
+            "detail": "Voice routing can open the same draft flow without storing full note text or draft prompts in activity.",
+            "command_id": "draft-task-from-note",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+            "requires_review": True,
+            "executes": False,
+            "creates_task": False,
+        },
+        {
+            "id": "note-task-workflow-entry",
+            "entry": "workflow",
+            "state": "ok" if selected else "warn",
+            "badge": "flow",
+            "title": "Automation workflow handoff",
+            "detail": selected_detail,
+            "command_id": "draft-task-from-note",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+            "requires_review": True,
+            "executes": False,
+            "creates_task": False,
+        },
+    ]
+
+
+def _alert_rows(candidate_count: int, selected: bool) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if candidate_count == 0:
+        rows.append({
+            "id": "note-task-no-note-candidates",
+            "state": "warn",
+            "badge": "note",
+            "title": "No local notes available for task draft",
+            "detail": "Create or select a local note before saving a task from this draft flow.",
+            "action": "open-notes",
+            "actionLabel": "Notes",
+            "requires_approval": False,
+            "executes": False,
+            "creates_task": False,
+            "uses_network": False,
+        })
+    elif not selected:
+        rows.append({
+            "id": "note-task-no-selected-note",
+            "state": "warn",
+            "badge": "draft",
+            "title": "No note selected for task draft",
+            "detail": "A manual draft can open, but saving a useful task needs a selected local note source.",
+            "action": "draft-task-from-note",
+            "actionLabel": "Draft",
+            "requires_approval": False,
+            "executes": False,
+            "creates_task": False,
+            "uses_network": False,
+        })
+    rows.append({
+        "id": "note-task-save-review-required",
+        "state": "warn",
+        "badge": "ask",
+        "title": "Task save requires review",
+        "detail": "The draft payload is not saved, scheduled, run, or notified until the owner reviews it in Tasks.",
+        "action": "open-tasks",
+        "actionLabel": "Tasks",
+        "requires_approval": True,
+        "executes": False,
+        "creates_task": False,
+        "uses_network": False,
+    })
+    return rows
+
+
 def run_operator_note_task_draft(
     owner: str,
     *,
@@ -158,6 +289,8 @@ def run_operator_note_task_draft(
         selected = next((note for note in candidates if note.get("id") == note_id), None)
     if selected is None:
         selected = next((note for note in candidates if note_task_text(note)), None) or (candidates[0] if candidates else None)
+    entry_rows = _entry_rows(len(candidates), selected is not None)
+    alert_rows = _alert_rows(len(candidates), selected is not None)
     rows = []
     for note in candidates:
         text = note_task_text(note)
@@ -172,6 +305,64 @@ def run_operator_note_task_draft(
             "selected": selected is not None and note.get("id") == selected.get("id"),
         })
     selected_draft = task_draft_from_note(selected, now=now)
+    evidence_rows = [
+        {
+            "id": "note-source",
+            "state": "ok" if candidates else "warn",
+            "badge": "note",
+            "title": "Local note source",
+            "detail": f"{len(candidates)} candidate note{'s' if len(candidates) != 1 else ''}; selected: {_note_title(selected) if selected else 'none'}",
+            "action": "open-notes",
+            "actionLabel": "Notes",
+        },
+        {
+            "id": "task-draft-review",
+            "state": "ok" if selected else "warn",
+            "badge": "draft",
+            "title": "Tasks review gate",
+            "detail": "The generated payload opens in Tasks for owner review; it is not saved, scheduled, run, or notified by this plan.",
+            "action": "open-tasks",
+            "actionLabel": "Tasks",
+        },
+        {
+            "id": "activity-ledger",
+            "state": "ok",
+            "badge": "log",
+            "title": "Note task activity ledger",
+            "detail": "Opening a draft from Command Center or the command fallback is mirrored to data/operator_activity.json with note and draft metadata only; full note text and draft prompts are not stored.",
+            "action": "open-activity-preflight",
+            "actionLabel": "Activity",
+        },
+    ]
+    api_actions = [
+        {
+            "id": "note-task-plan",
+            "method": "GET",
+            "path": "/api/operator/note-task-draft",
+            "risk": "read-only-draft-evidence",
+            "executes": False,
+            "writes": False,
+            "requires_approval": False,
+        },
+        {
+            "id": "notes-read",
+            "method": "GET",
+            "path": "/api/notes",
+            "risk": "local-note-read",
+            "executes": False,
+            "writes": False,
+            "requires_approval": False,
+        },
+        {
+            "id": "activity-metadata",
+            "method": "POST",
+            "path": "/api/operator/activity",
+            "risk": "local-metadata-ledger",
+            "executes": False,
+            "writes": True,
+            "requires_approval": False,
+        },
+    ]
     return {
         "mode": "read-only-note-task-draft",
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -180,12 +371,22 @@ def run_operator_note_task_draft(
             "state": "ok" if selected else "warn",
             "notes": len(candidates),
             "selected": bool(selected),
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
+            "note_task_alert_count": len(alert_rows),
+            "critical_note_task_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
             "creates_task": False,
+            "activity_metadata_only": True,
+            "writes_activity": False,
             "next_action": "Review the draft in Tasks before saving automation." if selected else "Create or select a note before saving a task.",
         },
         "selected_note": selected or {},
         "draft": selected_draft,
         "candidates": rows,
+        "alert_rows": alert_rows,
+        "entry_rows": entry_rows,
+        "evidence_rows": evidence_rows,
+        "api_actions": api_actions,
         "approval": {
             "required_to_save": True,
             "policy": "This endpoint only drafts a task payload. It does not create, schedule, run, notify, or modify notes/tasks.",
@@ -193,5 +394,6 @@ def run_operator_note_task_draft(
         "paths": {
             "notes": "data/app.db:notes",
             "tasks": "data/app.db:scheduled_tasks",
+            "activity": "data/operator_activity.json",
         },
     }

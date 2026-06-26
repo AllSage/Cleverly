@@ -12,12 +12,14 @@ PROFILE_BUCKETS = {
     "preferences": "Preferences",
     "projects": "Projects & Goals",
     "decisions": "Decisions",
+    "model_choices": "Model Choices",
+    "recurring_tasks": "Recurring Tasks",
     "workflows": "Workflows",
     "contacts": "Contacts",
     "tasks": "Task Memories",
     "facts": "Other Facts",
 }
-PROFILE_REQUIRED = ("identity", "preferences", "projects", "decisions", "workflows")
+PROFILE_REQUIRED = ("identity", "preferences", "projects", "decisions", "model_choices", "recurring_tasks", "workflows")
 
 
 def _utc_now() -> str:
@@ -45,12 +47,16 @@ def _classify_memory(memory: dict[str, Any]) -> str:
     text = f"{category} {_memory_text(memory)}".lower()
     if re.search(r"\b(identity|personal|profile)\b", category) or re.search(r"\b(my name|call me|i am|i'm|i live|located in|based in)\b", text):
         return "identity"
+    if re.search(r"\b(model|models|model_choice|model-choice|model choice|ollama|llm)\b", category) or re.search(r"\b(primary model|default model|preferred model|model choice|model route|ollama model|use .* model)\b", text):
+        return "model_choices"
     if re.search(r"\b(preference|preferences)\b", category) or re.search(r"\b(prefer|preference|favorite|favourite|like|dislike|default|use .* by default)\b", text):
         return "preferences"
     if re.search(r"\b(project|goal|objective)\b", category) or re.search(r"\b(project|goal|objective|building|working on|roadmap)\b", text):
         return "projects"
     if re.search(r"\b(decision|choice)\b", category) or re.search(r"\b(decided|decision|chose|chosen|going forward|use .* instead)\b", text):
         return "decisions"
+    if re.search(r"\b(recurring_task|recurring-task|recurring task|schedule|scheduled|routine_task)\b", category) or re.search(r"\b(recurring task|scheduled task|daily task|weekly task|every day|every week|remind me every|follow up every)\b", text):
+        return "recurring_tasks"
     if re.search(r"\b(workflow|automation|recurring|routine)\b", category) or re.search(r"\b(workflow|automation|recurring|every day|every week|when i|always)\b", text):
         return "workflows"
     if re.search(r"\b(contact|person)\b", category) or re.search(r"@|\b(phone|email|address|contact)\b", text):
@@ -97,6 +103,208 @@ def _api_action(
         "requires_approval": requires_approval,
         "note": note,
     }
+
+
+def _memory_alert_rows(
+    *,
+    memory_count: int,
+    pinned_count: int,
+    coverage_rows: list[dict[str, Any]],
+    prefs: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    gaps = [row for row in coverage_rows if row.get("state") != "ok"]
+    if memory_count < 1:
+        rows.append(
+            {
+                "id": "memory-store-empty",
+                "state": "warn",
+                "badge": "mem",
+                "title": "Memory store is empty",
+                "detail": "Seed durable identity, preferences, projects, decisions, and workflows before relying on operator memory.",
+                "action": "seed-memory-profile",
+                "actionLabel": "Seed",
+                "requires_approval": True,
+            }
+        )
+    if gaps:
+        rows.append(
+            {
+                "id": "profile-coverage-gaps",
+                "state": "warn",
+                "badge": "prof",
+                "title": "Operator profile has gaps",
+                "detail": f"{len(gaps)} required profile area(s) need seed memory: {', '.join(row['title'] for row in gaps[:4])}.",
+                "action": "seed-memory-profile",
+                "actionLabel": "Seed",
+                "requires_approval": True,
+            }
+        )
+    if pinned_count < 1 and memory_count:
+        rows.append(
+            {
+                "id": "no-pinned-memory",
+                "state": "loading",
+                "badge": "pin",
+                "title": "No pinned memories",
+                "detail": "Pin durable preferences or decisions so operator context survives routine cleanup.",
+                "action": "open-memory",
+                "actionLabel": "Pin",
+                "requires_approval": True,
+            }
+        )
+    if prefs.get("memory_enabled", True) is False:
+        rows.append(
+            {
+                "id": "memory-recall-disabled",
+                "state": "warn",
+                "badge": "ctx",
+                "title": "Memory recall disabled",
+                "detail": "Saved memories will not be injected into chat/operator context until recall is enabled.",
+                "action": "open-memory-preflight",
+                "actionLabel": "Recall",
+                "requires_approval": False,
+            }
+        )
+    if prefs.get("auto_memory", True) is False:
+        rows.append(
+            {
+                "id": "auto-memory-disabled",
+                "state": "warn",
+                "badge": "auto",
+                "title": "Auto memory extraction disabled",
+                "detail": "Cleverly will not suggest durable memories from conversation unless extraction is enabled.",
+                "action": "open-memory-preflight",
+                "actionLabel": "Auto",
+                "requires_approval": False,
+            }
+        )
+    if prefs.get("skills_enabled", True) is False:
+        rows.append(
+            {
+                "id": "skill-recall-disabled",
+                "state": "warn",
+                "badge": "skill",
+                "title": "Skill recall disabled",
+                "detail": "Saved local skills will not be injected when relevant.",
+                "action": "open-memory-preflight",
+                "actionLabel": "Skills",
+                "requires_approval": False,
+            }
+        )
+    if not prefs.get("default_model"):
+        rows.append(
+            {
+                "id": "default-model-not-remembered",
+                "state": "loading",
+                "badge": "model",
+                "title": "Default model preference missing",
+                "detail": "Remembering a preferred local model helps route operator workflows consistently.",
+                "action": "open-model-routing-map",
+                "actionLabel": "Models",
+                "requires_approval": False,
+            }
+        )
+    rows.append(
+        {
+            "id": "model-assisted-memory-gate",
+            "state": "warn",
+            "badge": "gate",
+            "title": "Model-assisted memory writes require review",
+            "detail": "Extract, audit, tidy, import, update, pin, and delete memory actions remain explicit Memory UI/API actions.",
+            "action": "open-memory-preflight",
+            "actionLabel": "Review",
+            "requires_approval": True,
+        }
+    )
+    return rows[:12]
+
+
+def _entry_rows(*, memory_count: int, coverage_complete: int, coverage_total: int) -> list[dict[str, Any]]:
+    state = "ok" if memory_count and coverage_complete >= coverage_total else ("warn" if memory_count else "loading")
+    common = {
+        "command_id": "open-memory-preflight",
+        "profile_command_id": "open-memory-profile",
+        "seed_command_id": "seed-memory-profile",
+        "memory_command_id": "open-memory",
+        "notes_command_id": "open-notes",
+        "memory_api": "/api/memory",
+        "memory_plan_api": "/api/operator/memory-plan",
+        "profile_api": "/api/operator/profile",
+        "notes_api": "/api/notes",
+        "requires_approval": True,
+        "ready": True,
+        "executes": False,
+        "writes_memories": False,
+        "adds_memories": False,
+        "imports_files": False,
+        "extracts_with_model": False,
+        "audits_with_model": False,
+        "pins_memories": False,
+        "updates_memories": False,
+        "deletes_memories": False,
+        "changes_notes": False,
+        "runs_automation": False,
+        "runs_shell": False,
+        "uses_network": False,
+    }
+    return [
+        {
+            **common,
+            "id": "memory-dashboard-route",
+            "entry": "dashboard",
+            "state": state,
+            "badge": "dash",
+            "title": "Dashboard memory preflight",
+            "detail": "The Command Center opens Memory Operations Preflight before seed, recall, profile, note, or memory management actions.",
+            "action": "open-memory-preflight",
+            "actionLabel": "Preflight",
+        },
+        {
+            **common,
+            "id": "memory-text-route",
+            "entry": "text",
+            "state": state,
+            "badge": "text",
+            "title": "Typed memory request route",
+            "detail": "Typed requests to remember, recall, pin, tidy, import, or delete memory route through read-only profile evidence first.",
+            "action": "open-memory-preflight",
+            "actionLabel": "Review",
+        },
+        {
+            **common,
+            "id": "memory-palette-route",
+            "entry": "palette",
+            "state": state,
+            "badge": "cmd",
+            "title": "Palette memory route",
+            "detail": "The command palette exposes memory profile and seed routes without writing memories or changing recall settings.",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+        },
+        {
+            **common,
+            "id": "memory-voice-route",
+            "entry": "voice",
+            "state": state,
+            "badge": "voice",
+            "title": "Voice memory route",
+            "detail": "Voice mode can open memory review without adding memories, editing notes, running extraction, or calling network services.",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+        },
+        {
+            **common,
+            "id": "memory-workflow-route",
+            "entry": "workflow",
+            "state": state,
+            "badge": "flow",
+            "title": "Workflow memory handoff",
+            "detail": "Automation handoffs can show profile coverage, recall toggles, and memory write gates before a workflow uses durable context.",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+        },
+    ]
 
 
 def run_operator_memory_plan(
@@ -203,6 +411,78 @@ def run_operator_memory_plan(
             "requires_approval": False,
         },
     ]
+    recent_rows = []
+    for memory in memory_records[:8]:
+        bucket_key = _classify_memory(memory)
+        bucket = buckets.get(bucket_key) or buckets["facts"]
+        memory_id = _trim(memory.get("id"), 160)
+        timestamp = _trim(memory.get("updated_at") or memory.get("created_at") or memory.get("timestamp"), 80)
+        recent_rows.append({
+            "id": memory_id or f"memory-{len(recent_rows) + 1}",
+            "state": "ok",
+            "badge": bucket_key[:4],
+            "title": bucket["label"],
+            "detail": "; ".join(part for part in [
+                _trim(_memory_text(memory), 220) or "Memory record",
+                _trim(memory.get("category") or memory.get("source") or "memory", 80),
+                "pinned" if memory.get("pinned") or memory.get("pin") else "",
+                timestamp and f"updated {timestamp}",
+            ] if part),
+            "action": "open-memory-profile",
+            "actionLabel": "Profile",
+            "memory_id": memory_id,
+            "bucket": bucket_key,
+            "pinned": bool(memory.get("pinned") or memory.get("pin")),
+            "executes": False,
+            "requires_approval": False,
+            "writes_memories": False,
+            "uses_network": False,
+        })
+
+    model_choice_rows = []
+    default_model = _trim(prefs.get("default_model"), 160)
+    if default_model:
+        model_choice_rows.append({
+            "id": "default-model-preference",
+            "state": "ok",
+            "badge": "model",
+            "title": "Default model preference",
+            "detail": f"default_model={default_model}; review Model Routing before changing routes.",
+            "action": "open-model-routing-map",
+            "actionLabel": "Models",
+            "source": "prefs",
+            "model": default_model,
+            "sets_primary_model": False,
+            "writes_memories": False,
+            "uses_network": False,
+            "requires_approval": False,
+        })
+    for memory in memory_records:
+        if _classify_memory(memory) != "model_choices":
+            continue
+        memory_id = _trim(memory.get("id"), 160)
+        model_choice_rows.append({
+            "id": memory_id or f"model-choice-{len(model_choice_rows) + 1}",
+            "state": "ok",
+            "badge": "model",
+            "title": "Remembered model choice",
+            "detail": "; ".join(part for part in [
+                _trim(_memory_text(memory), 220) or "Model choice memory",
+                _trim(memory.get("category") or memory.get("source") or "memory", 80),
+                "pinned" if memory.get("pinned") or memory.get("pin") else "",
+            ] if part),
+            "action": "open-memory-profile",
+            "actionLabel": "Profile",
+            "source": "memory",
+            "memory_id": memory_id,
+            "model": "",
+            "sets_primary_model": False,
+            "writes_memories": False,
+            "uses_network": False,
+            "requires_approval": False,
+        })
+        if len(model_choice_rows) >= 8:
+            break
 
     recall_rows = [
         {
@@ -315,6 +595,17 @@ def run_operator_memory_plan(
 
     coverage_complete = sum(1 for row in coverage_rows if row["state"] == "ok")
     pinned_count = sum(1 for memory in memory_records if memory.get("pinned") or memory.get("pin"))
+    entry_rows = _entry_rows(
+        memory_count=len(memory_records),
+        coverage_complete=coverage_complete,
+        coverage_total=len(coverage_rows),
+    )
+    alert_rows = _memory_alert_rows(
+        memory_count=len(memory_records),
+        pinned_count=pinned_count,
+        coverage_rows=coverage_rows,
+        prefs=prefs,
+    )
     state = "ok" if memory_records and coverage_complete == len(coverage_rows) else ("warn" if memory_records else "loading")
     return {
         "mode": "read-only-memory-plan",
@@ -323,15 +614,24 @@ def run_operator_memory_plan(
         "summary": {
             "state": state,
             "memory_count": len(memory_records),
+            "recent_memory_count": len(recent_rows),
+            "latest_memory_at": _trim(memory_records[0].get("updated_at") or memory_records[0].get("created_at") or memory_records[0].get("timestamp"), 80) if memory_records else "",
             "note_count": len(note_records),
             "pinned_count": pinned_count,
             "profile_complete_count": coverage_complete,
             "profile_total_count": len(coverage_rows),
             "profile_gap_count": len(coverage_rows) - coverage_complete,
+            "model_choice_count": len(model_choice_rows),
+            "remembered_model_choice_count": sum(1 for row in model_choice_rows if row.get("source") == "memory"),
+            "default_model_preference_ready": bool(default_model),
+            "memory_alert_count": len(alert_rows),
+            "critical_memory_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("ready")]),
             "memory_enabled": prefs.get("memory_enabled", True) is not False,
             "auto_memory": prefs.get("auto_memory", True) is not False,
             "skills_enabled": prefs.get("skills_enabled", True) is not False,
-            "default_model": _trim(prefs.get("default_model"), 160),
+            "default_model": default_model,
             "reads_memories": True,
             "writes_memories": False,
             "adds_memories": False,
@@ -351,9 +651,13 @@ def run_operator_memory_plan(
         "buckets": list(buckets.values()),
         "coverage_rows": coverage_rows,
         "memory_rows": memory_rows,
+        "recent_rows": recent_rows,
+        "model_choice_rows": model_choice_rows,
         "recall_rows": recall_rows,
         "guard_rows": guard_rows,
         "gap_rows": gap_rows,
+        "alert_rows": alert_rows,
+        "entry_rows": entry_rows,
         "api_actions": api_actions,
         "approval": {
             "required": False,

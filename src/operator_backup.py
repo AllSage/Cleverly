@@ -250,6 +250,264 @@ def _sequence_rows(audit_count: int, missing_count: int) -> list[dict[str, Any]]
     ]
 
 
+def _entry_rows(missing_count: int, audit_count: int) -> list[dict[str, Any]]:
+    coverage_detail = (
+        "Backup Verification Plan can show complete snapshot path coverage before an owner-approved export."
+        if not missing_count
+        else f"Backup Verification Plan opens first and flags {missing_count} missing snapshot path(s) before export."
+    )
+    evidence_detail = (
+        "Workflow handoff can include recent backup audit evidence, restore-drill checks, and snapshot verification criteria."
+        if audit_count
+        else "Workflow handoff stays in review mode until export, restore drill, and snapshot verification evidence are recorded."
+    )
+    return [
+        {
+            "id": "backup-dashboard-entry",
+            "entry": "dashboard",
+            "state": "ok" if not missing_count else "warn",
+            "badge": "dash",
+            "title": "Command Center dashboard",
+            "detail": coverage_detail,
+            "command_id": "prepare-backup",
+            "approval_command_id": "request-backup-export",
+            "action": "prepare-backup",
+            "actionLabel": "Plan",
+            "requires_approval": True,
+            "executes": False,
+        },
+        {
+            "id": "backup-text-entry",
+            "entry": "text",
+            "state": "ok",
+            "badge": "text",
+            "title": "Typed operator command",
+            "detail": "The phrase 'Prepare a backup and verify it' opens this read-only verification plan before any export or restore action.",
+            "command_id": "prepare-backup",
+            "approval_command_id": "request-backup-export",
+            "action": "prepare-backup",
+            "actionLabel": "Plan",
+            "requires_approval": True,
+            "executes": False,
+        },
+        {
+            "id": "backup-palette-entry",
+            "entry": "palette",
+            "state": "ok",
+            "badge": "cmd",
+            "title": "Global command palette",
+            "detail": "The palette exposes Prepare Backup as an approval-gated safety route and separates it from the export request.",
+            "command_id": "prepare-backup",
+            "approval_command_id": "request-backup-export",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+            "requires_approval": True,
+            "executes": False,
+        },
+        {
+            "id": "backup-voice-entry",
+            "entry": "voice",
+            "state": "ok",
+            "badge": "voice",
+            "title": "Voice command mode",
+            "detail": "Voice routing can land on the same Backup Verification Plan without reading passwords, exporting files, or restoring data.",
+            "command_id": "prepare-backup",
+            "approval_command_id": "request-backup-export",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+            "requires_approval": True,
+            "executes": False,
+        },
+        {
+            "id": "backup-workflow-entry",
+            "entry": "workflow",
+            "state": "ok" if audit_count and not missing_count else "warn",
+            "badge": "flow",
+            "title": "Automation workflow handoff",
+            "detail": evidence_detail,
+            "command_id": "prepare-backup",
+            "approval_command_id": "request-backup-export",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+            "requires_approval": True,
+            "executes": False,
+        },
+    ]
+
+
+def _handoff_row(
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    *,
+    target_api: str,
+    approval_command_id: str = "request-backup-export",
+    requires_approval: bool = True,
+    creates_backup: bool = False,
+    verifies_backup: bool = False,
+    restores_data: bool = False,
+    reads_backup: bool = False,
+    reads_password: bool = False,
+    writes_files: bool = False,
+    moves_files: bool = False,
+    deletes_files: bool = False,
+    uploads_backup: bool = False,
+    writes_activity: bool = False,
+    runs_shell: bool = False,
+    uses_network: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state if state in {"ok", "warn", "error", "loading"} else "warn",
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "target_api": target_api,
+        "approval_command_id": approval_command_id,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "creates_backup": False,
+        "verifies_backup": False,
+        "restores_data": False,
+        "reads_backup": False,
+        "reads_password": False,
+        "writes_files": False,
+        "moves_files": False,
+        "deletes_files": False,
+        "uploads_backup": False,
+        "writes_activity": False,
+        "runs_shell": False,
+        "uses_network": False,
+        "gated_operation": {
+            "creates_backup": creates_backup,
+            "verifies_backup": verifies_backup,
+            "restores_data": restores_data,
+            "reads_backup": reads_backup,
+            "reads_password": reads_password,
+            "writes_files": writes_files,
+            "moves_files": moves_files,
+            "deletes_files": deletes_files,
+            "uploads_backup": uploads_backup,
+            "writes_activity": writes_activity,
+            "runs_shell": runs_shell,
+            "uses_network": uses_network,
+        },
+    }
+
+
+def _handoff_rows(missing_count: int, audit_count: int) -> list[dict[str, Any]]:
+    coverage_state = "ok" if not missing_count else "warn"
+    audit_state = "ok" if audit_count else "loading"
+    return [
+        _handoff_row(
+            "backup-scope-selection-handoff",
+            coverage_state,
+            "scope",
+            "Backup scope selection handoff",
+            "Review encrypted export coverage and full snapshot paths before any backup operation is requested.",
+            "open-local-data-map",
+            "Data",
+            target_api="/api/operator/backup-plan",
+            requires_approval=False,
+        ),
+        _handoff_row(
+            "backup-encrypted-export-handoff",
+            "warn",
+            "ask",
+            "Encrypted export handoff",
+            "Offline Control owns password entry and encrypted app export creation after explicit user approval.",
+            "request-backup-export",
+            "Ask",
+            target_api="/api/backup/encrypted/export",
+            creates_backup=True,
+            reads_password=True,
+            writes_files=True,
+        ),
+        _handoff_row(
+            "backup-full-snapshot-handoff",
+            coverage_state,
+            "snap",
+            "Full snapshot handoff",
+            "Host snapshot creation covers runtime data, uploads, gallery, workspaces, training artifacts, models, and logs.",
+            "open-backup-preflight",
+            "Snapshot",
+            target_api="scripts/cleverly-backup snapshot --pretty",
+            creates_backup=True,
+            writes_files=True,
+            runs_shell=True,
+        ),
+        _handoff_row(
+            "backup-snapshot-verify-handoff",
+            "warn",
+            "verify",
+            "Snapshot verification handoff",
+            "Verification reads a user-selected archive and records `scripts/cleverly-backup verify` output before trust.",
+            "open-backup-preflight",
+            "Verify",
+            target_api="scripts/cleverly-backup verify PATH --pretty",
+            verifies_backup=True,
+            reads_backup=True,
+            runs_shell=True,
+        ),
+        _handoff_row(
+            "backup-restore-drill-handoff",
+            audit_state,
+            "test",
+            "Restore drill handoff",
+            "Dry-run restore checks the encrypted file and password without importing or overwriting live data.",
+            "open-backups",
+            "Test",
+            target_api="/api/backup/encrypted/import?dry_run=true",
+            restores_data=True,
+            reads_backup=True,
+            reads_password=True,
+        ),
+        _handoff_row(
+            "backup-password-custody-handoff",
+            "warn",
+            "key",
+            "Password custody handoff",
+            "Record where the backup password is kept without storing the password value in Cleverly logs or activity.",
+            "open-activity-preflight",
+            "Activity",
+            target_api="/api/operator/activity",
+            requires_approval=False,
+            reads_password=True,
+            writes_activity=True,
+        ),
+        _handoff_row(
+            "backup-storage-location-handoff",
+            "ok",
+            "store",
+            "Storage location handoff",
+            "Record the local/offline destination for encrypted exports and full snapshots; network transfer stays out of this plan.",
+            "open-local-data-map",
+            "Data",
+            target_api="/api/operator/data-plan",
+            requires_approval=False,
+            moves_files=True,
+        ),
+        _handoff_row(
+            "backup-activity-ledger-handoff",
+            audit_state,
+            "log",
+            "Activity ledger handoff",
+            "Export filename, snapshot path, verify output, restore-drill summary, and storage notes stay in local evidence.",
+            "open-activity-preflight",
+            "Activity",
+            target_api="/api/operator/activity",
+            requires_approval=False,
+            writes_activity=True,
+        ),
+    ]
+
+
 def _evidence_rows(audit_rows: list[dict[str, Any]], missing_count: int) -> list[dict[str, Any]]:
     rows = [
         {
@@ -281,6 +539,74 @@ def _evidence_rows(audit_rows: list[dict[str, Any]], missing_count: int) -> list
         },
     ]
     return rows + audit_rows[:4]
+
+
+def _backup_alert_rows(
+    missing_rows: list[dict[str, Any]],
+    audit_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if missing_rows:
+        rows.append(
+            {
+                "id": "snapshot-coverage-incomplete",
+                "state": "error",
+                "badge": "snap",
+                "title": "Full snapshot coverage incomplete",
+                "detail": f"{len(missing_rows)} expected runtime path(s) are missing or unreadable in this environment.",
+                "action": "open-local-data-map",
+                "actionLabel": "Data",
+                "requires_approval": False,
+            }
+        )
+    if not audit_rows:
+        rows.append(
+            {
+                "id": "backup-audit-missing",
+                "state": "warn",
+                "badge": "audit",
+                "title": "Backup audit evidence missing",
+                "detail": "No recent backup/export/restore audit event is visible; record export and restore-drill evidence before risky work.",
+                "action": "open-activity-preflight",
+                "actionLabel": "Activity",
+                "requires_approval": False,
+            }
+        )
+    rows.extend(
+        [
+            {
+                "id": "encrypted-export-approval-required",
+                "state": "warn",
+                "badge": "ask",
+                "title": "Encrypted export approval required",
+                "detail": "Creating an encrypted app export requires an explicit backup password and user action in Offline Control.",
+                "action": "request-backup-export",
+                "actionLabel": "Ask",
+                "requires_approval": True,
+            },
+            {
+                "id": "restore-drill-approval-required",
+                "state": "warn",
+                "badge": "test",
+                "title": "Restore drill approval required",
+                "detail": "Test Restore should run in dry-run mode with a user-selected backup file and no live-data import.",
+                "action": "open-backups",
+                "actionLabel": "Test",
+                "requires_approval": True,
+            },
+            {
+                "id": "snapshot-verify-required",
+                "state": "warn",
+                "badge": "verify",
+                "title": "Snapshot verification required",
+                "detail": "Run `scripts/cleverly-backup verify PATH --pretty` against the selected archive before trusting it.",
+                "action": "open-backup-preflight",
+                "actionLabel": "Verify",
+                "requires_approval": True,
+            },
+        ]
+    )
+    return rows[:MAX_AUDIT_ROWS]
 
 
 def _verification_packet(
@@ -461,6 +787,8 @@ def run_operator_backup_plan(
     missing_rows = [row for row in snapshot_rows if row["state"] != "ok"]
     audit_rows = _audit_rows(audit_records)
     sequence_rows = _sequence_rows(len(audit_rows), len(missing_rows))
+    entry_rows = _entry_rows(len(missing_rows), len(audit_rows))
+    handoff_rows = _handoff_rows(len(missing_rows), len(audit_rows))
     evidence_rows = _evidence_rows(audit_rows, len(missing_rows))
     host_commands = [
         {
@@ -500,6 +828,7 @@ def run_operator_backup_plan(
         },
     ]
     verification_packet = _verification_packet(snapshot_rows, audit_rows, sequence_rows, host_commands, api_actions)
+    alert_rows = _backup_alert_rows(missing_rows, audit_rows)
     state = "warn" if missing_rows else ("ok" if audit_rows else "loading")
     return {
         "mode": "read-only-backup-verify-plan",
@@ -511,16 +840,26 @@ def run_operator_backup_plan(
             "full_snapshot_items": len(snapshot_rows),
             "missing_snapshot_items": len(missing_rows),
             "audit_count": len(audit_rows),
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
+            "backup_alert_count": len(alert_rows),
+            "critical_backup_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
             "creates_backup": False,
             "restores_data": False,
             "runs_shell": False,
+            "uses_network": False,
             "requires_export_approval": True,
             "next_action": "Run encrypted export and restore drill from Offline Control, then verify a full snapshot tarball." if not missing_rows else "Review missing data paths before claiming full snapshot coverage.",
         },
         "protected_rows": protected_rows,
         "snapshot_rows": snapshot_rows,
+        "entry_rows": entry_rows,
+        "handoff_rows": handoff_rows,
         "sequence_rows": sequence_rows,
         "evidence_rows": evidence_rows,
+        "alert_rows": alert_rows,
         "verification_packet": verification_packet,
         "host_commands": host_commands,
         "api_actions": api_actions,

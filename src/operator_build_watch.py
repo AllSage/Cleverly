@@ -345,6 +345,370 @@ def _api_actions() -> list[dict[str, Any]]:
     ]
 
 
+def _entry_rows(workspace_count: int, command_count: int, runner_state: str, max_iterations: int) -> list[dict[str, Any]]:
+    state = "ok" if workspace_count and command_count and runner_state == "ok" else ("warn" if workspace_count else "loading")
+    common = {
+        "command_id": "watch-build-until-green",
+        "approval_command_id": "request-build-watch-loop",
+        "code_command_id": "open-code",
+        "map_command_id": "open-code-workspace-map",
+        "loops_command_id": "open-loops",
+        "activity_command_id": "open-activity-preflight",
+        "route_api": "/api/operator/route",
+        "plan_api": "/api/operator/build-watch-plan",
+        "run_api": "/api/code-workspaces/{workspace_id}/run",
+        "snapshot_api": "/api/code-workspaces/{workspace_id}/snapshots",
+        "requires_approval": True,
+        "max_iterations": max_iterations,
+        "executes": False,
+        "starts_loop": False,
+        "runs_build": False,
+        "edits_files": False,
+        "creates_snapshot": False,
+        "restores_snapshot": False,
+        "installs_dependencies": False,
+        "commits_changes": False,
+        "runs_shell": False,
+        "uses_network": False,
+    }
+    return [
+        {
+            **common,
+            "id": "build-watch-dashboard-route",
+            "entry": "dashboard",
+            "state": state,
+            "badge": "dash",
+            "title": "Dashboard build-watch route",
+            "detail": "The Command Center opens Build Watch Plan before any loop start, build command, edit, snapshot, or retry work.",
+            "action": "watch-build-until-green",
+            "actionLabel": "Plan",
+        },
+        {
+            **common,
+            "id": "build-watch-text-route",
+            "entry": "text",
+            "state": state,
+            "badge": "text",
+            "title": "Typed build-watch request route",
+            "detail": "Typed requests such as watch this repo until the build passes route to read-only build-watch evidence first.",
+            "action": "watch-build-until-green",
+            "actionLabel": "Review",
+        },
+        {
+            **common,
+            "id": "build-watch-palette-route",
+            "entry": "palette",
+            "state": state,
+            "badge": "cmd",
+            "title": "Palette build-watch route",
+            "detail": "The command palette separates opening the plan from the approval-gated Build Until Green start request.",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+        },
+        {
+            **common,
+            "id": "build-watch-voice-route",
+            "entry": "voice",
+            "state": state,
+            "badge": "voice",
+            "title": "Voice build-watch route",
+            "detail": "Voice mode can open build-watch preflight without starting loops, running builds, or editing files.",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+        },
+        {
+            **common,
+            "id": "build-watch-workflow-route",
+            "entry": "workflow",
+            "state": state,
+            "badge": "flow",
+            "title": "Workflow build-watch handoff",
+            "detail": "Automation handoffs can show command candidates, iteration limits, approval gates, and activity requirements before loop start.",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+        },
+    ]
+
+
+def _handoff_row(
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    *,
+    target_api: str,
+    approval_command_id: str = "request-build-watch-loop",
+    requires_approval: bool = True,
+    starts_loop: bool = False,
+    runs_build: bool = False,
+    edits_files: bool = False,
+    creates_snapshot: bool = False,
+    reads_diff: bool = False,
+    restores_snapshot: bool = False,
+    installs_dependencies: bool = False,
+    commits_changes: bool = False,
+    writes_activity: bool = False,
+    runs_shell: bool = False,
+    uses_network: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state if state in {"ok", "warn", "error", "loading"} else "warn",
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "target_api": target_api,
+        "approval_command_id": approval_command_id,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "starts_loop": False,
+        "runs_build": False,
+        "edits_files": False,
+        "creates_snapshot": False,
+        "reads_diff": False,
+        "restores_snapshot": False,
+        "installs_dependencies": False,
+        "commits_changes": False,
+        "writes_activity": False,
+        "runs_shell": False,
+        "uses_network": False,
+        "gated_operation": {
+            "starts_loop": starts_loop,
+            "runs_build": runs_build,
+            "edits_files": edits_files,
+            "creates_snapshot": creates_snapshot,
+            "reads_diff": reads_diff,
+            "restores_snapshot": restores_snapshot,
+            "installs_dependencies": installs_dependencies,
+            "commits_changes": commits_changes,
+            "writes_activity": writes_activity,
+            "runs_shell": runs_shell,
+            "uses_network": uses_network,
+        },
+    }
+
+
+def _handoff_rows(workspace_count: int, command_count: int, runner_state: str) -> list[dict[str, Any]]:
+    workspace_state = "ok" if workspace_count else "warn"
+    command_state = "warn" if command_count else "loading"
+    runner_ready = runner_state == "ok"
+    return [
+        _handoff_row(
+            "build-watch-workspace-selection-handoff",
+            workspace_state,
+            "repo",
+            "Workspace selection handoff",
+            f"{workspace_count} sealed workspace(s) are visible; choose the exact repo before any loop can be staged.",
+            "open-code",
+            "Code",
+            target_api="/api/code-workspaces",
+            requires_approval=False,
+        ),
+        _handoff_row(
+            "build-watch-status-diff-handoff",
+            workspace_state,
+            "diff",
+            "Status and diff review handoff",
+            "Status and diff review should precede Build Watch approval so the operator sees pending local changes.",
+            "open-code-workspace-map",
+            "Map",
+            target_api="/api/code-workspaces/{workspace_id}/diff",
+            requires_approval=False,
+            reads_diff=True,
+        ),
+        _handoff_row(
+            "build-watch-snapshot-checkpoint-handoff",
+            "warn" if workspace_count else "loading",
+            "snap",
+            "Snapshot checkpoint handoff",
+            "Snapshot creation writes rollback evidence before repeated build commands or repair edits.",
+            "open-code",
+            "Snapshot",
+            target_api="/api/code-workspaces/{workspace_id}/snapshots",
+            creates_snapshot=True,
+            edits_files=True,
+        ),
+        _handoff_row(
+            "build-watch-loop-approval-handoff",
+            command_state,
+            "ask",
+            "Loop approval handoff",
+            f"{command_count} candidate command(s) are visible; approve the exact Build Until Green request before a loop starts.",
+            "request-build-watch-loop",
+            "Approve",
+            target_api="/api/operator/workflows",
+            starts_loop=True,
+        ),
+        _handoff_row(
+            "build-watch-runner-build-handoff",
+            "ok" if runner_ready else "warn",
+            "run",
+            "Runner build handoff",
+            "Worker-sidecar execution is preferred; in-process runner mode needs policy review before build commands run.",
+            "open-code-workspace-map",
+            "Runner",
+            target_api="/api/code-workspaces/{workspace_id}/run",
+            requires_approval=not runner_ready,
+            runs_build=True,
+            runs_shell=True,
+        ),
+        _handoff_row(
+            "build-watch-repair-iteration-handoff",
+            command_state,
+            "fix",
+            "Repair iteration handoff",
+            "Each failed build pass must route through approved repair work, rerun evidence, and stop conditions.",
+            "open-loops",
+            "Loops",
+            target_api="/api/code-workspaces/{workspace_id}/run",
+            starts_loop=True,
+            runs_build=True,
+            edits_files=True,
+            runs_shell=True,
+        ),
+        _handoff_row(
+            "build-watch-recovery-rollback-handoff",
+            "warn" if workspace_count else "loading",
+            "recover",
+            "Recovery and rollback handoff",
+            "Failed loops, generated changes, or unsafe edits should route through Recovery Map before restore or retry.",
+            "open-recovery-map",
+            "Recovery",
+            target_api="/api/operator/recovery-plan",
+            restores_snapshot=True,
+            edits_files=True,
+        ),
+        _handoff_row(
+            "build-watch-activity-ledger-handoff",
+            "ok",
+            "log",
+            "Activity ledger handoff",
+            "Approved loop starts, command output, edits, retries, failures, rollback notes, and final green proof stay in the local activity timeline.",
+            "open-activity-preflight",
+            "Activity",
+            target_api="/api/operator/activity",
+            requires_approval=False,
+            writes_activity=True,
+        ),
+    ]
+
+
+def _build_alert_rows(
+    workspace_count: int,
+    command_count: int,
+    runner: dict[str, Any],
+    command_rows: list[dict[str, Any]],
+    workspace_error: str,
+    max_iterations: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if workspace_error:
+        rows.append(
+            {
+                "id": "workspace-source-error",
+                "state": "error",
+                "badge": "code",
+                "title": "Build workspace evidence unavailable",
+                "detail": workspace_error,
+                "action": "open-code-workspace-map",
+                "actionLabel": "Code",
+                "requires_approval": False,
+            }
+        )
+    if workspace_count < 1:
+        rows.append(
+            {
+                "id": "workspace-required",
+                "state": "error",
+                "badge": "repo",
+                "title": "Code workspace required",
+                "detail": "Import a sealed Code Workspace before planning a Build Until Green loop.",
+                "action": "open-code",
+                "actionLabel": "Code",
+                "requires_approval": False,
+            }
+        )
+    if workspace_count and command_count < 1:
+        rows.append(
+            {
+                "id": "manual-build-command-required",
+                "state": "warn",
+                "badge": "cmd",
+                "title": "Manual build command required",
+                "detail": "No common local build/check command was detected; choose the exact command before loop approval.",
+                "action": "open-code",
+                "actionLabel": "Command",
+                "requires_approval": True,
+            }
+        )
+    if runner.get("state") != "ok":
+        rows.append(
+            {
+                "id": "runner-isolation-review",
+                "state": "warn",
+                "badge": "run",
+                "title": "Runner isolation needs review",
+                "detail": runner.get("detail") or "Review runner isolation before approving repeated build work.",
+                "action": "open-code-workspace-map",
+                "actionLabel": "Map",
+                "requires_approval": False,
+            }
+        )
+    if any(not row.get("command") for row in command_rows):
+        rows.append(
+            {
+                "id": "manual-candidate-present",
+                "state": "warn",
+                "badge": "manual",
+                "title": "Manual build candidate present",
+                "detail": "At least one workspace needs an explicit operator-selected build/check command.",
+                "action": "open-code",
+                "actionLabel": "Command",
+                "requires_approval": True,
+            }
+        )
+    rows.extend(
+        [
+            {
+                "id": "snapshot-approval-required",
+                "state": "warn" if workspace_count else "loading",
+                "badge": "snap",
+                "title": "Recovery snapshot approval required",
+                "detail": "Create a pre-loop snapshot before repeated build repair work.",
+                "action": "open-code",
+                "actionLabel": "Snapshot",
+                "requires_approval": True,
+            },
+            {
+                "id": "loop-approval-required",
+                "state": "warn",
+                "badge": "ask",
+                "title": "Build Watch loop approval required",
+                "detail": f"Starting Build Until Green requires approving the exact request and max {max_iterations} passes.",
+                "action": "request-build-watch-loop",
+                "actionLabel": "Ask",
+                "requires_approval": True,
+            },
+            {
+                "id": "activity-evidence-required",
+                "state": "warn",
+                "badge": "log",
+                "title": "Loop activity evidence required",
+                "detail": "Each run, edit, failure, retry, and final green result should be recorded in the activity timeline.",
+                "action": "open-activity-preflight",
+                "actionLabel": "Activity",
+                "requires_approval": False,
+            },
+        ]
+    )
+    return rows[:8]
+
+
 def run_operator_build_watch_plan(
     owner: str = "local",
     *,
@@ -374,6 +738,9 @@ def run_operator_build_watch_plan(
     command_count = sum(1 for item in command_rows if item.get("command"))
     workspace_count = len(workspace_rows)
     state = "ok" if workspace_count and command_count else ("warn" if workspace_count else "loading")
+    alert_rows = _build_alert_rows(workspace_count, command_count, runner, command_rows, workspace_error, loop_limit)
+    entry_rows = _entry_rows(workspace_count, command_count, runner["state"], loop_limit)
+    handoff_rows = _handoff_rows(workspace_count, command_count, runner["state"])
 
     return {
         "mode": "read-only-build-watch-plan",
@@ -386,6 +753,12 @@ def run_operator_build_watch_plan(
             "runner": runner["runner"],
             "runner_state": runner["state"],
             "max_iterations": loop_limit,
+            "build_alert_count": len(alert_rows),
+            "critical_build_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
             "starts_loop": False,
             "runs_build": False,
             "edits_files": False,
@@ -402,6 +775,9 @@ def run_operator_build_watch_plan(
         "loop_rows": _loop_rows(loop_limit),
         "sequence_rows": _sequence_rows(workspace_count, command_count, runner["state"], loop_limit),
         "guard_rows": _guard_rows(runner, loop_limit),
+        "entry_rows": entry_rows,
+        "handoff_rows": handoff_rows,
+        "alert_rows": alert_rows,
         "evidence_rows": [
             {
                 "id": "activity-ledger",

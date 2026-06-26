@@ -155,6 +155,7 @@ def _root_row(
         "direct_files": _safe_int(summary["direct_files"]),
         "direct_dirs": _safe_int(summary["direct_dirs"]),
         "direct_bytes": _safe_int(summary["direct_bytes"]),
+        "error": summary["error"],
         "sensitive": sensitive,
         "writable": writable,
         "backup_required": backup_required,
@@ -218,6 +219,290 @@ def _api_action(
         "destructive": destructive,
         "uses_network": uses_network,
     }
+
+
+def _file_alert_rows(
+    root_rows: list[dict[str, Any]],
+    sensitive_rows: list[dict[str, Any]],
+    missing_required: list[dict[str, Any]],
+    operation_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in missing_required[:6]:
+        rows.append(
+            {
+                "id": f"missing-{row['id']}",
+                "state": "error",
+                "badge": "missing",
+                "title": f"Missing required root: {row['title']}",
+                "detail": f"Backup-required local root is not visible; verify the path before file operations: {row['path']}",
+                "action": "open-local-data-map",
+                "actionLabel": "Map",
+                "approval_required": True,
+                "destructive": False,
+            }
+        )
+    for row in [item for item in root_rows if item.get("error")][:4]:
+        rows.append(
+            {
+                "id": f"scan-error-{row['id']}",
+                "state": "warn",
+                "badge": "scan",
+                "title": f"Scan warning: {row['title']}",
+                "detail": f"Shallow metadata scan could not inspect this root completely: {row['error']}",
+                "action": "open-local-data-map",
+                "actionLabel": "Map",
+                "approval_required": False,
+                "destructive": False,
+            }
+        )
+    for row in sensitive_rows[:6]:
+        rows.append(
+            {
+                "id": f"sensitive-{row['id']}",
+                "state": "warn",
+                "badge": "key",
+                "title": f"Sensitive root mapped: {row['title']}",
+                "detail": "Review trust boundaries before export, copy, sync, delete, restore, or backup sharing; metadata only.",
+                "action": "open-trust-controls",
+                "actionLabel": "Trust",
+                "approval_required": True,
+                "destructive": False,
+            }
+        )
+    for row in operation_rows:
+        title = str(row.get("title") or "")
+        if title not in {"Write/copy/move gate", "Delete/restore gate"}:
+            continue
+        rows.append(
+            {
+                "id": title.lower().replace("/", "-").replace(" ", "-"),
+                "state": row.get("state") or "warn",
+                "badge": row.get("badge") or "gate",
+                "title": title,
+                "detail": row.get("detail") or "File operation requires explicit approval.",
+                "action": row.get("action") or "open-trust-controls",
+                "actionLabel": row.get("actionLabel") or row.get("action_label") or "Review",
+                "approval_required": True,
+                "destructive": title == "Delete/restore gate",
+            }
+        )
+    return rows[:MAX_ROWS]
+
+
+def _entry_rows(*, root_rows: list[dict[str, Any]], alert_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ready = bool(root_rows)
+    state = "ok" if ready else "warn"
+    common = {
+        "command_id": "open-local-data-map",
+        "trust_command_id": "open-trust-controls",
+        "backup_command_id": "open-backup-preflight",
+        "offline_command_id": "open-offline",
+        "activity_command_id": "open-activity-preflight",
+        "palette_command_id": "open-command-palette",
+        "file_ops_api": "/api/operator/file-ops-plan",
+        "backup_api": "/api/operator/backup-plan",
+        "personal_api": "/api/personal",
+        "personal_upload_api": "/api/personal/upload",
+        "code_workspaces_api": "/api/code-workspaces",
+        "requires_approval": True,
+        "ready": ready,
+        "executes": False,
+        "reads_file_contents": False,
+        "writes_files": False,
+        "copies_files": False,
+        "moves_files": False,
+        "deletes_files": False,
+        "uploads_files": False,
+        "imports_files": False,
+        "indexes_files": False,
+        "exports_files": False,
+        "restores_files": False,
+        "runs_shell": False,
+        "uses_network": False,
+    }
+    alert_detail = f"{len(alert_rows)} file safety alert(s) visible before any file operation."
+    return [
+        {
+            **common,
+            "id": "file-ops-dashboard-route",
+            "entry": "dashboard",
+            "state": state,
+            "badge": "dash",
+            "title": "Dashboard file operation route",
+            "detail": f"The Local Data Map opens file-root inventory, write gates, delete gates, and backup posture first; {alert_detail}",
+            "action": "open-local-data-map",
+            "actionLabel": "Data",
+        },
+        {
+            **common,
+            "id": "file-ops-text-route",
+            "entry": "text",
+            "state": state,
+            "badge": "text",
+            "title": "Typed file request route",
+            "detail": "Typed file requests route to metadata-only map evidence and approval boundaries without opening, copying, moving, or deleting files.",
+            "action": "open-local-data-map",
+            "actionLabel": "Data",
+        },
+        {
+            **common,
+            "id": "file-ops-palette-route",
+            "entry": "palette",
+            "state": state,
+            "badge": "cmd",
+            "title": "Palette file route",
+            "detail": "The command palette exposes file-map, backup, trust, and activity handoffs while keeping write/import/delete APIs separate and approval-gated.",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+        },
+        {
+            **common,
+            "id": "file-ops-voice-route",
+            "entry": "voice",
+            "state": state,
+            "badge": "voice",
+            "title": "Voice file request route",
+            "detail": "Voice mode can open file preflight and backup posture without reading file contents, uploading files, or running shell commands.",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+        },
+        {
+            **common,
+            "id": "file-ops-workflow-route",
+            "entry": "workflow",
+            "state": state,
+            "badge": "flow",
+            "title": "Workflow file handoff",
+            "detail": "Automation handoffs can review file scope, activity evidence, and backup requirements, but file changes remain explicit and approval-gated.",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+        },
+    ]
+
+
+def _handoff_row(
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    *,
+    target_api: str,
+    approval_api: str = "",
+    requires_approval: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state if state in {"ok", "warn", "error", "loading"} else "warn",
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "target_api": target_api,
+        "approval_api": approval_api,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "reads_file_contents": False,
+        "writes_files": False,
+        "copies_files": False,
+        "moves_files": False,
+        "deletes_files": False,
+        "uploads_files": False,
+        "imports_files": False,
+        "indexes_files": False,
+        "exports_files": False,
+        "restores_files": False,
+        "runs_shell": False,
+        "uses_network": False,
+    }
+
+
+def _handoff_rows(
+    *,
+    existing_count: int,
+    root_count: int,
+    missing_required_count: int,
+    sensitive_count: int,
+) -> list[dict[str, Any]]:
+    scope_state = "ok" if existing_count else "warn"
+    delete_state = "error" if missing_required_count else "warn"
+    return [
+        _handoff_row(
+            "file-read-scope-handoff",
+            scope_state,
+            "read",
+            "Read scope handoff",
+            f"{existing_count}/{root_count} configured roots are visible; content reads still require an owning feature or explicit selected file.",
+            "open-local-data-map",
+            "Scope",
+            target_api="/api/operator/file-ops-plan",
+            requires_approval=True,
+        ),
+        _handoff_row(
+            "file-write-import-handoff",
+            "warn",
+            "write",
+            "Write and import handoff",
+            "Uploads, imports, workspace writes, gallery saves, and document changes stay in their owning surfaces with explicit approval.",
+            "open-trust-controls",
+            "Trust",
+            target_api="/api/operator/file-ops-plan",
+            approval_api="/api/upload",
+            requires_approval=True,
+        ),
+        _handoff_row(
+            "file-delete-restore-handoff",
+            delete_state,
+            "del",
+            "Delete and restore handoff",
+            f"{missing_required_count} backup-required root(s) are missing; destructive delete, restore, and replace actions need backup/recovery evidence first.",
+            "open-backup-preflight",
+            "Backup",
+            target_api="/api/operator/backup-plan",
+            approval_api="/api/backup/encrypted/import",
+            requires_approval=True,
+        ),
+        _handoff_row(
+            "file-backup-snapshot-handoff",
+            "warn" if missing_required_count else "ok",
+            "bak",
+            "Backup and snapshot handoff",
+            "Encrypted app exports, code workspace snapshots, and restore drills should precede risky file work.",
+            "open-backup-preflight",
+            "Backup",
+            target_api="/api/operator/backup-plan",
+            approval_api="/api/backup/encrypted/export",
+            requires_approval=True,
+        ),
+        _handoff_row(
+            "file-index-library-handoff",
+            "ok" if existing_count else "warn",
+            "idx",
+            "Index and library handoff",
+            "Personal docs, Library/RAG, and document search indexing stay separate from raw file writes and require owner-selected sources.",
+            "open-library-preflight",
+            "Library",
+            target_api="/api/operator/document-search-plan",
+            approval_api="/api/personal/upload",
+            requires_approval=True,
+        ),
+        _handoff_row(
+            "file-activity-recovery-handoff",
+            "warn" if sensitive_count else "ok",
+            "log",
+            "Activity and recovery handoff",
+            f"{sensitive_count} sensitive root(s) are mapped; approved file actions should record status, result, logs, retry, and rollback evidence without leaking contents.",
+            "open-activity-preflight",
+            "Activity",
+            target_api="/api/operator/activity-plan",
+            approval_api="/api/operator/recovery-plan",
+            requires_approval=bool(sensitive_count),
+        ),
+    ]
 
 
 def run_operator_file_ops_plan(
@@ -307,6 +592,14 @@ def run_operator_file_ops_plan(
             "actionLabel": "Offline",
         },
     ]
+    alert_rows = _file_alert_rows(root_rows, sensitive_rows, missing_required, operation_rows)
+    entry_rows = _entry_rows(root_rows=root_rows, alert_rows=alert_rows)
+    handoff_rows = _handoff_rows(
+        existing_count=len(existing),
+        root_count=len(root_rows),
+        missing_required_count=len(missing_required),
+        sensitive_count=len(sensitive_rows),
+    )
     guard_rows = [
         {
             "state": "ok",
@@ -363,9 +656,16 @@ def run_operator_file_ops_plan(
             "existing_root_count": len(existing),
             "missing_required_count": len(missing_required),
             "sensitive_root_count": len(sensitive_rows),
+            "file_alert_count": len(alert_rows),
+            "critical_file_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
             "direct_file_count": direct_files,
             "direct_dir_count": direct_dirs,
             "direct_bytes": direct_bytes,
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("ready")]),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
+            "executes": False,
             "reads_file_contents": False,
             "writes_files": False,
             "copies_files": False,
@@ -384,6 +684,9 @@ def run_operator_file_ops_plan(
         "root_rows": root_rows,
         "sensitive_rows": sensitive_rows[:MAX_ROWS],
         "operation_rows": operation_rows,
+        "alert_rows": alert_rows,
+        "entry_rows": entry_rows,
+        "handoff_rows": handoff_rows,
         "guard_rows": guard_rows,
         "api_actions": api_actions,
         "evidence_rows": evidence_rows,

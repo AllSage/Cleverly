@@ -380,6 +380,385 @@ def _approval_packet(
     }
 
 
+def _repair_alert_rows(
+    summary: dict[str, Any],
+    service_rows: list[dict[str, Any]],
+    approval_packet: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    affected = [row for row in service_rows if row["state"] != "ok"]
+    required = [row for row in affected if row["required"]]
+    optional = [row for row in affected if not row["required"]]
+    data_issue = next((row for row in required if row["id"] == "data-dir"), None)
+    if required:
+        rows.append(
+            {
+                "id": "required-service-issues",
+                "state": "error",
+                "badge": "core",
+                "title": "Required service needs repair review",
+                "detail": f"{len(required)} required service/path issue(s): {', '.join(row['label'] for row in required[:4])}.",
+                "action": "open-container-repair-plan",
+                "actionLabel": "Plan",
+                "requires_approval": True,
+            }
+        )
+    if data_issue:
+        rows.append(
+            {
+                "id": "data-volume-boundary",
+                "state": "error",
+                "badge": "data",
+                "title": "Data volume boundary needs verification",
+                "detail": f"{data_issue['detail'] or data_issue['target']}; verify data mount and backup before repair.",
+                "action": "open-backup-preflight",
+                "actionLabel": "Backup",
+                "requires_approval": True,
+            }
+        )
+    if optional:
+        rows.append(
+            {
+                "id": "optional-service-issues",
+                "state": "warn",
+                "badge": "opt",
+                "title": "Optional service issues",
+                "detail": f"{len(optional)} optional service(s) need review only if their features are needed: {', '.join(row['label'] for row in optional[:4])}.",
+                "action": "open-local-services-map",
+                "actionLabel": "Services",
+                "requires_approval": False,
+            }
+        )
+    if summary.get("approval_required"):
+        rows.append(
+            {
+                "id": "repair-approval-required",
+                "state": "warn",
+                "badge": "ask",
+                "title": "Repair requires explicit approval",
+                "detail": "Restart, recreate, start support services, inspect host logs, and repair actions stay behind Ask To Fix.",
+                "action": "request-container-fix",
+                "actionLabel": "Ask",
+                "requires_approval": True,
+            }
+        )
+    candidate_count = len(_as_list(approval_packet.get("candidate_host_commands")))
+    if candidate_count:
+        rows.append(
+            {
+                "id": "host-command-candidates",
+                "state": "warn",
+                "badge": "cmd",
+                "title": "Host Docker commands are suggestions only",
+                "detail": f"{candidate_count} candidate host command(s) are listed as evidence and must be copied/approved outside this read-only plan.",
+                "action": "open-container-repair-plan",
+                "actionLabel": "Commands",
+                "requires_approval": True,
+            }
+        )
+    rows.append(
+        {
+            "id": "repair-disallowed-actions",
+            "state": "ok",
+            "badge": "safe",
+            "title": "Repair disallows pulls/deletes by default",
+            "detail": "Image pulls, model downloads, volume deletes, host file deletion, network diagnostics, and broad restarts remain disallowed by default.",
+            "action": "open-trust-controls",
+            "actionLabel": "Trust",
+            "requires_approval": True,
+        }
+    )
+    return rows[:12]
+
+
+def _entry_rows(summary: dict[str, Any], approval_packet: dict[str, Any]) -> list[dict[str, Any]]:
+    affected_count = int(approval_packet.get("affected_count") or 0)
+    approval_required = True
+    issue_detail = (
+        f"{affected_count} affected service/path candidate(s) visible; repair still requires Ask To Fix."
+        if affected_count
+        else "No affected service is visible; repair request stays approval-gated and optional."
+    )
+    route_state = "ok"
+    return [
+        {
+            "id": "repair-dashboard-route",
+            "entry": "dashboard",
+            "state": route_state,
+            "badge": "dash",
+            "title": "Dashboard repair plan route",
+            "detail": f"Container Repair Plan opens from the dashboard as a read-only review; {issue_detail}",
+            "command_id": "open-container-repair-plan",
+            "approval_command_id": "request-container-fix",
+            "action": "open-container-repair-plan",
+            "actionLabel": "Plan",
+            "requires_approval": approval_required,
+            "executes": False,
+            "runs_docker": False,
+            "repairs_services": False,
+            "changes_files": False,
+            "deletes_data": False,
+            "uses_network": False,
+        },
+        {
+            "id": "repair-text-route",
+            "entry": "text",
+            "state": route_state,
+            "badge": "text",
+            "title": "Typed repair request route",
+            "detail": "Typed requests like check containers and fix unhealthy services route to the read-only repair plan before Ask To Fix.",
+            "command_id": "open-container-repair-plan",
+            "approval_command_id": "request-container-fix",
+            "action": "open-container-repair-plan",
+            "actionLabel": "Plan",
+            "requires_approval": approval_required,
+            "executes": False,
+            "runs_docker": False,
+            "repairs_services": False,
+            "changes_files": False,
+            "deletes_data": False,
+            "uses_network": False,
+        },
+        {
+            "id": "repair-palette-route",
+            "entry": "palette",
+            "state": route_state,
+            "badge": "cmd",
+            "title": "Palette repair route",
+            "detail": "The command palette exposes the repair plan and approval-gated fix request under trust policy.",
+            "command_id": "open-container-repair-plan",
+            "approval_command_id": "request-container-fix",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+            "requires_approval": approval_required,
+            "executes": False,
+            "runs_docker": False,
+            "repairs_services": False,
+            "changes_files": False,
+            "deletes_data": False,
+            "uses_network": False,
+        },
+        {
+            "id": "repair-voice-route",
+            "entry": "voice",
+            "state": route_state,
+            "badge": "voice",
+            "title": "Voice repair route",
+            "detail": "Voice transcripts use the same local command route and open repair review before any approved fix request.",
+            "command_id": "open-container-repair-plan",
+            "approval_command_id": "request-container-fix",
+            "action": "start-voice-command",
+            "actionLabel": "Voice",
+            "requires_approval": approval_required,
+            "executes": False,
+            "runs_docker": False,
+            "repairs_services": False,
+            "changes_files": False,
+            "deletes_data": False,
+            "uses_network": False,
+        },
+        {
+            "id": "repair-workflow-route",
+            "entry": "workflow",
+            "state": route_state if summary.get("state") == "ok" else "warn",
+            "badge": "flow",
+            "title": "Workflow repair handoff",
+            "detail": "Automation handoff can collect status, backup, log, and approval evidence, but repair execution stays behind Ask To Fix.",
+            "command_id": "open-container-repair-plan",
+            "approval_command_id": "request-container-fix",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+            "requires_approval": approval_required,
+            "executes": False,
+            "runs_docker": False,
+            "repairs_services": False,
+            "changes_files": False,
+            "deletes_data": False,
+            "uses_network": False,
+        },
+    ]
+
+
+def _handoff_row(
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    *,
+    target_api: str,
+    approval_command_id: str = "request-container-fix",
+    requires_approval: bool = True,
+    runs_docker: bool = False,
+    inspects_logs: bool = False,
+    restarts_services: bool = False,
+    recreates_services: bool = False,
+    starts_services: bool = False,
+    repairs_services: bool = False,
+    changes_files: bool = False,
+    deletes_data: bool = False,
+    pulls_images: bool = False,
+    writes_activity: bool = False,
+    runs_shell: bool = False,
+    uses_network: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": _state(state),
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "target_api": target_api,
+        "approval_command_id": approval_command_id,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "runs_docker": False,
+        "inspects_logs": False,
+        "restarts_services": False,
+        "recreates_services": False,
+        "starts_services": False,
+        "repairs_services": False,
+        "changes_files": False,
+        "deletes_data": False,
+        "pulls_images": False,
+        "writes_activity": False,
+        "runs_shell": False,
+        "uses_network": False,
+        "gated_operation": {
+            "runs_docker": runs_docker,
+            "inspects_logs": inspects_logs,
+            "restarts_services": restarts_services,
+            "recreates_services": recreates_services,
+            "starts_services": starts_services,
+            "repairs_services": repairs_services,
+            "changes_files": changes_files,
+            "deletes_data": deletes_data,
+            "pulls_images": pulls_images,
+            "writes_activity": writes_activity,
+            "runs_shell": runs_shell,
+            "uses_network": uses_network,
+        },
+    }
+
+
+def _handoff_rows(summary: dict[str, Any], approval_packet: dict[str, Any]) -> list[dict[str, Any]]:
+    affected_count = int(approval_packet.get("affected_count") or 0)
+    required_count = int(approval_packet.get("required_affected_count") or 0)
+    optional_count = int(approval_packet.get("optional_affected_count") or 0)
+    issue_state = "error" if required_count else ("warn" if optional_count else "ok")
+    return [
+        _handoff_row(
+            "repair-status-capture-handoff",
+            "ok",
+            "read",
+            "Status capture handoff",
+            "Read-only Docker/Compose status evidence must be captured before selecting any repair command.",
+            "check-containers",
+            "System",
+            target_api="/api/operator/checks",
+            requires_approval=False,
+            runs_docker=True,
+            runs_shell=True,
+        ),
+        _handoff_row(
+            "repair-backup-checkpoint-handoff",
+            "error" if required_count else ("warn" if affected_count else "ok"),
+            "roll",
+            "Backup checkpoint handoff",
+            "Backup and rollback coverage should be reviewed before any restart, data mount repair, or service recreation.",
+            "open-backup-preflight",
+            "Backup",
+            target_api="/api/operator/backup-plan",
+            requires_approval=False,
+        ),
+        _handoff_row(
+            "repair-log-review-handoff",
+            issue_state,
+            "logs",
+            "Log review handoff",
+            "Affected service logs are evidence for the repair decision and remain approval-gated host work.",
+            "open-activity-preflight",
+            "Activity",
+            target_api="docker compose logs --tail=120",
+            inspects_logs=True,
+            runs_docker=True,
+            runs_shell=True,
+        ),
+        _handoff_row(
+            "repair-data-boundary-handoff",
+            "error" if required_count else "ok",
+            "data",
+            "Data boundary handoff",
+            "Data volume issues must route through backup and data-boundary review before service recreation.",
+            "open-local-data-map",
+            "Data",
+            target_api="/api/operator/data-plan",
+            requires_approval=bool(required_count),
+            changes_files=True,
+            deletes_data=True,
+        ),
+        _handoff_row(
+            "repair-one-service-handoff",
+            issue_state,
+            "fix",
+            "One-service repair handoff",
+            "Ask To Fix may repair only the named unhealthy service after status, logs, backup, and data-boundary review.",
+            "request-container-fix",
+            "Ask",
+            target_api="docker compose up -d --force-recreate --no-deps {service}",
+            restarts_services=True,
+            recreates_services=True,
+            repairs_services=True,
+            runs_docker=True,
+            runs_shell=True,
+        ),
+        _handoff_row(
+            "repair-support-start-handoff",
+            "warn" if optional_count else "ok",
+            "opt",
+            "Optional support service handoff",
+            "ChromaDB, SearXNG, ntfy, and other support services may start only when needed and without image pulls.",
+            "request-container-fix",
+            "Ask",
+            target_api="docker compose --profile support up -d --no-build --pull never",
+            requires_approval=bool(optional_count),
+            starts_services=True,
+            runs_docker=True,
+            runs_shell=True,
+        ),
+        _handoff_row(
+            "repair-activity-ledger-handoff",
+            "ok",
+            "log",
+            "Activity ledger handoff",
+            "Repair requests, selected commands, logs reviewed, approval decisions, retries, and outcomes stay in the local activity timeline.",
+            "open-activity-preflight",
+            "Activity",
+            target_api="/api/operator/activity",
+            requires_approval=False,
+            writes_activity=True,
+        ),
+        _handoff_row(
+            "repair-offline-policy-handoff",
+            "ok",
+            "safe",
+            "Offline/no-pull policy handoff",
+            "Image pulls, model downloads, network diagnostics, volume deletes, and broad restarts stay outside this repair plan by default.",
+            "open-trust-controls",
+            "Trust",
+            target_api="/api/operator/safety-plan",
+            requires_approval=False,
+            pulls_images=True,
+            uses_network=True,
+            deletes_data=True,
+        ),
+    ]
+
+
 def run_operator_repair_plan() -> dict[str, Any]:
     """Return a read-only repair plan for service/container issues."""
     service_snapshot = run_operator_service_snapshot()
@@ -390,12 +769,26 @@ def run_operator_repair_plan() -> dict[str, Any]:
     summary = _summary(service_rows, service_snapshot)
     steps = _plan_steps(summary, service_rows, commands)
     approval_packet = _approval_packet(summary, service_rows, steps, commands)
+    alert_rows = _repair_alert_rows(summary, service_rows, approval_packet)
+    entry_rows = _entry_rows(summary, approval_packet)
+    handoff_rows = _handoff_rows(summary, approval_packet)
     return {
         "mode": "read-only-local-repair-plan",
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "summary": summary,
+        "summary": {
+            **summary,
+            "repair_alert_count": len(alert_rows),
+            "critical_repair_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": sum(1 for row in entry_rows if row.get("state") in {"ok", "warn"}),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
+        },
         "services": service_rows,
         "steps": steps,
+        "alert_rows": alert_rows,
+        "entry_rows": entry_rows,
+        "handoff_rows": handoff_rows,
         "approval_packet": approval_packet,
         "host_commands": commands,
         "container_plan": {

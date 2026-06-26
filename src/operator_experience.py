@@ -226,6 +226,312 @@ def _api_action(path: str, title: str, *, writes: bool = False, requires_approva
     }
 
 
+def _experience_alert_rows(
+    target_rows: list[dict[str, Any]],
+    configured: dict[str, bool],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    critical_targets = {
+        "container-health",
+        "code-tests",
+        "watch-build",
+        "backup-verify",
+    }
+    for row in target_rows:
+        if row.get("state") == "ok":
+            continue
+        target_id = _trim(row.get("id"), 160) or "target"
+        missing_command = row.get("command_ready") is not True
+        route_mismatch = row.get("route_ready") is not True
+        approval_gap = row.get("approval_id") and row.get("approval_ready") is not True
+        if missing_command:
+            reason = f"command {row.get('command_id') or 'missing'} is not in the command catalog"
+        elif route_mismatch:
+            reason = (
+                f"selected route {row.get('selected_id') or 'missing'} does not match "
+                f"{row.get('expected_route_id') or 'expected route'}"
+            )
+        elif approval_gap:
+            reason = f"approval command {row.get('approval_id')} is not ask-gated"
+        else:
+            reason = "target phrase needs route review"
+        rows.append(
+            {
+                "id": f"experience-target-{target_id}",
+                "state": "error" if target_id in critical_targets or missing_command else "warn",
+                "badge": row.get("badge") or row.get("area") or "target",
+                "title": f"Target phrase not ready: {row.get('title') or target_id}",
+                "detail": f"{row.get('phrase') or row.get('title')}: {reason}.",
+                "action": "open-capability-map",
+                "actionLabel": "Map",
+                "requires_approval": False,
+                "uses_network": False,
+            }
+        )
+    if not configured.get("commands"):
+        rows.append(
+            {
+                "id": "experience-command-catalog-missing",
+                "state": "error",
+                "badge": "cmd",
+                "title": "Target command catalog missing",
+                "detail": "Target-experience proof needs the operator command catalog before voice/text phrases can be proven.",
+                "action": "open-command-palette",
+                "actionLabel": "Commands",
+                "requires_approval": False,
+                "uses_network": False,
+            }
+        )
+    if not configured.get("workflows"):
+        rows.append(
+            {
+                "id": "experience-workflow-catalog-missing",
+                "state": "warn",
+                "badge": "flow",
+                "title": "Target workflow catalog missing",
+                "detail": "Persisted workflow phrase evidence is missing; built-in target phrases are still used for read-only proof.",
+                "action": "open-automation-map",
+                "actionLabel": "Automation",
+                "requires_approval": False,
+                "uses_network": False,
+            }
+        )
+    if not configured.get("policy"):
+        rows.append(
+            {
+                "id": "experience-policy-evidence-missing",
+                "state": "warn",
+                "badge": "ask",
+                "title": "Target trust policy evidence missing",
+                "detail": "Approval posture is using defaults because persisted trust-policy evidence is not available.",
+                "action": "open-trust-controls",
+                "actionLabel": "Trust",
+                "requires_approval": False,
+                "uses_network": False,
+            }
+        )
+    return rows[:16]
+
+
+def _entry_rows(
+    *,
+    command_count: int,
+    workflow_count: int,
+    target_count: int,
+    route_ready: int,
+    configured: dict[str, bool],
+) -> list[dict[str, Any]]:
+    command_ready = command_count > 0 and configured.get("commands")
+    target_ready = target_count > 0 and route_ready == target_count
+    workflow_ready = workflow_count > 0 or target_ready
+    return [
+        {
+            "id": "dashboard",
+            "state": "ok" if target_ready else "warn",
+            "badge": "dash",
+            "title": "Command Center dashboard",
+            "detail": f"{route_ready}/{target_count} target actions have backend route proof for dashboard cards and panels.",
+            "channel": "dashboard",
+            "ready": target_ready,
+            "executes": False,
+            "requires_approval": False,
+            "action": "refresh-command-center",
+            "actionLabel": "Dashboard",
+        },
+        {
+            "id": "text-command",
+            "state": "ok" if command_ready and target_ready else "warn",
+            "badge": "text",
+            "title": "Text command input",
+            "detail": f"{command_count} persisted command(s); typed phrases preflight through /api/operator/route before local execution.",
+            "channel": "text",
+            "ready": command_ready and target_ready,
+            "executes": False,
+            "requires_approval": False,
+            "action": "open-command-palette",
+            "actionLabel": "Text",
+        },
+        {
+            "id": "command-palette",
+            "state": "ok" if command_ready else "warn",
+            "badge": "pal",
+            "title": "Global command palette",
+            "detail": "Palette search uses the persisted command catalog and backend route preview for typed natural-language commands.",
+            "channel": "palette",
+            "ready": command_ready,
+            "executes": False,
+            "requires_approval": False,
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+        },
+        {
+            "id": "voice-command",
+            "state": "ok" if command_ready and target_ready else "warn",
+            "badge": "voice",
+            "title": "Voice command route",
+            "detail": "Recognized speech routes through the same text command layer after browser microphone permission.",
+            "channel": "voice",
+            "ready": command_ready and target_ready,
+            "executes": False,
+            "requires_approval": True,
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+        },
+        {
+            "id": "agent-workflows",
+            "state": "ok" if workflow_ready else "warn",
+            "badge": "flow",
+            "title": "Agent workflow target phrases",
+            "detail": f"{workflow_count} persisted workflow phrase(s); built-in targets provide fallback route proof for the core operator experience.",
+            "channel": "workflow",
+            "ready": workflow_ready,
+            "executes": False,
+            "requires_approval": True,
+            "action": "open-automation-map",
+            "actionLabel": "Workflows",
+        },
+    ]
+
+
+def _route_match_rows(target_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in target_rows:
+        matches = row.get("matches") if isinstance(row.get("matches"), list) else []
+        best = matches[0] if matches and isinstance(matches[0], dict) else {}
+        score = int(best.get("score") or 0)
+        selected_id = _trim(row.get("selected_id"), 160)
+        expected_id = _trim(row.get("expected_route_id"), 160)
+        approval_id = _trim(row.get("approval_id"), 160)
+        approval_detail = f"; approval={approval_id}:{row.get('approval_mode') or 'missing'}" if approval_id else ""
+        rows.append({
+            "id": f"route-match-{row.get('id') or expected_id or len(rows)}",
+            "state": "ok" if row.get("route_ready") else ("warn" if selected_id else "error"),
+            "badge": row.get("badge") or row.get("area") or "route",
+            "title": f"Route match: {row.get('title') or row.get('phrase') or expected_id}",
+            "detail": (
+                f"phrase={row.get('phrase')}; selected={selected_id or 'missing'}; expected={expected_id}; "
+                f"score={score}; trust={row.get('trust') or 'local'}:{row.get('trust_mode') or 'auto'}"
+                f"{approval_detail}"
+            ),
+            "phrase": row.get("phrase") or "",
+            "selected_id": selected_id,
+            "expected_route_id": expected_id,
+            "score": score,
+            "trust": row.get("trust") or "local",
+            "trust_mode": row.get("trust_mode") or "auto",
+            "approval_id": approval_id,
+            "approval_mode": row.get("approval_mode") or "",
+            "route_ready": row.get("route_ready") is True,
+            "command_ready": row.get("command_ready") is True,
+            "approval_ready": row.get("approval_ready") is True,
+            "executes": False,
+            "routes_commands": False,
+            "starts_workflows": False,
+            "starts_jobs": False,
+            "runs_shell": False,
+            "writes_files": False,
+            "uses_network": False,
+            "action": expected_id or "open-capability-map",
+            "actionLabel": "Open" if row.get("route_ready") else "Review",
+        })
+    return rows
+
+
+def _handoff_row(
+    row: dict[str, Any],
+    *,
+    starts_workflows: bool = False,
+    starts_jobs: bool = False,
+    starts_training: bool = False,
+    runs_search: bool = False,
+    runs_shell: bool = False,
+    runs_docker: bool = False,
+    writes_files: bool = False,
+    writes_activity: bool = False,
+    creates_tasks: bool = False,
+    creates_backup: bool = False,
+    restores_data: bool = False,
+    restarts_services: bool = False,
+    uses_network: bool = False,
+) -> dict[str, Any]:
+    approval_id = _trim(row.get("approval_id"), 160)
+    return {
+        "id": f"experience-{row.get('id')}-handoff",
+        "state": "ok" if row.get("state") == "ok" else row.get("state", "warn"),
+        "badge": row.get("badge") or row.get("area") or "target",
+        "title": f"{row.get('title') or row.get('id')} handoff",
+        "detail": (
+            f"{row.get('phrase') or row.get('title')} routes to {row.get('endpoint')}; "
+            f"selected={row.get('selected_id') or 'missing'}; expected={row.get('expected_route_id') or 'missing'}"
+        ),
+        "action": row.get("expected_route_id") or row.get("action") or "open-capability-map",
+        "actionLabel": "Open" if row.get("state") == "ok" else "Review",
+        "target_api": row.get("endpoint") or "/api/operator/experience-plan",
+        "target_phrase": row.get("phrase") or "",
+        "command_id": row.get("command_id") or "",
+        "approval_command_id": approval_id,
+        "requires_approval": bool(approval_id) or bool(row.get("requires_approval")),
+        "executes": False,
+        "routes_commands": False,
+        "executes_commands": False,
+        "starts_workflows": False,
+        "starts_jobs": False,
+        "starts_training": False,
+        "runs_search": False,
+        "runs_shell": False,
+        "runs_docker": False,
+        "writes_files": False,
+        "writes_activity": False,
+        "creates_tasks": False,
+        "creates_backup": False,
+        "restores_data": False,
+        "exports_data": False,
+        "deletes_records": False,
+        "restarts_services": False,
+        "uses_network": False,
+        "gated_operation": {
+            "routes_commands": True,
+            "starts_workflows": starts_workflows,
+            "starts_jobs": starts_jobs,
+            "starts_training": starts_training,
+            "runs_search": runs_search,
+            "runs_shell": runs_shell,
+            "runs_docker": runs_docker,
+            "writes_files": writes_files,
+            "writes_activity": writes_activity,
+            "creates_tasks": creates_tasks,
+            "creates_backup": creates_backup,
+            "restores_data": restores_data,
+            "restarts_services": restarts_services,
+            "uses_network": uses_network,
+        },
+    }
+
+
+def _handoff_rows(target_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows_by_id = {row.get("id"): row for row in target_rows}
+    rows: list[dict[str, Any]] = []
+    if rows_by_id.get("summarize-today"):
+        rows.append(_handoff_row(rows_by_id["summarize-today"], writes_activity=True))
+    if rows_by_id.get("container-health"):
+        rows.append(_handoff_row(rows_by_id["container-health"], runs_docker=True, restarts_services=True, writes_activity=True))
+    if rows_by_id.get("code-tests"):
+        rows.append(_handoff_row(rows_by_id["code-tests"], runs_shell=True, writes_files=True, writes_activity=True))
+    if rows_by_id.get("train-small-model"):
+        rows.append(_handoff_row(rows_by_id["train-small-model"], starts_jobs=True, starts_training=True, writes_files=True, writes_activity=True))
+    if rows_by_id.get("watch-build"):
+        rows.append(_handoff_row(rows_by_id["watch-build"], starts_workflows=True, runs_shell=True, writes_activity=True))
+    if rows_by_id.get("note-task"):
+        rows.append(_handoff_row(rows_by_id["note-task"], creates_tasks=True, writes_activity=True))
+    if rows_by_id.get("local-doc-search"):
+        rows.append(_handoff_row(rows_by_id["local-doc-search"], runs_search=True))
+    if rows_by_id.get("change-brief"):
+        rows.append(_handoff_row(rows_by_id["change-brief"], writes_activity=True))
+    if rows_by_id.get("backup-verify"):
+        rows.append(_handoff_row(rows_by_id["backup-verify"], creates_backup=True, restores_data=True, writes_activity=True))
+    return rows
+
+
 def run_operator_experience_plan(
     owner: str = "local",
     *,
@@ -253,48 +559,22 @@ def run_operator_experience_plan(
     approval_targets = [row for row in target_rows if row["approval_id"]]
     approval_ready = sum(1 for row in approval_targets if row["approval_ready"])
     issue_rows = [row for row in target_rows if row["state"] != "ok"]
-    entry_rows = [
-        {
-            "id": "dashboard",
-            "state": "ok",
-            "badge": "dash",
-            "title": "Command Center dashboard",
-            "detail": "Target experiences are exposed as dashboard actions and proof rows.",
-            "executes": False,
-        },
-        {
-            "id": "text-command",
-            "state": "ok" if command_by_id else "warn",
-            "badge": "text",
-            "title": "Text command routing",
-            "detail": f"{len(command_by_id)} persisted commands available to match natural-language phrases.",
-            "executes": False,
-        },
-        {
-            "id": "command-palette",
-            "state": "ok" if configured.get("commands", bool(command_by_id)) else "warn",
-            "badge": "pal",
-            "title": "Command palette catalog",
-            "detail": "Persisted command catalog backs palette search, dashboard actions, and route previews.",
-            "executes": False,
-        },
-        {
-            "id": "voice-command",
-            "state": "ok",
-            "badge": "vox",
-            "title": "Voice command path",
-            "detail": "Recognized speech routes through the same command catalog after browser permission.",
-            "executes": False,
-        },
-        {
-            "id": "workflow-targets",
-            "state": "ok" if route_ready == len(target_rows) else "warn",
-            "badge": "flow",
-            "title": "Agent workflow target phrases",
-            "detail": f"{route_ready}/{len(target_rows)} target phrases route to expected commands.",
-            "executes": False,
-        },
-    ]
+    configured_summary = {
+        "commands": bool(configured.get("commands", bool(command_by_id))),
+        "workflows": bool(configured.get("workflows", bool(workflows))),
+        "policy": bool(configured.get("policy", policy is not None)),
+    }
+    alert_rows = _experience_alert_rows(target_rows, configured_summary)
+    route_match_rows = _route_match_rows(target_rows)
+    handoff_rows = _handoff_rows(target_rows)
+    entry_rows = _entry_rows(
+        command_count=len(command_by_id),
+        workflow_count=len(workflows or []),
+        target_count=len(target_rows),
+        route_ready=route_ready,
+        configured=configured_summary,
+    )
+    entry_ready = sum(1 for row in entry_rows if row["ready"])
     guard_rows = [
         {
             "state": "ok",
@@ -336,8 +616,23 @@ def run_operator_experience_plan(
             "issue_count": len(issue_rows),
             "command_ready_count": command_ready,
             "route_ready_count": route_ready,
+            "route_match_count": len(route_match_rows),
+            "route_match_ready_count": sum(1 for row in route_match_rows if row.get("route_ready")),
             "approval_target_count": len(approval_targets),
             "approval_ready_count": approval_ready,
+            "experience_alert_count": len(alert_rows),
+            "critical_experience_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
+            "entry_path_count": len(entry_rows),
+            "entry_path_ready_count": entry_ready,
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": entry_ready,
+            "dashboard_entry_ready": any(row["id"] == "dashboard" and row["ready"] for row in entry_rows),
+            "text_entry_ready": any(row["id"] == "text-command" and row["ready"] for row in entry_rows),
+            "palette_entry_ready": any(row["id"] == "command-palette" and row["ready"] for row in entry_rows),
+            "voice_entry_ready": any(row["id"] == "voice-command" and row["ready"] for row in entry_rows),
+            "workflow_entry_ready": any(row["id"] == "agent-workflows" and row["ready"] for row in entry_rows),
             "command_count": len(command_by_id),
             "workflow_count": len(workflows or []),
             "routes_commands": False,
@@ -350,15 +645,14 @@ def run_operator_experience_plan(
             "requires_approval_for_sensitive_targets": True,
         },
         "target_rows": target_rows,
+        "route_match_rows": route_match_rows,
+        "handoff_rows": handoff_rows,
+        "alert_rows": alert_rows,
         "entry_rows": entry_rows,
         "guard_rows": guard_rows,
         "api_actions": api_actions,
         "target_workflows": target_workflows,
-        "configured": {
-            "commands": bool(configured.get("commands", bool(command_by_id))),
-            "workflows": bool(configured.get("workflows", bool(workflows))),
-            "policy": bool(configured.get("policy", policy is not None)),
-        },
+        "configured": configured_summary,
         "approval": {
             "required": False,
             "gate": "Route proof only",

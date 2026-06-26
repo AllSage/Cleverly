@@ -191,6 +191,351 @@ def _api_action(path: str, title: str, *, uses_network: bool = False, writes: bo
     }
 
 
+def _entry_rows(*, ready_count: int, risk_count: int, configured: dict[str, bool]) -> list[dict[str, Any]]:
+    ready = ready_count == risk_count and configured.get("commands") and configured.get("policy")
+    workflow_ready = ready and configured.get("workflows")
+    common = {
+        "command_id": "open-trust-controls",
+        "safety_command_id": "open-autonomy-map",
+        "offline_command_id": "open-offline",
+        "activity_command_id": "open-activity-preflight",
+        "data_command_id": "open-local-data-map",
+        "code_command_id": "open-code-preflight",
+        "services_command_id": "open-local-services-map",
+        "backup_command_id": "open-backup-preflight",
+        "automation_command_id": "open-automation-map",
+        "safety_api": "/api/operator/safety-plan",
+        "policy_api": "/api/operator/policy",
+        "activity_api": "/api/operator/activity",
+        "file_ops_api": "/api/operator/file-ops-plan",
+        "runtime_api": "/api/operator/runtime-plan",
+        "repair_api": "/api/operator/repair-plan",
+        "backup_api": "/api/operator/backup-plan",
+        "requires_approval": True,
+        "executes": False,
+        "routes_commands": False,
+        "executes_commands": False,
+        "approves_actions": False,
+        "starts_workflows": False,
+        "starts_jobs": False,
+        "runs_shell": False,
+        "runs_docker": False,
+        "writes_files": False,
+        "reads_credentials": False,
+        "exports_data": False,
+        "deletes_records": False,
+        "uses_network": False,
+    }
+    state = "ok" if ready else "warn"
+    workflow_state = "ok" if workflow_ready else "warn"
+    return [
+        {
+            **common,
+            "id": "safety-dashboard-route",
+            "entry": "dashboard",
+            "state": state,
+            "badge": "dash",
+            "title": "Dashboard safety route",
+            "detail": f"The dashboard opens safety-boundary proof for {ready_count}/{risk_count} risk class(es) before any high-risk action.",
+            "action": "open-autonomy-map",
+            "actionLabel": "Safety",
+        },
+        {
+            **common,
+            "id": "safety-text-route",
+            "entry": "text",
+            "state": state,
+            "badge": "text",
+            "title": "Typed safety request route",
+            "detail": "Typed destructive, network, credential, filesystem, shell, and repair requests route to safety proof and trust review first.",
+            "action": "open-trust-controls",
+            "actionLabel": "Trust",
+        },
+        {
+            **common,
+            "id": "safety-palette-route",
+            "entry": "palette",
+            "state": state,
+            "badge": "cmd",
+            "title": "Palette safety route",
+            "detail": "The command palette can inspect safety boundaries, route proof, and approval gates without executing or approving actions.",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+        },
+        {
+            **common,
+            "id": "safety-voice-route",
+            "entry": "voice",
+            "state": state,
+            "badge": "voice",
+            "title": "Voice safety route",
+            "detail": "Voice requests can open safety and trust preflight without approving commands, reading credentials, running shell, or using network access.",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+        },
+        {
+            **common,
+            "id": "safety-workflow-route",
+            "entry": "workflow",
+            "state": workflow_state,
+            "badge": "flow",
+            "title": "Workflow safety route",
+            "detail": "Workflow handoffs review automation, backup, activity, and trust evidence before loops, jobs, repairs, or high-risk commands can start.",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+        },
+    ]
+
+
+def _handoff_row(
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    *,
+    target_api: str,
+    approval_command_id: str = "open-trust-controls",
+    approval_api: str = "/api/operator/policy",
+    requires_approval: bool = True,
+    routes_commands: bool = False,
+    executes_commands: bool = False,
+    approves_actions: bool = False,
+    starts_workflows: bool = False,
+    starts_jobs: bool = False,
+    runs_shell: bool = False,
+    runs_docker: bool = False,
+    writes_files: bool = False,
+    reads_credentials: bool = False,
+    exports_data: bool = False,
+    deletes_records: bool = False,
+    restarts_services: bool = False,
+    uses_network: bool = False,
+    network_after_approval: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state if state in {"ok", "warn", "error", "loading"} else "warn",
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "target_api": target_api,
+        "approval_command_id": approval_command_id,
+        "approval_api": approval_api,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "routes_commands": False,
+        "executes_commands": False,
+        "approves_actions": False,
+        "starts_workflows": False,
+        "starts_jobs": False,
+        "runs_shell": False,
+        "runs_docker": False,
+        "writes_files": False,
+        "reads_credentials": False,
+        "exports_data": False,
+        "deletes_records": False,
+        "restarts_services": False,
+        "uses_network": uses_network,
+        "network_after_approval": network_after_approval,
+        "gated_operation": {
+            "routes_commands": routes_commands,
+            "executes_commands": executes_commands,
+            "approves_actions": approves_actions,
+            "starts_workflows": starts_workflows,
+            "starts_jobs": starts_jobs,
+            "runs_shell": runs_shell,
+            "runs_docker": runs_docker,
+            "writes_files": writes_files,
+            "reads_credentials": reads_credentials,
+            "exports_data": exports_data,
+            "deletes_records": deletes_records,
+            "restarts_services": restarts_services,
+            "uses_network": uses_network or network_after_approval,
+        },
+    }
+
+
+def _handoff_rows(risk_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    risks = {str(row.get("id")): row for row in risk_rows}
+    destructive_state = str(risks.get("destructive", {}).get("state") or "warn")
+    network_state = str(risks.get("network", {}).get("state") or "warn")
+    credential_state = str(risks.get("credential", {}).get("state") or "warn")
+    filesystem_state = str(risks.get("filesystem", {}).get("state") or "warn")
+    shell_state = str(risks.get("shell", {}).get("state") or "warn")
+    backup_state = "ok" if destructive_state == "ok" and filesystem_state == "ok" else "warn"
+    return [
+        _handoff_row(
+            "safety-destructive-recovery-handoff",
+            destructive_state,
+            "risk",
+            "Destructive/recovery approval handoff",
+            "Restart, restore, delete, cleanup, export, and repair actions must leave this read-only proof through an explicit approval route.",
+            "request-container-fix",
+            "Repair",
+            target_api="/api/operator/repair-plan",
+            approval_command_id="request-container-fix",
+            restarts_services=True,
+            deletes_records=True,
+            exports_data=True,
+        ),
+        _handoff_row(
+            "safety-network-egress-handoff",
+            network_state,
+            "net",
+            "Network egress handoff",
+            "Research, web search, model downloads, webhooks, calendar sync, and external endpoints require offline/network policy review.",
+            "open-offline",
+            "Offline",
+            target_api="/api/offline-control/status",
+            approval_command_id="open-offline",
+            network_after_approval=True,
+        ),
+        _handoff_row(
+            "safety-credential-secret-handoff",
+            credential_state,
+            "cred",
+            "Credential and secret handoff",
+            "Auth files, sessions, API keys, tokens, SSH material, vault config, and settings stay behind credential posture review.",
+            "open-trust-controls",
+            "Trust",
+            target_api="/api/operator/credentials-plan",
+            reads_credentials=True,
+            writes_files=True,
+        ),
+        _handoff_row(
+            "safety-filesystem-boundary-handoff",
+            filesystem_state,
+            "file",
+            "Filesystem boundary handoff",
+            "Writes, moves, deletes, imports, exports, restores, snapshots, commits, and sensitive roots require File Ops and backup review.",
+            "open-local-data-map",
+            "Files",
+            target_api="/api/operator/file-ops-plan",
+            approval_command_id="open-local-data-map",
+            writes_files=True,
+            deletes_records=True,
+            exports_data=True,
+        ),
+        _handoff_row(
+            "safety-shell-docker-handoff",
+            shell_state,
+            "shell",
+            "Shell, Docker, tests, and loop handoff",
+            "Shell commands, Docker repair, tests, builds, dependency installs, and repeated loops must start from read-only plans.",
+            "open-code-workspace-map",
+            "Code",
+            target_api="/api/operator/code-test-plan",
+            approval_command_id="run-tests",
+            executes_commands=True,
+            starts_workflows=True,
+            starts_jobs=True,
+            runs_shell=True,
+            runs_docker=True,
+        ),
+        _handoff_row(
+            "safety-backup-recovery-handoff",
+            backup_state,
+            "back",
+            "Backup and rollback handoff",
+            "Risky local actions should prove backup, restore, rollback, retry, and recovery routes before execution approval.",
+            "open-backup-preflight",
+            "Backup",
+            target_api="/api/operator/backup-plan",
+            approval_command_id="prepare-backup",
+            writes_files=True,
+            exports_data=True,
+        ),
+        _handoff_row(
+            "safety-activity-ledger-handoff",
+            "ok",
+            "log",
+            "Activity ledger handoff",
+            "Approved high-risk actions should write trust, status, result, log, retry, and recovery references to the local activity timeline.",
+            "open-activity-preflight",
+            "Activity",
+            target_api="/api/operator/activity",
+            approval_command_id="open-activity-preflight",
+            requires_approval=False,
+        ),
+    ]
+
+
+def _safety_alert_rows(
+    risk_rows: list[dict[str, Any]],
+    configured: dict[str, bool],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in risk_rows:
+        if row.get("state") == "ok":
+            continue
+        missing = row.get("missing_action_ids") or []
+        required_policy = row.get("required_policy") or ""
+        detail_parts = [
+            row.get("proof") or row.get("detail") or "Safety boundary needs review.",
+            f"missing required action(s): {', '.join(str(item) for item in missing)}" if missing else "",
+            f"{required_policy} policy is not ask-gated" if required_policy and not row.get("policy_ready") else "",
+        ]
+        risk_id = str(row.get("id") or "safety")
+        rows.append(
+            {
+                "id": f"safety-boundary-{risk_id}",
+                "state": "error" if risk_id in {"destructive", "credential", "shell"} else "warn",
+                "badge": row.get("badge") or "risk",
+                "title": f"Safety boundary not ask-gated: {row.get('title') or risk_id}",
+                "detail": "; ".join(part for part in detail_parts if part),
+                "action": row.get("action") or "open-trust-controls",
+                "actionLabel": row.get("actionLabel") or "Trust",
+                "requires_approval": True,
+                "uses_network": bool(row.get("network_capable")),
+            }
+        )
+    if not configured.get("commands"):
+        rows.append(
+            {
+                "id": "safety-command-catalog-missing",
+                "state": "error",
+                "badge": "cmd",
+                "title": "Command safety catalog missing",
+                "detail": "Safety proof needs the operator command catalog to verify required ask-gated routes.",
+                "action": "open-command-palette",
+                "actionLabel": "Commands",
+                "requires_approval": False,
+            }
+        )
+    if not configured.get("policy"):
+        rows.append(
+            {
+                "id": "safety-policy-missing",
+                "state": "warn",
+                "badge": "trust",
+                "title": "Trust policy evidence missing",
+                "detail": "Safety proof is using default trust policy because no persisted operator policy evidence was provided.",
+                "action": "open-trust-controls",
+                "actionLabel": "Trust",
+                "requires_approval": False,
+            }
+        )
+    if not configured.get("workflows"):
+        rows.append(
+            {
+                "id": "safety-workflow-catalog-missing",
+                "state": "warn",
+                "badge": "flow",
+                "title": "Workflow safety catalog missing",
+                "detail": "Workflow exposure evidence is absent; review Agent Loops before approving autonomous workflow starts.",
+                "action": "open-automation-map",
+                "actionLabel": "Automation",
+                "requires_approval": False,
+            }
+        )
+    return rows[:10]
+
+
 def run_operator_safety_plan(
     owner: str = "local",
     *,
@@ -211,6 +556,11 @@ def run_operator_safety_plan(
     network_capable = [row for row in risk_rows if row["network_capable"]]
     endpoint_paths = sorted({path for boundary in SAFETY_BOUNDARIES for path in boundary["endpoints"]})
     data_paths = sorted({path for boundary in SAFETY_BOUNDARIES for path in boundary["paths"]})
+    configured_summary = {
+        "commands": bool(configured.get("commands", bool(commands_by_id))),
+        "workflows": bool(configured.get("workflows", bool(workflows))),
+        "policy": bool(configured.get("policy", policy is not None)),
+    }
     guard_rows = [
         {
             "state": "ok",
@@ -242,6 +592,13 @@ def run_operator_safety_plan(
         *[_api_action(path, f"Read {path} safety feed") for path in endpoint_paths],
         _api_action("/api/operator/activity", "Write activity after explicit approved execution", writes=True),
     ]
+    alert_rows = _safety_alert_rows(risk_rows, configured_summary)
+    entry_rows = _entry_rows(
+        ready_count=len(ready_rows),
+        risk_count=len(risk_rows),
+        configured=configured_summary,
+    )
+    handoff_rows = _handoff_rows(risk_rows)
     return {
         "mode": "read-only-safety-boundary-plan",
         "generated_at": _utc_now(),
@@ -258,6 +615,12 @@ def run_operator_safety_plan(
             "data_path_count": len(data_paths),
             "command_count": len(commands_by_id),
             "workflow_count": len(workflows or []),
+            "safety_alert_count": len(alert_rows),
+            "critical_safety_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
             "routes_commands": False,
             "executes_commands": False,
             "starts_workflows": False,
@@ -270,13 +633,12 @@ def run_operator_safety_plan(
         },
         "risk_rows": risk_rows,
         "guard_rows": guard_rows,
+        "alert_rows": alert_rows,
+        "entry_rows": entry_rows,
+        "handoff_rows": handoff_rows,
         "api_actions": api_actions,
         "required_risks": [boundary["id"] for boundary in SAFETY_BOUNDARIES],
-        "configured": {
-            "commands": bool(configured.get("commands", bool(commands_by_id))),
-            "workflows": bool(configured.get("workflows", bool(workflows))),
-            "policy": bool(configured.get("policy", policy is not None)),
-        },
+        "configured": configured_summary,
         "approval": {
             "required": False,
             "gate": "Read-only safety-boundary proof",

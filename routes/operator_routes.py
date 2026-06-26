@@ -18,29 +18,47 @@ from core.middleware import require_admin
 from src.auth_helpers import get_current_user
 from src.constants import DATA_DIR
 from src.operator_activity import run_operator_activity_plan
+from src.operator_ai_runtime import run_operator_ai_runtime_plan
+from src.operator_approvals import run_operator_approval_plan
+from src.operator_automation import run_operator_automation_plan
 from src.operator_autonomy import run_operator_autonomy_plan
 from src.operator_backup import run_operator_backup_plan
 from src.operator_briefing import run_operator_briefing_snapshot
 from src.operator_build_watch import run_operator_build_watch_plan
+from src.operator_calendar import run_operator_calendar_plan
 from src.operator_change_brief import run_operator_change_brief
 from src.operator_code import run_operator_code_test_plan
+from src.operator_command_layer import run_operator_command_layer_plan
 from src.operator_command_router import resolve_operator_route, resolve_operator_route_matrix
 from src.operator_checks import run_operator_checks, run_operator_service_snapshot
 from src.operator_console import run_operator_console_plan
+from src.operator_credentials import run_operator_credentials_plan
+from src.operator_data import run_operator_data_plan
 from src.operator_documents import run_operator_document_search_plan
+from src.operator_docker_runtime import run_operator_docker_runtime_plan
 from src.operator_experience import run_operator_experience_plan
 from src.operator_file_ops import run_operator_file_ops_plan
+from src.operator_gallery import run_operator_gallery_plan
 from src.operator_goal import run_operator_goal_plan
+from src.operator_loops import run_operator_loops_plan
 from src.operator_memory import run_operator_memory_plan
 from src.operator_model_ops import run_operator_model_ops_plan
 from src.operator_models import run_operator_model_snapshot
+from src.operator_notes import run_operator_notes_plan
 from src.operator_note_tasks import run_operator_note_task_draft
 from src.operator_repair import run_operator_repair_plan
+from src.operator_recovery import run_operator_recovery_plan
+from src.operator_research import run_operator_research_plan
 from src.operator_runtime import run_operator_runtime_plan
 from src.operator_safety import run_operator_safety_plan
+from src.operator_services import run_operator_services_plan
+from src.operator_tasks import run_operator_tasks_plan
+from src.operator_tool_access import run_operator_tool_access_plan
 from src.operator_toolchain import run_operator_toolchain_plan
 from src.operator_training import run_operator_training_plan
 from src.operator_voice import run_operator_voice_plan
+from src.operator_work_ops import run_operator_work_ops_plan
+from src.operator_workspace import run_operator_workspace_plan
 from src.operator_workday import run_operator_workday_plan
 
 ACTIVITY_FILE = os.path.join(DATA_DIR, "operator_activity.json")
@@ -96,6 +114,189 @@ PROFILE_BUCKETS = {
     "facts": "Other Facts",
 }
 PROFILE_REQUIRED_BUCKETS = ("identity", "preferences", "projects", "decisions", "workflows")
+
+DEFAULT_COMMAND_CATALOG = [
+    {
+        "id": "summarize-today",
+        "title": "Summarize Today",
+        "subtitle": "Tasks, calendar, memory, notes, and local activity",
+        "category": "Operator",
+        "trust": "local",
+        "priority": 50,
+        "keywords": ["summarize today", "today briefing", "daily summary", "today"],
+    },
+    {
+        "id": "request-container-fix",
+        "title": "Ask To Fix Container Health",
+        "subtitle": "Prepare an approval-gated repair pass for unhealthy local services",
+        "category": "Safety",
+        "trust": "approval",
+        "alwaysAsk": True,
+        "priority": 50,
+        "keywords": ["check containers", "fix unhealthy containers", "container health", "docker repair", "service repair"],
+    },
+    {
+        "id": "run-tests",
+        "title": "Open Code Test Plan",
+        "subtitle": "Review workspace, runner, snapshots, and approval gates before running tests",
+        "category": "Code",
+        "trust": "local",
+        "priority": 48,
+        "keywords": ["run tests", "code workspace tests", "open code workspace", "test plan", "workspace tests"],
+    },
+    {
+        "id": "open-training-run-plan",
+        "title": "Open Training Run Plan",
+        "subtitle": "Review dataset, tiny-model path, LoRA limits, outputs, jobs, and safety gates before training",
+        "category": "Models",
+        "trust": "local",
+        "priority": 48,
+        "keywords": ["train a small model", "train model on dataset", "train on this dataset", "training run plan", "dataset training"],
+    },
+    {
+        "id": "request-build-watch-loop",
+        "title": "Start Build Watch Loop",
+        "subtitle": "Open the build loop and send the approval-gated repo request",
+        "category": "Automation",
+        "trust": "approval",
+        "alwaysAsk": True,
+        "priority": 50,
+        "keywords": ["watch repo until build passes", "watch this repo until the build passes", "build until green", "build watch loop"],
+    },
+    {
+        "id": "draft-task-from-note",
+        "title": "Draft Task From Latest Note",
+        "subtitle": "Review local notes and open a scheduled task draft",
+        "category": "Automation",
+        "trust": "local",
+        "priority": 44,
+        "keywords": ["create task from note", "task from note", "draft task from note", "latest note task"],
+    },
+    {
+        "id": "search-local-documents",
+        "title": "Search Local Documents",
+        "subtitle": "Search indexed personal documents with local RAG and keyword fallback",
+        "category": "Library",
+        "trust": "local",
+        "priority": 46,
+        "keywords": ["search local documents", "search my documents", "local document search", "document search"],
+    },
+    {
+        "id": "explain-changes-since-yesterday",
+        "title": "Explain Changes Since Yesterday",
+        "subtitle": "Review the local repo and summarize recent changes",
+        "category": "Code",
+        "trust": "local",
+        "priority": 45,
+        "keywords": ["explain changes since yesterday", "what changed since yesterday", "changed since yesterday", "repo changes"],
+    },
+    {
+        "id": "prepare-backup",
+        "title": "Open Backup Verification Plan",
+        "subtitle": "Review coverage, export scope, restore drill, full snapshots, and proof before backup work",
+        "category": "Safety",
+        "trust": "local",
+        "priority": 46,
+        "keywords": ["prepare backup", "verify backup", "backup verification", "backup and verify", "restore drill"],
+    },
+]
+
+DEFAULT_WORKFLOW_CATALOG = [
+    {
+        "id": "target-summarize-today",
+        "phrase": "Summarize today.",
+        "title": "Today Briefing",
+        "area": "Briefing",
+        "commandId": "summarize-today",
+        "expectedRouteId": "summarize-today",
+        "proof": "Read-only local briefing snapshot",
+        "state": "ok",
+    },
+    {
+        "id": "target-container-health",
+        "phrase": "Check containers and fix anything unhealthy.",
+        "title": "Approval-gated Container Repair Request",
+        "area": "Services",
+        "commandId": "request-container-fix",
+        "approvalId": "request-container-fix",
+        "expectedRouteId": "request-container-fix",
+        "approvalMode": "ask",
+        "proof": "Typed approval before any repair request",
+        "state": "ok",
+    },
+    {
+        "id": "target-code-tests",
+        "phrase": "Open my code workspace and run the tests.",
+        "title": "Code Test Plan",
+        "area": "Code",
+        "commandId": "run-tests",
+        "expectedRouteId": "run-tests",
+        "proof": "Read-only test plan before command execution",
+        "state": "ok",
+    },
+    {
+        "id": "target-training-run",
+        "phrase": "Train a small model on this dataset.",
+        "title": "Training Run Plan",
+        "area": "Models",
+        "commandId": "open-training-run-plan",
+        "expectedRouteId": "open-training-run-plan",
+        "proof": "Read-only training run plan before any job start",
+        "state": "ok",
+    },
+    {
+        "id": "target-build-watch",
+        "phrase": "Watch this repo until the build passes.",
+        "title": "Build Watch Loop Request",
+        "area": "Automation",
+        "commandId": "request-build-watch-loop",
+        "approvalId": "request-build-watch-loop",
+        "expectedRouteId": "request-build-watch-loop",
+        "approvalMode": "ask",
+        "proof": "Approval-gated loop before any build or file change",
+        "state": "ok",
+    },
+    {
+        "id": "target-note-task",
+        "phrase": "Create a task from this note.",
+        "title": "Note To Task Draft",
+        "area": "Work",
+        "commandId": "draft-task-from-note",
+        "expectedRouteId": "draft-task-from-note",
+        "proof": "Draft task surface opens before saving a scheduled task",
+        "state": "ok",
+    },
+    {
+        "id": "target-document-search",
+        "phrase": "Search my local documents for this.",
+        "title": "Local Document Search",
+        "area": "Library",
+        "commandId": "search-local-documents",
+        "expectedRouteId": "search-local-documents",
+        "proof": "Local RAG and keyword search route stays inside the app",
+        "state": "ok",
+    },
+    {
+        "id": "target-change-brief",
+        "phrase": "Explain what changed since yesterday.",
+        "title": "Change Brief",
+        "area": "Code",
+        "commandId": "explain-changes-since-yesterday",
+        "expectedRouteId": "explain-changes-since-yesterday",
+        "proof": "Read-only local change brief",
+        "state": "ok",
+    },
+    {
+        "id": "target-backup-verify",
+        "phrase": "Prepare a backup and verify it.",
+        "title": "Backup Verification Plan",
+        "area": "Safety",
+        "commandId": "prepare-backup",
+        "expectedRouteId": "prepare-backup",
+        "proof": "Read-only backup plan before export, restore, or file movement",
+        "state": "ok",
+    },
+]
 
 
 def _utc_now() -> str:
@@ -445,12 +646,14 @@ def _owner_command_record(store: dict[str, Any], owner: str) -> tuple[dict[str, 
     owners = store.get("owners") if isinstance(store.get("owners"), dict) else {}
     record = owners.get(owner)
     if not isinstance(record, dict):
+        commands = _normalize_command_catalog(DEFAULT_COMMAND_CATALOG)
+        summary = _command_catalog_summary(commands)
         return {
-            "commands": [],
-            "source": "",
-            "frontend_version": "",
+            "commands": commands,
+            "source": "builtin-v1-targets",
+            "frontend_version": "builtin",
             "updated_at": "",
-            **_command_catalog_summary([]),
+            **summary,
         }, False
     commands = _normalize_command_catalog(record.get("commands") or [])
     summary = _command_catalog_summary(commands)
@@ -601,12 +804,12 @@ def _owner_workflow_record(store: dict[str, Any], owner: str) -> tuple[dict[str,
     record = owners.get(owner)
     if not isinstance(record, dict):
         loops: list[dict[str, Any]] = []
-        workflows: list[dict[str, Any]] = []
+        workflows = _dedupe_workflow_records(DEFAULT_WORKFLOW_CATALOG, _normalize_workflow_route_record)
         return {
             "loops": loops,
             "workflows": workflows,
-            "source": "",
-            "frontend_version": "",
+            "source": "builtin-v1-targets",
+            "frontend_version": "builtin",
             "updated_at": "",
             **_workflow_catalog_summary(loops, workflows),
         }, False
@@ -682,6 +885,12 @@ def _normalize_activity_record(record: Any, owner: str) -> dict[str, Any]:
     clean["owner"] = owner
     clean.setdefault("created_at", now)
     clean["updated_at"] = str(clean.get("updated_at") or now)
+    for key in ("retryable", "deletable", "retry_requires_approval", "clear_requires_approval"):
+        if key in clean:
+            clean[key] = bool(clean.get(key))
+    for key in ("retry_command_id", "recovery_hint", "rollback_hint"):
+        if key in clean:
+            clean[key] = _trim_command_string(clean.get(key), 700)
     if isinstance(clean.get("events"), list):
         clean["events"] = clean["events"][:MAX_ACTIVITY_EVENTS]
     return clean
@@ -725,6 +934,7 @@ def _operator_route_context(owner: str) -> dict[str, Any]:
         policy_record, policy_configured = _owner_policy_record(policy_store, owner)
     return {
         "commands": command_record["commands"],
+        "loops": workflow_record["loops"],
         "workflows": workflow_record["workflows"],
         "policy": policy_record["policy"],
         "configured": {
@@ -762,9 +972,62 @@ def setup_operator_routes() -> APIRouter:
     def operator_services():
         return {"ok": True, **run_operator_service_snapshot()}
 
+    @router.get("/services-plan")
+    def operator_services_plan(request: Request):
+        owner = _activity_owner(request)
+        return {"ok": True, **run_operator_services_plan(owner)}
+
+    @router.get("/docker-runtime-plan")
+    def operator_docker_runtime_plan(request: Request):
+        owner = _activity_owner(request)
+        checks = run_operator_checks()
+        service_snapshot = run_operator_service_snapshot()
+        runtime_plan = run_operator_runtime_plan(owner)
+        services_plan = run_operator_services_plan(owner, service_snapshot=service_snapshot, checks=checks)
+        repair_plan = run_operator_repair_plan()
+        ai_runtime_plan = run_operator_ai_runtime_plan(
+            owner,
+            model_snapshot=run_operator_model_snapshot(),
+            model_ops_plan=run_operator_model_ops_plan(owner),
+            training_plan=run_operator_training_plan(owner),
+            runtime_plan=runtime_plan,
+            services_plan=services_plan,
+        )
+        return {
+            "ok": True,
+            **run_operator_docker_runtime_plan(
+                owner,
+                runtime_plan=runtime_plan,
+                services_plan=services_plan,
+                repair_plan=repair_plan,
+                checks=checks,
+                ai_runtime_plan=ai_runtime_plan,
+            ),
+        }
+
+    @router.get("/credentials-plan")
+    def operator_credentials_plan(request: Request):
+        owner = _activity_owner(request)
+        context = _operator_route_context(owner)
+        return {
+            "ok": True,
+            **run_operator_credentials_plan(
+                owner,
+                policy=context["policy"],
+            ),
+        }
+
+    @router.get("/data-plan")
+    def operator_data_plan(request: Request):
+        return {"ok": True, **run_operator_data_plan(_activity_owner(request))}
+
     @router.get("/repair-plan")
     def operator_repair_plan():
         return {"ok": True, **run_operator_repair_plan()}
+
+    @router.get("/recovery-plan")
+    def operator_recovery_plan(request: Request):
+        return {"ok": True, **run_operator_recovery_plan(_activity_owner(request))}
 
     @router.get("/runtime-plan")
     def operator_runtime_plan(request: Request):
@@ -797,6 +1060,18 @@ def setup_operator_routes() -> APIRouter:
                 workflows=context["workflows"],
                 policy=context["policy"],
                 configured=context["configured"],
+            ),
+        }
+
+    @router.get("/tool-access-plan")
+    def operator_tool_access_plan(request: Request):
+        owner = _activity_owner(request)
+        context = _operator_route_context(owner)
+        return {
+            "ok": True,
+            **run_operator_tool_access_plan(
+                owner,
+                policy=context["policy"],
             ),
         }
 
@@ -849,6 +1124,33 @@ def setup_operator_routes() -> APIRouter:
     def operator_note_task_draft(request: Request, note_id: str = ""):
         return {"ok": True, **run_operator_note_task_draft(_activity_owner(request), note_id=note_id)}
 
+    @router.get("/notes-plan")
+    def operator_notes_plan(request: Request):
+        return {"ok": True, **run_operator_notes_plan(_activity_owner(request))}
+
+    @router.get("/calendar-plan")
+    def operator_calendar_plan(request: Request):
+        return {"ok": True, **run_operator_calendar_plan(_activity_owner(request))}
+
+    @router.get("/tasks-plan")
+    def operator_tasks_plan(request: Request):
+        return {"ok": True, **run_operator_tasks_plan(_activity_owner(request))}
+
+    @router.get("/work-ops-plan")
+    def operator_work_ops_plan(request: Request):
+        owner = _activity_owner(request)
+        return {
+            "ok": True,
+            **run_operator_work_ops_plan(
+                owner,
+                briefing_plan=run_operator_briefing_snapshot(owner),
+                workday_plan=run_operator_workday_plan(owner),
+                tasks_plan=run_operator_tasks_plan(owner),
+                notes_plan=run_operator_notes_plan(owner),
+                calendar_plan=run_operator_calendar_plan(owner),
+            ),
+        }
+
     @router.get("/change-brief")
     def operator_change_brief(request: Request, since: str = "yesterday"):
         return {"ok": True, **run_operator_change_brief(_activity_owner(request), since=since)}
@@ -879,9 +1181,41 @@ def setup_operator_routes() -> APIRouter:
             ),
         }
 
+    @router.get("/research-plan")
+    def operator_research_plan(request: Request):
+        return {"ok": True, **run_operator_research_plan(_activity_owner(request))}
+
+    @router.get("/gallery-plan")
+    def operator_gallery_plan(request: Request):
+        return {"ok": True, **run_operator_gallery_plan(_activity_owner(request))}
+
     @router.get("/file-ops-plan")
     def operator_file_ops_plan(request: Request):
         return {"ok": True, **run_operator_file_ops_plan(_activity_owner(request))}
+
+    @router.get("/workspace-plan")
+    def operator_workspace_plan(request: Request):
+        owner = _activity_owner(request)
+        app_state = getattr(getattr(request, "app", None), "state", None)
+        personal_docs_manager = getattr(app_state, "personal_docs_manager", None)
+        rag_manager = getattr(app_state, "rag_manager", None)
+        return {
+            "ok": True,
+            **run_operator_workspace_plan(
+                owner,
+                code_plan=run_operator_code_test_plan(owner),
+                build_watch_plan=run_operator_build_watch_plan(owner),
+                document_plan=run_operator_document_search_plan(
+                    owner,
+                    personal_docs_manager=personal_docs_manager,
+                    rag_manager=rag_manager,
+                ),
+                research_plan=run_operator_research_plan(owner),
+                gallery_plan=run_operator_gallery_plan(owner),
+                file_ops_plan=run_operator_file_ops_plan(owner),
+                data_plan=run_operator_data_plan(owner),
+            ),
+        }
 
     @router.get("/training-plan")
     def operator_training_plan(request: Request):
@@ -910,6 +1244,65 @@ def setup_operator_routes() -> APIRouter:
             ),
         }
 
+    @router.get("/approval-plan")
+    def operator_approval_plan(request: Request, limit: int = 80):
+        owner = _activity_owner(request)
+        context = _operator_route_context(owner)
+        with _ACTIVITY_LOCK:
+            store = _activity_store()
+            records = _records_for_owner(store, owner, limit)
+        return {
+            "ok": True,
+            **run_operator_approval_plan(
+                owner,
+                commands=context["commands"],
+                workflows=context["workflows"],
+                policy=context["policy"],
+                activity=records,
+                configured=context["configured"],
+            ),
+        }
+
+    @router.get("/loops-plan")
+    def operator_loops_plan(request: Request, limit: int = 80):
+        owner = _activity_owner(request)
+        context = _operator_route_context(owner)
+        with _ACTIVITY_LOCK:
+            store = _activity_store()
+            records = _records_for_owner(store, owner, limit)
+        return {
+            "ok": True,
+            **run_operator_loops_plan(
+                owner,
+                loops=context["loops"],
+                workflows=context["workflows"],
+                commands=context["commands"],
+                policy=context["policy"],
+                activity=records,
+                configured=context["configured"],
+            ),
+        }
+
+    @router.get("/automation-plan")
+    def operator_automation_plan(request: Request, limit: int = 80):
+        owner = _activity_owner(request)
+        context = _operator_route_context(owner)
+        with _ACTIVITY_LOCK:
+            store = _activity_store()
+            records = _records_for_owner(store, owner, limit)
+        return {
+            "ok": True,
+            **run_operator_automation_plan(
+                owner,
+                loops=context["loops"],
+                workflows=context["workflows"],
+                commands=context["commands"],
+                policy=context["policy"],
+                activity=records,
+                configured=context["configured"],
+            ),
+        }
+
     @router.get("/memory-plan")
     def operator_memory_plan(request: Request):
         owner = _activity_owner(request)
@@ -932,6 +1325,21 @@ def setup_operator_routes() -> APIRouter:
     @router.get("/model-ops-plan")
     def operator_model_ops_plan(request: Request):
         return {"ok": True, **run_operator_model_ops_plan(_activity_owner(request))}
+
+    @router.get("/ai-runtime-plan")
+    def operator_ai_runtime_plan(request: Request):
+        owner = _activity_owner(request)
+        return {
+            "ok": True,
+            **run_operator_ai_runtime_plan(
+                owner,
+                model_snapshot=run_operator_model_snapshot(),
+                model_ops_plan=run_operator_model_ops_plan(owner),
+                training_plan=run_operator_training_plan(owner),
+                runtime_plan=run_operator_runtime_plan(owner),
+                services_plan=run_operator_services_plan(owner),
+            ),
+        }
 
     @router.get("/models")
     def operator_models():
@@ -1128,6 +1536,23 @@ def setup_operator_routes() -> APIRouter:
             **result,
             "source_configured": context["configured"],
             "paths": context["paths"],
+        }
+
+    @router.get("/command-layer-plan")
+    def operator_command_layer_plan(request: Request):
+        owner = _activity_owner(request)
+        context = _operator_route_context(owner)
+        return {
+            "ok": True,
+            **run_operator_command_layer_plan(
+                owner,
+                commands=context["commands"],
+                workflows=context["workflows"],
+                loops=context["loops"],
+                policy=context["policy"],
+                configured=context["configured"],
+                paths=context["paths"],
+            ),
         }
 
     @router.get("/workflows")

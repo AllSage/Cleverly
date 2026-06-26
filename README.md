@@ -28,29 +28,85 @@ research, Training Lab, Code Workspace, Voice I/O, Tasks, Calendar, Memory,
 Notes, Library, Gallery, Agent Loops, backups, recovery, and Docker support
 services. The operator API also exposes read-only command route proof through
 `/api/operator/route` and `/api/operator/routes`, a read-only service repair
-plan through `/api/operator/repair-plan`, and a read-only note-to-task draft
-through `/api/operator/note-task-draft`. Change Brief evidence is available
-through `/api/operator/change-brief`, and backup verification evidence is
-available through `/api/operator/backup-plan`. Activity timeline coverage is
+plan through `/api/operator/repair-plan` with alert rows, approval packet,
+request-route proof, and handoff rows for status capture, backup checkpoints,
+log review, data-boundary review, one-service repair, support-service startup,
+activity evidence, and offline/no-pull policy, and a read-only note-to-task draft
+with request-route proof through `/api/operator/note-task-draft`. Change Brief evidence is available
+through `/api/operator/change-brief`, including dashboard/text/palette/voice/workflow
+request-route proof, alert rows for missing workspace context, failed recent
+activity, source-load issues, and the read-only git evidence boundary. Backup verification evidence is
+available through `/api/operator/backup-plan`, including backup alert rows for
+dashboard/text/palette/voice/workflow request-route proof, snapshot coverage,
+audit evidence, restore-drill checks, approval gates, and handoff rows for
+encrypted export, full snapshots, verification, restore drills, password
+custody, storage location, and activity evidence. Recovery readiness evidence
+is available through `/api/operator/recovery-plan`.
+Activity timeline coverage is
 available through `/api/operator/activity-plan`, Code test execution evidence is
 available through `/api/operator/code-test-plan`, repeated build-watch evidence
 is available through `/api/operator/build-watch-plan`, local document search
-evidence is available through `/api/operator/document-search-plan`, and local
-training run evidence is available through `/api/operator/training-plan`, and
+evidence and request-route proof are available through
+`/api/operator/document-search-plan`, research and
+SearXNG readiness evidence is available through `/api/operator/research-plan`,
+gallery/media evidence is available through `/api/operator/gallery-plan`, local
+workspace workbench evidence that unifies code, build-watch, local documents,
+research, gallery/media, file gates, and data paths is available through
+`/api/operator/workspace-plan`, local
+calendar/reminder/sync evidence is available through
+`/api/operator/calendar-plan`, scheduled task/run evidence is available through
+`/api/operator/tasks-plan`, local training run evidence is available through
+`/api/operator/training-plan`, and
 Voice I/O readiness evidence is available through `/api/operator/voice-plan`.
 Permissioned-autonomy evidence is available through
-`/api/operator/autonomy-plan`, and unified-memory evidence is available through
-`/api/operator/memory-plan`. Workday/scheduling evidence is available through
-`/api/operator/workday-plan`, and local model operation evidence is available
-through `/api/operator/model-ops-plan`. File operation evidence is available
+`/api/operator/autonomy-plan`, unified automation operations evidence for
+scheduled tasks, Agent Loops, route proof, activity, build-watch, approvals, and
+recovery handoffs is available through `/api/operator/automation-plan`, approval queue and permission posture evidence
+with dashboard/text/palette/voice/workflow request-route proof is available
+through `/api/operator/approval-plan`, Agent Loop readiness evidence
+with dashboard/text/palette/voice/workflow request-route proof is available
+through `/api/operator/loops-plan`, and unified-memory evidence is
+available through `/api/operator/memory-plan`. Unified local work operations
+evidence for today briefing, workday state, task automation, notes/reminders,
+note-to-task drafts, calendar windows, request-route proof, and approval
+boundaries is available through `/api/operator/work-ops-plan`.
+Workday/scheduling evidence is available through
+`/api/operator/workday-plan`, local model/training inventory snapshot evidence
+is available through `/api/operator/models`, and local model operation evidence is available
+through `/api/operator/model-ops-plan`. Unified local AI runtime evidence for
+models, training, Ollama, ChromaDB, SearXNG, sealed volumes, and service gates is
+available through `/api/operator/ai-runtime-plan`. Local Data Map boundary evidence is
+available through `/api/operator/data-plan`, file operation evidence is available
 through `/api/operator/file-ops-plan`, and runtime resource evidence is
-available through `/api/operator/runtime-plan`, Command Center
-situational-awareness evidence is available through
+available through `/api/operator/runtime-plan`, local service readiness evidence
+with dashboard/text/palette/voice/workflow request-route proof and handoffs for
+service probes, container status, repair-plan routing, backup/data boundaries,
+host-command approval, support starts, no-pull policy, and activity evidence is
+available through `/api/operator/services-plan`, unified Docker runtime
+operations evidence for runtime mode, local services, captured container status,
+host command gates, repair readiness, sealed volumes, AI support services, and
+the image rebuild/recreate deployment boundary is available through
+`/api/operator/docker-runtime-plan`, credential posture evidence
+with dashboard/text/palette/voice/workflow request-route proof is available
+through `/api/operator/credentials-plan`, backend command-layer readiness
+evidence for catalog freshness, route-matrix health, entry points, trust
+gates, and handoffs for text/palette/voice routing, policy, approvals,
+workflow starts, activity writes, and network-risk escalation is available
+through `/api/operator/command-layer-plan`, Command Center
+situational-awareness evidence for system status, models, offline/security,
+jobs, memory, work, code, research/library/gallery, training, alerts, and
+handoffs for command routing, alert feeds, approvals, activity, recovery,
+backup readiness, and safety policy is available through
 `/api/operator/console-plan`, local toolchain integration evidence is available
-through `/api/operator/toolchain-plan`, safety-boundary evidence is available
-through `/api/operator/safety-plan`, operating-console goal readiness evidence
-is available through `/api/operator/goal-plan`, and backend target-experience
-proof is available through `/api/operator/experience-plan`, so
+through `/api/operator/toolchain-plan`, tool/skill/MCP access posture evidence
+is available through `/api/operator/tool-access-plan`, safety-boundary evidence
+is available through `/api/operator/safety-plan`, operating-console goal
+readiness evidence with explicit capability coverage is available through
+`/api/operator/goal-plan`, and backend target-experience
+proof and target alert rows are available through
+`/api/operator/experience-plan`. Notes/checklist/reminder evidence and
+dashboard/text/palette/voice/workflow request-route proof are available
+through `/api/operator/notes-plan`, so
 target phrases, container repair requests, local note handoffs, backup
 preparation, activity/retry reviews, code test requests, build-watch requests,
 local document search requests, training requests, voice/text command requests,
@@ -58,8 +114,9 @@ memory/profile requests, "summarize today" requests, and
 "what changed since yesterday" summaries can be
 audited against persisted local catalogs, activity records, workspace metadata,
 data paths, backup gates, candidate test/build commands, document index/RAG
-metadata, training dataset/artifact ledgers, local memory/profile coverage, and
-current service probes without executing anything.
+metadata, document search route proof, Change Brief route proof, training
+dataset/artifact ledgers, local memory/profile coverage, and current service
+probes without executing anything.
 Typed, palette, and voice command text use `/api/operator/route` as a
 backend read-only route preflight before the browser executes a local command.
 The Command Center and global Command Palette route previews also check that
@@ -72,100 +129,340 @@ If the backend route catalog is unavailable, stale, unauthenticated, or returns
 no selected command, the browser falls back to its local matcher and then chat.
 The repair plan lists suggested host Docker commands as evidence only; restarts,
 starts, pulls, deletes, network use, and host filesystem changes still require
-explicit approval. It also returns an approval packet with affected services,
+explicit approval. It also returns dashboard/text/palette/voice/workflow
+route-proof rows, alert rows, and an approval packet with affected services,
 candidate host commands, preflight checklist rows, and disallowed actions so
-"check containers and fix anything unhealthy" has a clear local scope before
-any owner-approved repair. The note-to-task endpoint returns a draft payload only;
-saving or scheduling still happens from the Tasks review form. The backup plan
-endpoint returns scope, evidence, approval rows, and a verification packet with
-required artifacts, dry-run restore checks, snapshot verification checks, pass
-criteria, and disallowed actions only; encrypted export, restore drill, full
+"check containers and fix anything unhealthy" has a clear local scope before any
+owner-approved repair. The note-to-task endpoint returns
+dashboard/text/palette/voice/workflow route-proof rows, local alert rows for
+missing note sources/manual draft mode/save review, and a draft payload only;
+saving or scheduling still happens from the Tasks review form. Opening a note
+task draft from Command Center or the command fallback is mirrored to
+`data/operator_activity.json` with note and draft metadata only; full note text
+and draft prompts are not stored in the activity ledger. The backup plan
+endpoint returns scope, evidence, approval rows, route-proof rows for
+dashboard/text/palette/voice/workflow entry points, and a verification packet
+with required artifacts, dry-run restore checks, snapshot verification checks,
+pass criteria, and disallowed actions only; encrypted export, restore drill, full
 snapshots, tarball verification, restore, uploads, moves, and deletion stay
 behind explicit user actions. The activity-plan endpoint
 audits status/result/log coverage, trust tags, retryable routes, failures,
-pending work, recovery prompts, and timeline data paths only; it does not write
-or delete records, retry commands, approve actions, restore data, restart
-services, run shell commands, or use network access. The code-test endpoint returns
-workspace inventory and candidate commands only; snapshots, test runs, diffs,
-restores, commits, and shell execution stay in Code Workspace controls.
-The training-plan endpoint returns dataset, artifact, route, dependency, job,
-and data-location evidence only; dataset creation, tiny-model training, LoRA
-jobs, model pulls, endpoint changes, artifact writes, network access, and job
-approval stay in Training Lab controls.
-The voice-plan endpoint returns provider, permission, route, API gate, and data
-path evidence only; it does not start the microphone, record audio, upload
-audio, transcribe audio, synthesize speech, speak audio, change STT/TTS
-settings, run shell commands, or use network access.
+pending work, recovery prompts, timeline alert rows for failures/gaps/retry and
+delete gates, dashboard/text/palette/voice/workflow request-route proof,
+handoff rows for Details, Copy Log, Retry checkpoint, Recovery/rollback,
+ledger writes, deletion/clear, and trust review, per-record action-affordance
+rows for Details, Copy Log, Retry checkpoint, and Recovery/rollback review, and
+timeline data paths only; it does not write or delete records, retry commands,
+approve actions, restore data, restart services, run shell commands, or use
+network access. The recovery-plan endpoint returns retry,
+failure-review, rollback-hint, snapshot, backup, repair, local-data, trust-gate,
+alert, and dashboard/text/palette/voice/workflow request-route rows only; it
+does not retry commands, restore data, repair services, delete files, export
+data, run shell commands, or use network access. The code-test endpoint returns
+workspace inventory, candidate commands, dashboard/text/palette/voice/workflow
+request-route proof, and handoffs for workspace selection, status/diff review,
+snapshot checkpoints, exact command approval, runner isolation, activity output,
+and recovery/rollback only; snapshots, test runs, diffs, restores, commits, and
+shell execution stay in Code Workspace controls.
+The training-plan endpoint returns dataset, artifact, backend training route,
+dashboard/text/palette/voice/workflow request-route, dependency, job,
+handoff rows for dataset review, approval checkpoint, job monitoring, artifact
+sampling, model-routing review, activity evidence, and data-location evidence
+only; dataset creation, tiny-model training, LoRA jobs, model pulls, endpoint
+changes, artifact writes, network access, and job approval stay in Training Lab
+controls.
+The voice-plan endpoint returns provider, permission, route, API gate,
+dashboard/text/palette/voice/workflow request-route proof, voice alert rows for
+microphone/user-activation gates, disabled providers, endpoint privacy,
+local-service routes, setup gaps, transcript handoff rows for permission,
+transcript routing, trust gates, activity metadata, speech-output review, and
+endpoint privacy, and data path evidence only; it does not start the microphone,
+record audio, upload audio, transcribe audio, synthesize speech, speak audio,
+change STT/TTS settings, run shell commands, or use network access.
+The automation-plan endpoint returns command catalog, workflow route, Agent Loop,
+scheduled task boundary, build-watch handoff, activity ledger, detail/copy-log/
+retry/recovery handoff metadata, alert, API-gate, and
+dashboard/text/palette/voice/workflow request-route rows only; it highlights
+missing automation catalogs, unresolved workflow routes, pending/running/queued
+records, failed or blocked activity, build-watch gaps, and local-first
+webhook/network boundaries without starting automation, starting loops, running
+tasks, routing live commands, executing commands, approving actions, writing
+activity, running shell commands, writing files, calling webhooks, or using
+network access.
 The autonomy-plan endpoint returns trust policy, command catalog, workflow
-route, approval gate, activity decision, retry evidence, and data-path rows
-only; it does not route commands, approve commands, retry commands, start
-workflows, change trust policy, delete activity, run shell commands, modify
-files, or use network access.
-The memory-plan endpoint returns memory/profile coverage, recall toggle, API
-gate, write-boundary, and data-path rows only; it does not add memories, import
-files, extract memories, tidy or audit memories with a model, pin memories,
-update memories, delete memories, edit notes, run automation, run shell
-commands, or use network access.
-The workday-plan endpoint returns task, task-run, calendar, note, briefing,
-API-gate, and data-path rows only; it does not create tasks, update tasks, run
-tasks, create calendar events, sync calendars, edit notes, send notifications,
-start automation, run shell commands, or use network access.
+route, approval gate, decision-mode rows for suggest/ask/execute/auto-execute,
+permission checkpoint rows for route preview, ask evidence review, execution
+ledger review, local-only auto scope, and workflow handoff, activity decision,
+retry evidence, handoff rows for route preview, approval review, workflow
+starts, activity ledger, retry/recovery, trust policy, network/offline policy,
+and safety boundaries, automation alert rows, dashboard/text/palette/voice/workflow
+request-route proof, and data-path rows only; it highlights missing catalogs,
+unresolved workflow routes, pending approvals, failed commands, unsafe trust modes, and retryable records without
+routing commands, approving commands, retrying commands, starting workflows,
+changing trust policy, deleting activity, running shell commands, modifying
+files, or using network access.
+The approval-plan endpoint returns trust policy rows, ask-gated command rows,
+workflow approval gates, pending approval activity rows, decision rows, decision
+checkpoint rows, failure rows, dashboard/text/palette/voice/workflow
+request-route proof, approval handoffs for evidence review, allow/cancel,
+retry/recovery, trust policy changes, workflow gates, network risk, and activity
+ledger writes, API gates, and approval alert rows only; it highlights missing
+command/policy evidence, non-ask network and high-risk tiers, auto-routed risky
+commands, pending approvals, failed records, recovery-before-retry checkpoints,
+and workflow gate issues without routing commands, executing commands,
+approving, cancelling, or retrying commands, changing trust policy, writing
+activity, starting workflows, running shell commands, writing files, or using
+network access.
+The loops-plan endpoint returns Agent Loop template, workflow-route,
+approval-gate, activity, dashboard/text/palette/voice/workflow request-route
+proof, API-gate, and data-path rows only; it highlights missing loop catalogs,
+unresolved loop routes, missing approval gates, pending/failed loop activity,
+and unsafe trust modes without starting loops, routing commands, executing
+commands, approving actions, starting jobs, changing trust policy, running shell
+commands, writing files, or using network access.
+The memory-plan endpoint returns backend memory bucket coverage for identity,
+preferences, projects, decisions, model choices, recurring tasks, and workflows,
+plus recent-memory rows, dedicated model-choice handoff rows, recall toggle, profile alert rows,
+dashboard/text/palette/voice/workflow request-route proof, API gate,
+write-boundary, and data-path rows only; it
+highlights empty memory stores, missing operator-profile areas, disabled
+recall/extraction or skill settings, missing model preference, and
+model-assisted write gates without adding memories, importing files, extracting
+memories, tidying or auditing memories with a model, pinning memories, updating
+memories, deleting memories, editing notes, running automation, running shell
+commands, or using network access.
+The workday, tasks, notes, and calendar plan endpoints return task, task-run,
+calendar, note, briefing, API-gate, data-path, and
+dashboard/text/palette/voice/workflow request-route rows only; they do not
+create tasks, update tasks, run tasks, create calendar events, sync calendars,
+edit notes, send notifications, start automation, run shell commands, or use
+network access.
+The research-plan endpoint returns Deep Research feature, provider, model,
+active-job, saved-report, alert, API-gate, and
+dashboard/text/palette/voice/workflow request-route proof only; it does not
+start research, run web search, fetch URLs, write reports, call SearXNG, query
+external providers, approve network access, or use network access.
 The briefing endpoint returns a deterministic local operating snapshot for
 "summarize today" with overview rows, suggested next-action rows, source rows,
-guardrails, and API evidence from local tasks, task runs, calendar events,
+dashboard/text/palette/voice/workflow request-route proof, briefing alert rows
+for source gaps, work review, failed activity, service/model issues, empty
+memory/notes, workflow handoff gates, guardrails, and API evidence from local tasks, task runs, calendar events,
 notes, memory, model/training status, services, workflows, and operator
 activity only; it does not write activity, start work, run commands, repair
 services, train models, query networks, or modify local data.
+The model snapshot endpoint returns primary-model, endpoint, dataset, artifact,
+fine-tune dependency/job, readiness, and model snapshot alert rows for missing
+primary models, missing local endpoints, external endpoint posture, empty
+training stores, missing LoRA dependencies/base models, and failed fine-tune
+jobs only; it does not set routes, pull models, start serving, start training,
+change settings, run shell commands, or use network access.
 The model-ops-plan endpoint returns primary-model, endpoint, local model,
-training, fine-tune, Ollama, API-gate, and data-path rows only; it does not set
-or auto-select the primary model, register or delete endpoints, pull or
-download models, start serving, benchmark models, start training or
-fine-tuning, change settings, run shell commands, or use network access.
+training, fine-tune, Ollama, model alert rows for missing local readiness,
+external endpoint posture, active/failed model jobs, approval gates, API-gate,
+dashboard/text/palette/voice/workflow request-route proof, model operation
+handoff rows for primary review, endpoint routing, serving/download approval,
+training/fine-tune review, context retrieval, and offline/network policy, and
+data-path rows only; it does not set or auto-select the primary model, register
+or delete endpoints, pull or download models, start serving, benchmark models,
+start training or fine-tuning, change settings, run shell commands, or use
+network access.
+The ai-runtime-plan endpoint returns one local AI runtime readiness view across
+the model snapshot, model operation gates, Training Lab, runtime resource plan,
+Ollama, ChromaDB, SearXNG, sealed model/vector/search volumes, API gates, and
+dashboard/text/palette/voice/workflow request-route proof, plus handoff rows for
+model routing, Training Lab, Ollama, ChromaDB, SearXNG policy, and runtime
+resource guards only; it does not set primary models, download models, start
+serving, start training, restart services, write files, run shell commands, pull
+images, call SearXNG, or use network access.
+The data-plan endpoint returns Local Data Map scope rows, sensitive local-store
+posture, backup-required scope counts, local data alert rows,
+dashboard/text/palette/voice/workflow request-route proof, handoff rows for
+file operations, credential posture, memory/profile review, backup coverage,
+offline/network policy, and activity evidence, API gates, and path-only evidence
+for app data, logs, memory, documents, gallery, research, code workspaces,
+training, models, backups, caches, vault, app key, and SSH material; it does not
+read file contents, return secret values, write files, delete files, export
+data, restore data, run shell commands, or use network access.
 The file-ops-plan endpoint returns app-owned file roots, shallow file metadata,
-sensitive-path flags, API gates, backup requirements, and data-path rows only;
-it does not read file contents, write files, copy files, move files, delete
-files, upload files, import files, index files, export files, restore files,
-run shell commands, or use network access.
+sensitive-path flags, file alert rows for missing roots/sensitive roots/operation
+gates, API gates, backup requirements, dashboard/text/palette/voice/workflow
+request-route proof, file handoff rows for read scope, write/import,
+delete/restore, backup/snapshot, indexing/library, and activity/recovery, and
+data-path rows only; it does not read file contents, write files, copy files,
+move files, delete files, upload files, import files, index files, export files,
+restore files, run shell commands, or use network access.
 The runtime-plan endpoint returns Docker/native mode, offline posture, runtime
 limits, memory/process counters, disk-capacity rows for app/cache/model/job
-roots, heavy-job gates, API gates, and data-path rows only; it does not run
-shell commands, read file contents, write files, delete files, start jobs,
-download models, pull images, restart services, or use network access.
-The console-plan endpoint returns Command Center section coverage, entry-point,
-data-feed, API-gate, guard-rail, and data-path rows only; it does not route
-commands, execute commands, approve actions, start workflows, start jobs, run
-shell commands, write files, restart services, train models, export data,
-delete records, or use network access.
-The toolchain-plan endpoint returns module wiring, command entry-point, API-feed,
-data-path, local/support-service, network-capability, and guard-rail rows only;
-it does not route commands, execute commands, approve actions, start workflows,
-start jobs, run shell commands, write files, restart services, train models,
-download models, query web search, export data, delete records, or use network
+roots, sealed named-volume/support-service rows, runtime alert rows,
+dashboard/text/palette/voice/workflow request-route proof, heavy-job gates,
+API gates, and data-path rows only; it highlights
+missing roots, low storage, memory/process pressure, native-mode boundaries,
+network-enabled posture, and heavy-job approval gates without running shell
+commands, reading file contents, writing files, deleting files, starting jobs,
+downloading models, pulling images, restarting services, or using network
 access.
+The services-plan endpoint returns local service probe rows, expected
+Docker/Compose service rows, captured container status rows, host command
+evidence, service alert rows, dashboard/text/palette/voice/workflow
+request-route proof, API gates, and approval-boundary rows only; it highlights
+required service issues, optional support-service gaps, missing Compose maps,
+missing or unhealthy container status evidence, Docker socket exposure, and host
+command gates without restarting services, starting services, pulling images,
+running Docker, running shell commands, writing files, sending notifications, or
+using network access.
+The docker-runtime-plan endpoint returns one Docker operations view across
+runtime/offline mode, service posture, captured container status, host command
+gates, repair approval packets, sealed volumes, AI support services, and the
+backend image deployment boundary for approved rebuild/recreate work, plus
+handoff rows for host status capture, repair/restart, support-service start,
+image rebuild/recreate, image-pull egress, volume deletion, and activity/rollback
+evidence; it does not restart services, start services, repair containers, build
+images, recreate services, pull images, run Docker, run shell commands, write
+files, delete volumes, or use network access.
+The lower-level service snapshots from `/api/operator/services` and
+`/api/operator/checks` also return read-only alert rows for local probe issues,
+offline/check warnings, missing captured container evidence, unhealthy captured
+container rows, Docker socket exposure, and host command approval gates; they do
+not restart services, run Docker, run shell commands, pull images, or modify
+files.
+Captured container status is read from
+`DATA_DIR/operator_container_status.json` or `CLEVERLY_CONTAINER_STATUS_FILE`
+when an approved host-side check writes bounded metadata such as container name,
+image, status, source, and capture time; Cleverly never runs `docker ps` from
+that endpoint.
+The credentials-plan endpoint returns credential metadata, masked setting
+posture, feature flags, sensitive path presence,
+dashboard/text/palette/voice/workflow request-route proof, handoff rows for
+masked settings, vault unlock review, network credential egress, feature gates,
+backup/key protection, and activity audit evidence, API gates, and credential
+alert rows only; it highlights configured secret-like settings, network-capable
+credentials, vault config, local encryption keys, missing auth/settings paths,
+and unsafe high-risk trust policy without reading secret values, returning
+secret values, writing credentials, changing settings, unlocking vaults, sending
+email, calling networks, or running shell commands.
+The console-plan endpoint returns Command Center section coverage,
+dashboard/text/palette/voice/workflow request-route proof, data-feed, API-gate,
+guard-rail, data-path rows, alert feed rows for the dashboard/service/check/model
+briefing/voice/activity/recovery/automation/data safety queues, and console
+alert rows for missing dashboard routes, entry points, command catalogs,
+workflow catalogs, and policy evidence only; it
+does not route commands, execute commands, approve actions, start workflows,
+start jobs, run shell commands, write files, restart services, train models,
+export data, delete records, or use network access.
+The toolchain-plan endpoint returns module wiring,
+dashboard/text/palette/voice/workflow request-route proof, API-feed, data-path,
+local/support-service, network-capability, guard-rail rows, handoff rows for
+command routing, AI runtime, knowledge/RAG, research/network, code/build,
+training artifacts, work automation, memory/profile, Docker services,
+backup/recovery, and tool-access safety, and toolchain alert rows for missing
+module routes, entry points, command catalogs, workflow catalogs, and policy
+evidence only; it does not route commands, execute
+commands, approve actions, start workflows, start jobs, run shell commands,
+write files, restart services, train models, download models, query web search,
+export data, delete records, or use network access.
+The tool-access-plan endpoint returns built-in tool registry rows,
+disabled-tool toggles, owner-scoped skill metadata, MCP server metadata,
+approval-gate rows, dashboard/text/palette/voice/workflow request-route rows,
+API-gate rows, and tool access alert rows for disabled core operator tools,
+weak shell/filesystem/network gates, missing skill visibility, and MCP
+inventory gaps only; it does not execute tools, run shell commands, write
+files, change settings, add/connect/delete MCP servers, publish skills, use
+network access, or read secret values.
 The safety-plan endpoint returns destructive, network, credential, filesystem,
 and shell boundary rows with trust-policy, command-gate, API-gate, data-path,
-and activity-ledger evidence only; it does not route commands, execute commands,
-approve actions, start workflows, start jobs, run shell commands, write files,
-restart services, train models, query web search, read credentials, export data,
-delete records, or use network access.
-The goal-plan endpoint returns operating-console principle, definition-of-done,
-evidence, API-gate, guard-rail, and data-path rows only; it does not route
-commands, execute commands, approve actions, start workflows, start jobs, run
-shell commands, write files, restart services, train models, query web search,
-read credentials, export data, delete records, or use network access.
+activity-ledger evidence, dashboard/text/palette/voice/workflow request-route
+proof, safety handoffs for destructive/recovery approval, network egress,
+credential review, filesystem boundaries, shell/Docker/tests, backup/recovery,
+and activity logging, and safety alert rows for missing/weak ask gates, missing
+command catalogs, missing workflow catalogs, and missing policy evidence only;
+it does not route commands, execute commands, approve actions, start workflows,
+start jobs, run shell commands, write files, restart services, train models,
+query web search, read credentials, export data, delete records, or use network
+access.
+The goal-plan endpoint returns operating-console identity, principle,
+definition-of-done, explicit v1 release-gate rows for Docker startup,
+Command Center UI, target command routes, permission gates, activity timeline,
+operator route smokes, focused tests, responsive UI inspection, and clean
+commit/push proof, evidence, dashboard/text/palette/voice/workflow request-route
+proof, goal handoff rows for console readiness, command routing,
+autonomy/approvals, memory/profile, practical control, activity/recovery,
+safety, Docker runtime, target experience, and completion audit, goal alert
+rows, API-gate, guard-rail, and data-path rows only; it does not route
+commands, execute commands, approve actions, start
+workflows, start jobs, run shell commands, write files, restart services, train
+models, query web search, read credentials, export data, delete records, or use
+network access.
 The experience-plan endpoint returns target phrase, command route, approval
-gate, entry-point, API-gate, and data-path rows only; it does not route
-commands, execute commands, start workflows, start jobs, run shell commands,
-write files, restart services, approve actions, or use network access.
+gate, route-match evidence with selected route/expected route/score/trust mode,
+dashboard/text/palette/voice/workflow entry-path, target handoff rows for
+briefing, container repair, code tests, training, build watch, note-to-task,
+local document search, change briefs, and backup verification, API-gate,
+data-path rows, and target alert rows for missing phrase routes, command catalogs,
+workflow catalogs, and policy evidence only; it does not route commands,
+execute commands, start workflows, start jobs, run shell commands, write files,
+restart services, approve actions, or use network access.
+The notes-plan endpoint returns note metadata counts, checklist counts, reminder
+posture, note-to-task candidate rows, dashboard/text/palette/voice/workflow
+request-route proof, API gates, notes alert rows, and handoff rows for
+create/update, archive/delete, checklist edits, reminders, note-to-task drafts,
+search/export boundaries, and activity/recovery only; it does not create notes,
+update notes, archive notes, delete notes, toggle checklist items, fire
+reminders, create tasks, run shell commands, or use network access.
+The calendar-plan endpoint returns local calendar event counts, today/upcoming
+event posture, reminder posture, sync configuration, API gates, and calendar
+alert rows, plus handoff rows for event create/update, event/calendar deletion,
+ICS import/export, remote sync/connection tests, reminder dispatch, recurring
+rule edits, and activity/recovery only; it does not create calendar events,
+update events, delete events, import calendars, export calendars, sync calendars,
+test remote connections, send notifications, run shell commands, or use network
+access.
+The tasks-plan endpoint returns scheduled task counts, trigger posture, recent
+task-run status, notification/webhook posture, shell-capable action gates, API
+gates, task alert rows, and handoff rows for create/update, lifecycle/delete,
+run/stop/retry, webhook triggers, notification/email output, shell/admin
+actions, and activity/recovery only; it does not create tasks, update tasks,
+pause or resume tasks, delete tasks, revert built-ins, run tasks, stop tasks,
+clear caches, regenerate webhook tokens, trigger webhooks, send notifications,
+run shell commands, or use network access.
+The work-ops-plan endpoint returns one read-only work operations view across
+briefing, workday, tasks, notes, reminders, note-to-task drafts, calendar
+windows, dashboard/text/palette/voice/workflow route proof, alert rows, explicit
+work handoff rows, API gates, sync gates, guard rails, and local data paths only; it does not create tasks, update
+tasks, run tasks, create or update notes, fire reminders, create or update
+calendar events, sync calendars, start automation, write activity, send
+notifications, run shell commands, or use network access.
 The build-watch endpoint returns workspace inventory, candidate build commands,
-loop limits, route IDs, API gates, and evidence rows only; loop starts, build
-runs, file edits, snapshot create/restore, dependency installs, network fetches,
-commits, and shell execution stay behind Code Workspace and Agent Loop approval
-controls.
+loop limits, dashboard/text/palette/voice/workflow request-route proof, route
+IDs, API gates, and evidence rows only; loop starts, build runs, file edits,
+snapshot create/restore, dependency installs, network fetches, commits, and
+shell execution stay behind Code Workspace and Agent Loop approval controls.
 The document-search endpoint returns personal document index counts, RAG
-readiness, route proof, API gates, and data paths only; it does not run a query,
-read result snippets, reload indexes, add directories, rebuild RAG, use web
-search, or modify files.
+readiness, route proof, local search alert rows, API gates, and data paths only;
+it highlights empty indexes, missing keyword chunks, unavailable vector search,
+excluded-file review, and index-write gates without running a query, reading
+result snippets, reloading indexes, adding directories, rebuilding RAG, using
+web search, or modifying files.
+The research-plan endpoint returns Deep Research feature posture, search-provider
+configuration, SearXNG path evidence, saved report metadata, active-job rows
+when provided, API gates, research alert rows, and research/library handoff rows
+for local documents, saved reports, gallery evidence, workspace follow-up, and
+approved web-source starts only; it does not start research, run web search,
+fetch URLs, write reports, call SearXNG, query external providers, approve
+network access, or use network access.
+The gallery-plan endpoint returns generated-image, gallery, gallery-upload, chat
+upload, image-model, vision-cache, API-gate, media alert rows,
+dashboard/text/palette/voice/workflow request-route proof, and media handoffs
+for upload/import, AI media generation, edit/transform, delete/archive,
+export/download, vision refresh, and network-provider review only; it does not
+upload files, generate images, edit media, replace images, delete media, export
+media, refresh vision captions, call model endpoints, or use network access.
+The workspace-plan endpoint returns one local workbench view across code
+workspaces, build-watch readiness, local document search, research, gallery,
+file operations, data paths, and handoffs for code tests, build watching,
+document search, research escalation, media operations, file/data boundaries,
+backup/recovery, and activity/retry logging; it does not run tests, start build
+watches, search documents, start research, upload files, generate images, write
+files, delete files, run shell commands, or use network access.
 
 Local document search is also routed through the local Library/RAG index. When
 you ask Cleverly to search local documents from chat, voice, or Command Center,
@@ -173,18 +470,34 @@ it searches indexed personal documents first, falls back to the local keyword
 index, and reports a no-match result instead of claiming it has no local access.
 The Command Center Local Document Search modal uses
 `/api/operator/document-search-plan` before a query so the local index,
-`/api/personal/search` route, RAG/keyword fallback, and safety boundaries are
-visible before retrieval starts. Completed local document searches are mirrored
+dashboard/text/palette/voice/workflow request-route proof,
+`/api/personal/search` route, RAG/keyword fallback, query requirement, handoff
+rows for query review, vector/keyword routing, index refresh, directory scope,
+file exclusions, research escalation, and activity logging, and safety
+boundaries are visible before retrieval starts. Completed local document searches are mirrored
 to `data/operator_activity.json` with query metadata, result count, route type,
 and result titles/sources only; result snippets are not stored in the activity
 ledger.
 
 Voice I/O includes an approval-gated browser voice setup route that enables
 browser STT/TTS locally; microphone access still requires the browser's own
-permission prompt when voice starts. Voice configuration is stored in
-`data/settings.json`, generated local TTS cache files live under
-`data/tts_cache/`, and browser speech recognition/synthesis stays in the
-browser unless local or endpoint providers are explicitly selected.
+permission prompt when voice starts. The Voice Operations Preflight shows
+dashboard/text/palette/voice/workflow request-route proof and transcript
+handoffs for permission, route preview, trust policy, activity metadata,
+speech-output review, and endpoint privacy before listening or speaking, with
+each row marked plan-only for microphone, speech, and network use. Voice command
+start/listen/no-speech/route and error states are mirrored to
+`data/operator_activity.json` with provider and status metadata only; audio is
+not stored. Voice configuration is stored in `data/settings.json`, generated
+local TTS cache files live under `data/tts_cache/`, and browser speech
+recognition/synthesis stays in the browser unless local or endpoint providers
+are explicitly selected.
+
+Work Operations Preflight includes a read-only local alert queue from the
+backend workday plan. It highlights overdue tasks, failed or active task runs,
+calendar items due today, note-to-task candidates, and source warnings, while
+leaving task edits, calendar changes, task runs, notifications, and sync behind
+their existing review and approval gates.
 
 In Docker offline/sealed mode, internet-dependent actions such as web research,
 external model endpoints, Cookbook downloads, email/calendar sync, webhooks, and
@@ -503,6 +816,9 @@ client data:
 - Start with `.\Cleverly.ps1 start` or `.\Cleverly.ps1 start -FineTune`.
 - Open **Setup** or **Offline** and confirm zero failed offline-policy checks.
 - Run **Test No Internet** in Offline Control.
+- Run `.\ci\smoke-operator-routes.ps1` against the running `cleverly`
+  container and keep `dist\operator-route-smoke.json`; it verifies the
+  read-only operator routes and the nine v1 target command phrases.
 - Run `.\ci\fresh-machine-offline-smoke.ps1` and keep the JSON report.
 - Run `.\ci\fresh-machine-proof.ps1` on the offline target and keep the JSON
   report plus `.sha256` file.
@@ -534,8 +850,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\make-release.ps1 -Version 1.0
 
 The release wrapper writes `release-manifest.json`, `checksums.sha256`,
 `cleverly-sbom.json` as a CycloneDX JSON SBOM, `static-security.json`, `model-integrity.json`,
-`release-dashboard.html`, `release-dashboard.json`, and no-network smoke
-evidence into the release folder.
+`release-dashboard.html`, `release-dashboard.json`, no-network smoke evidence,
+and operator-route smoke evidence into the release folder.
 
 For dependency-only review, run:
 
@@ -675,9 +991,13 @@ already baked into the image.
 
 The Command Center Training Run Plan uses `/api/operator/training-plan` to
 inspect local datasets, starter artifacts, fine-tune dependency state, job
-ledgers, route metadata, and data paths before any run. It is evidence-only: it
-does not create datasets, start tiny training, start LoRA jobs, pull models,
-change model endpoints, write artifacts, use network access, or approve jobs.
+ledgers, backend training routes, dashboard/text/palette/voice/workflow request
+route proof, alert rows, and data paths before any run. Its alert
+queue highlights missing datasets, failed or active jobs, dependency/base-weight
+blockers, primary-model readiness, and the explicit run-approval gate. It is
+evidence-only: it does not create datasets, start tiny training, start LoRA
+jobs, pull models, change model endpoints, write artifacts, use network access,
+or approve jobs.
 
 External AI/security references are tracked as
 [study packs](docs/external-agent-study-packs.md) only. Cleverly does not pull
@@ -731,7 +1051,10 @@ started manually.
 The Command Center Code Test Plan uses `/api/operator/code-test-plan` to inspect
 workspace metadata and common local test config files such as `package.json`,
 `pyproject.toml`, `pytest.ini`, `go.mod`, and `Cargo.toml`. It suggests commands
-as evidence only. Candidate command rows can stage a detected command in the
+as evidence only and returns route-proof rows for dashboard/text/palette/voice
+and workflow entry points plus code alert rows for missing workspaces, runner
+isolation review, manual command gaps, snapshot approval, and test-run approval.
+Candidate command rows can stage a detected command in the
 Code Workspace Run panel with the matching workspace selected, but they do not
 press Run. A staged command is mirrored to `data/operator_activity.json` with
 status `staged`, the workspace metadata, and a note that no tests executed. The
@@ -753,9 +1076,14 @@ restored.
 
 The Command Center Build Watch Plan uses `/api/operator/build-watch-plan` to
 inspect workspace metadata, infer candidate build/check commands, and show the
-Build Until Green loop approval gates. It does not start loops, run builds, edit
-files, create or restore snapshots, install dependencies, use network access,
-commit, or execute shell commands.
+Build Until Green loop approval gates. It returns build alert rows for missing
+workspaces, manual build-command gaps, runner isolation review, recovery
+snapshot approval, loop approval, and required activity evidence. It also
+returns Build Watch handoff rows for workspace selection, status/diff review,
+snapshot checkpoints, loop approval, runner execution, repair iterations,
+recovery/rollback, and activity ledger writes. It does not start loops, run
+builds, edit files, create or restore snapshots, install dependencies, use
+network access, commit, or execute shell commands.
 
 ## Docker Notes
 
@@ -813,6 +1141,20 @@ Useful checks:
 docker compose ps
 docker compose logs --tail=120 cleverly
 docker compose logs cleverly | grep -E 'ChromaDB|MemoryVectorStore|DEGRADED'
+```
+
+To let the Local Services Map show host-captured container status without
+granting the app Docker control, write metadata to
+`data/operator_container_status.json` from an approved host shell:
+
+```json
+{
+  "source": "approved host docker ps",
+  "captured_at": "2026-06-22T12:00:00Z",
+  "containers": [
+    {"name": "cleverly", "image": "cleverly:local", "status": "Up 3 minutes (healthy)"}
+  ]
+}
 ```
 
 ## Security Notes
@@ -912,7 +1254,9 @@ gitignored `data/` and `logs/` folders.
 
 In the app, open **Command Center -> Operator -> Data** or run the
 `Open Local Data Map` command to see the same locations grouped by sealed
-Docker volumes, host/native mirrors, app files, and backup/privacy boundaries.
+Docker volumes, host/native mirrors, app files, backup/privacy boundaries, and a
+metadata-only file alert queue for missing required roots, sensitive roots, and
+write/delete gates.
 
 Default sealed Docker volumes:
 
@@ -954,7 +1298,7 @@ Important files and subdirectories under `data/` include:
 | `data/settings.json` / `data/features.json` | App settings and feature flags |
 | `data/user_prefs.json` | Per-user preferences, UI settings, and the Command Center operator profile |
 | `data/sessions.json` | Session metadata cache used by the session manager |
-| `data/operator_activity.json` | Durable Command Center/operator activity ledger for command status, trust tags, logs, retry evidence, and recovery notes |
+| `data/operator_activity.json` | Durable Command Center/operator activity ledger for command status, trust tags, logs, retry evidence, recovery notes, and rollback hints |
 | `data/operator_policy.json` | Owner-scoped Command Center trust policy for local, approval, network, and high-risk command tiers |
 | `data/operator_commands.json` | Owner-scoped sanitized command catalog published by the browser command layer for backend readiness, route proof, and audit visibility |
 | `data/operator_workflows.json` | Owner-scoped sanitized Agent Loop and workflow route catalog published by Command Center for automation readiness, backend target-phrase proof, and handoff evidence |
@@ -977,6 +1321,10 @@ Important files and subdirectories under `data/` include:
 The optional full data-directory snapshot CLI is `scripts/cleverly-backup`.
 By default it writes snapshot tarballs under `backups/`; `restore` is
 destructive and is not part of the default Backup Verification Plan.
+The Command Center backup alert queue only reports coverage gaps, request-route
+proof, audit evidence, verification steps, and approval gates; it does not
+create exports, restore data, read backup passwords, move files, or run host
+commands.
 
 Do not commit `data/`, `logs/`, `.env`, generated backups, exported workspaces,
 or Docker volume contents. Sealed Docker volumes are storage isolation, not

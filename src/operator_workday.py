@@ -224,6 +224,102 @@ def _api_action(
     }
 
 
+def _entry_rows(
+    *,
+    briefing_ready: bool,
+    task_count: int,
+    event_count: int,
+    note_count: int,
+) -> list[dict[str, Any]]:
+    state = "ok" if briefing_ready else "warn"
+    common = {
+        "command_id": "summarize-today",
+        "work_command_id": "open-work-preflight",
+        "tasks_command_id": "open-tasks",
+        "calendar_command_id": "open-calendar",
+        "notes_command_id": "open-notes",
+        "note_task_command_id": "draft-task-from-note",
+        "activity_command_id": "open-activity-preflight",
+        "trust_command_id": "open-trust-controls",
+        "workday_api": "/api/operator/workday-plan",
+        "briefing_api": "/api/operator/briefing",
+        "tasks_api": "/api/tasks?include_last_run=true",
+        "runs_api": "/api/tasks/runs/recent",
+        "calendar_api": "/api/calendar/events",
+        "notes_api": "/api/notes",
+        "requires_approval": True,
+        "executes": False,
+        "creates_tasks": False,
+        "updates_tasks": False,
+        "runs_tasks": False,
+        "creates_calendar_events": False,
+        "syncs_calendar": False,
+        "edits_notes": False,
+        "sends_notifications": False,
+        "starts_automation": False,
+        "runs_automation": False,
+        "runs_shell": False,
+        "uses_network": False,
+    }
+    return [
+        {
+            **common,
+            "id": "workday-dashboard-route",
+            "entry": "dashboard",
+            "state": state,
+            "badge": "dash",
+            "title": "Dashboard workday route",
+            "detail": f"The dashboard opens Work Preflight and summarize-today evidence for {task_count} task(s), {event_count} event(s), and {note_count} note(s) before any work changes.",
+            "action": "open-work-preflight",
+            "actionLabel": "Work",
+        },
+        {
+            **common,
+            "id": "workday-text-route",
+            "entry": "text",
+            "state": state,
+            "badge": "text",
+            "title": "Typed workday request route",
+            "detail": "Typed requests like summarize today route to local task, run, calendar, note, and activity evidence without creating or running work.",
+            "action": "summarize-today",
+            "actionLabel": "Brief",
+        },
+        {
+            **common,
+            "id": "workday-palette-route",
+            "entry": "palette",
+            "state": state,
+            "badge": "cmd",
+            "title": "Palette workday route",
+            "detail": "The command palette can open work preflight, tasks, calendar, notes, and activity without saving tasks or syncing calendars.",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+        },
+        {
+            **common,
+            "id": "workday-voice-route",
+            "entry": "voice",
+            "state": state,
+            "badge": "voice",
+            "title": "Voice workday route",
+            "detail": "Voice requests can open daily briefing evidence and Work Preflight without sending notifications, starting automation, or using network access.",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+        },
+        {
+            **common,
+            "id": "workday-workflow-route",
+            "entry": "workflow",
+            "state": state,
+            "badge": "flow",
+            "title": "Workflow workday route",
+            "detail": "Workflow handoffs review local workday evidence, note-to-task candidates, activity status, and approval gates before any task or calendar write.",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+        },
+    ]
+
+
 def run_operator_workday_plan(
     owner: str = "local",
     *,
@@ -241,6 +337,13 @@ def run_operator_workday_plan(
     run_rows, run_error = _section(runs, lambda: _load_runs(owner), _run_row)
     event_rows, event_error = _section(events, lambda: _load_events(owner, current), _event_row)
     note_rows, note_error = _section(notes, lambda: _load_notes(owner), _note_row)
+
+    task_titles_by_id = {row.get("id"): row.get("title") for row in task_rows if row.get("id")}
+    for row in run_rows:
+        task_id = row.get("task_id")
+        task_title = task_titles_by_id.get(task_id)
+        if task_title and (not row.get("title") or row.get("title") == task_id):
+            row["title"] = task_title
 
     active_tasks = [row for row in task_rows if not _is_inactive(row["status"])]
     due_today = [
@@ -268,6 +371,81 @@ def run_operator_workday_plan(
         }.items()
         if error
     }
+    alert_rows: list[dict[str, Any]] = []
+    for row in overdue[:MAX_ROWS]:
+        alert_rows.append({
+            "id": f"overdue-task-{row.get('id') or len(alert_rows) + 1}",
+            "state": "error",
+            "badge": "late",
+            "title": row.get("title") or "Overdue task",
+            "detail": f"Task is overdue since {row.get('due_at') or row.get('next_run') or 'unknown time'}; review before running or rescheduling.",
+            "action": "open-tasks",
+            "actionLabel": "Tasks",
+            "source": "tasks",
+            "requires_approval": True,
+        })
+    for row in failed_runs[:MAX_ROWS]:
+        alert_rows.append({
+            "id": f"failed-run-{row.get('id') or len(alert_rows) + 1}",
+            "state": "error",
+            "badge": "fail",
+            "title": row.get("title") or "Failed task run",
+            "detail": row.get("error") or row.get("result") or "Recent task run failed; inspect logs and recovery before retry.",
+            "action": "open-operations-queue",
+            "actionLabel": "Queue",
+            "source": "task_runs",
+            "requires_approval": True,
+        })
+    for row in active_runs[:MAX_ROWS]:
+        alert_rows.append({
+            "id": f"active-run-{row.get('id') or len(alert_rows) + 1}",
+            "state": "warn",
+            "badge": "run",
+            "title": row.get("title") or "Active task run",
+            "detail": f"{row.get('status') or 'running'} since {row.get('started_at') or 'unknown time'}; avoid duplicate automation until it finishes.",
+            "action": "open-operations-queue",
+            "actionLabel": "Queue",
+            "source": "task_runs",
+            "requires_approval": False,
+        })
+    for row in today_events[:MAX_ROWS]:
+        alert_rows.append({
+            "id": f"calendar-today-{row.get('id') or len(alert_rows) + 1}",
+            "state": "warn",
+            "badge": "cal",
+            "title": row.get("title") or "Calendar event today",
+            "detail": f"Scheduled today at {row.get('start') or 'unknown time'}; calendar edits and sync stay outside this plan.",
+            "action": "open-calendar",
+            "actionLabel": "Calendar",
+            "source": "calendar",
+            "requires_approval": False,
+        })
+    if note_candidates:
+        first_note = note_candidates[0]
+        alert_rows.append({
+            "id": f"note-task-candidate-{first_note.get('id') or 'latest'}",
+            "state": "ok",
+            "badge": "note",
+            "title": "Note ready for task draft",
+            "detail": f"{len(note_candidates)} local note candidate{'s' if len(note_candidates) != 1 else ''}; opening a draft still requires owner review before save.",
+            "action": "draft-task-from-note",
+            "actionLabel": "Draft",
+            "source": "notes",
+            "requires_approval": True,
+        })
+    for name, error in source_errors.items():
+        alert_rows.append({
+            "id": f"source-error-{name}",
+            "state": "warn",
+            "badge": "src",
+            "title": f"{name.title()} source warning",
+            "detail": error,
+            "action": "open-system-health",
+            "actionLabel": "Health",
+            "source": name,
+            "requires_approval": False,
+        })
+    alert_rows = alert_rows[:MAX_ROWS]
 
     work_rows = [
         {
@@ -363,6 +541,12 @@ def run_operator_workday_plan(
         {"label": "Activity", "path": "data/operator_activity.json", "detail": "Command status, logs, retry, and recovery evidence"},
         {"label": "Workflow catalog", "path": "data/operator_workflows.json", "detail": "Published local command/workflow readiness"},
     ]
+    entry_rows = _entry_rows(
+        briefing_ready=not source_errors,
+        task_count=len(task_rows),
+        event_count=len(event_rows),
+        note_count=len(note_rows),
+    )
 
     return {
         "mode": "read-only-workday-plan",
@@ -381,8 +565,12 @@ def run_operator_workday_plan(
             "today_event_count": len(today_events),
             "note_count": len(note_rows),
             "note_task_candidate_count": len(note_candidates),
+            "alert_count": len(alert_rows),
+            "critical_alert_count": sum(1 for row in alert_rows if row.get("state") == "error"),
             "source_error_count": len(source_errors),
             "briefing_ready": not source_errors,
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
             "creates_tasks": False,
             "updates_tasks": False,
             "runs_tasks": False,
@@ -396,6 +584,8 @@ def run_operator_workday_plan(
             "requires_write_approval": True,
         },
         "work_rows": work_rows,
+        "alert_rows": alert_rows,
+        "entry_rows": entry_rows,
         "guard_rows": guard_rows,
         "api_actions": api_actions,
         "evidence_rows": evidence_rows,

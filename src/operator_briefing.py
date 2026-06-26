@@ -613,6 +613,162 @@ def _data_source_rows(sections: dict[str, dict[str, Any]]) -> list[dict[str, Any
     return output
 
 
+def _briefing_alert_row(
+    *,
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    requires_approval: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state,
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "routes_commands": False,
+        "executes_commands": False,
+        "starts_workflows": False,
+        "starts_jobs": False,
+        "runs_shell": False,
+        "writes_activity": False,
+        "uses_network": False,
+    }
+
+
+def _alert_rows(sections: dict[str, dict[str, Any]], summary: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    source_actions = {
+        "tasks": ("open-tasks", "Tasks"),
+        "runs": ("open-operations-queue", "Queue"),
+        "calendar": ("open-calendar", "Calendar"),
+        "notes": ("open-notes", "Notes"),
+        "memory": ("open-memory-profile", "Memory"),
+        "activity": ("open-activity-preflight", "Activity"),
+        "workflows": ("open-automation-map", "Automation"),
+        "models": ("open-model-preflight", "Models"),
+        "services": ("open-local-services-map", "Services"),
+    }
+    for key, section in sections.items():
+        if section.get("ok"):
+            continue
+        action, label = source_actions.get(key, ("summarize-today", "Briefing"))
+        rows.append(_briefing_alert_row(
+            row_id=f"briefing-source-{key}",
+            state="warn",
+            badge="data",
+            title=f"Briefing source unavailable: {key}",
+            detail=_trim(section.get("error") or "The local source could not be read for this briefing.", 260),
+            action=action,
+            action_label=label,
+        ))
+
+    if summary["failed_task_run_count"]:
+        rows.append(_briefing_alert_row(
+            row_id="briefing-failed-task-runs",
+            state="error",
+            badge="runs",
+            title="Failed task runs need review",
+            detail=f"{summary['failed_task_run_count']} failed task run(s) are visible in the local task-run ledger.",
+            action="open-operations-queue",
+            action_label="Queue",
+        ))
+    if summary["running_task_run_count"]:
+        rows.append(_briefing_alert_row(
+            row_id="briefing-running-task-runs",
+            state="warn",
+            badge="run",
+            title="Task runs still active",
+            detail=f"{summary['running_task_run_count']} task run(s) are still in progress.",
+            action="open-operations-queue",
+            action_label="Queue",
+        ))
+    if summary["failed_activity_count"]:
+        rows.append(_briefing_alert_row(
+            row_id="briefing-failed-activity",
+            state="error",
+            badge="log",
+            title="Failed operator activity",
+            detail=f"{summary['failed_activity_count']} activity record(s) need log, retry, or recovery review.",
+            action="open-activity-preflight",
+            action_label="Activity",
+        ))
+    if summary["service_error_count"] or summary["service_warn_count"]:
+        rows.append(_briefing_alert_row(
+            row_id="briefing-service-review",
+            state="error" if summary["service_error_count"] else "warn",
+            badge="svc",
+            title="Local service review needed",
+            detail=f"{summary['service_warn_count']} warning and {summary['service_error_count']} error service row(s).",
+            action="open-local-services-map",
+            action_label="Services",
+            requires_approval=bool(summary["service_error_count"]),
+        ))
+    if summary["model_state"] != "ok":
+        rows.append(_briefing_alert_row(
+            row_id="briefing-model-review",
+            state=summary["model_state"],
+            badge="model",
+            title="Model readiness needs review",
+            detail=summary["model_summary"],
+            action="open-model-preflight",
+            action_label="Models",
+        ))
+    if not summary["workflow_count"] or summary["ready_workflow_count"] < summary["workflow_count"]:
+        rows.append(_briefing_alert_row(
+            row_id="briefing-workflow-readiness",
+            state="warn",
+            badge="flow",
+            title="Briefing workflow handoff not fully ready",
+            detail=(
+                f"{summary['ready_workflow_count']}/{summary['workflow_count']} workflow route(s) ready; "
+                "automation still needs explicit review before handoff."
+            ),
+            action="open-automation-map",
+            action_label="Automation",
+            requires_approval=True,
+        ))
+    if summary["due_today_count"] or summary["today_event_count"]:
+        rows.append(_briefing_alert_row(
+            row_id="briefing-today-review",
+            state="warn",
+            badge="today",
+            title="Today has work to review",
+            detail=f"{summary['due_today_count']} task(s) due and {summary['today_event_count']} calendar event(s) today.",
+            action="open-work-preflight",
+            action_label="Work",
+        ))
+    if not summary["memory_count"]:
+        rows.append(_briefing_alert_row(
+            row_id="briefing-memory-empty",
+            state="warn",
+            badge="mem",
+            title="No local memory visible",
+            detail="Unified memory has no visible rows for this briefing owner.",
+            action="open-memory-profile",
+            action_label="Memory",
+        ))
+    if not summary["note_count"]:
+        rows.append(_briefing_alert_row(
+            row_id="briefing-notes-empty",
+            state="warn",
+            badge="note",
+            title="No local notes visible",
+            detail="No active local notes are visible for today briefing context.",
+            action="open-notes",
+            action_label="Notes",
+        ))
+    return rows[:MAX_ROWS]
+
+
 def _api_actions() -> list[dict[str, Any]]:
     return [
         {
@@ -648,6 +804,106 @@ def _api_actions() -> list[dict[str, Any]]:
     ]
 
 
+def _route_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "dashboard-briefing-button",
+            "state": "ok",
+            "badge": "dash",
+            "title": "Dashboard briefing button",
+            "detail": "The Command Center briefing button routes to summarize-today and opens this local briefing snapshot.",
+            "entry": "dashboard",
+            "command_id": "summarize-today",
+            "action": "summarize-today",
+            "actionLabel": "Briefing",
+            "executes": False,
+            "routes_commands": False,
+            "executes_commands": False,
+            "starts_workflows": False,
+            "starts_jobs": False,
+            "runs_shell": False,
+            "writes_activity": False,
+            "uses_network": False,
+        },
+        {
+            "id": "text-command",
+            "state": "ok",
+            "badge": "text",
+            "title": "Typed command route",
+            "detail": "Text such as 'Cleverly, summarize today' is resolved through the operator route preflight before local command execution.",
+            "entry": "text",
+            "command_id": "summarize-today",
+            "action": "summarize-today",
+            "actionLabel": "Briefing",
+            "executes": False,
+            "routes_commands": False,
+            "executes_commands": False,
+            "starts_workflows": False,
+            "starts_jobs": False,
+            "runs_shell": False,
+            "writes_activity": False,
+            "uses_network": False,
+        },
+        {
+            "id": "command-palette",
+            "state": "ok",
+            "badge": "pal",
+            "title": "Command palette route",
+            "detail": "The global command palette exposes Summarize Today as a local Briefing command.",
+            "entry": "palette",
+            "command_id": "summarize-today",
+            "action": "summarize-today",
+            "actionLabel": "Palette",
+            "executes": False,
+            "routes_commands": False,
+            "executes_commands": False,
+            "starts_workflows": False,
+            "starts_jobs": False,
+            "runs_shell": False,
+            "writes_activity": False,
+            "uses_network": False,
+        },
+        {
+            "id": "voice-command",
+            "state": "ok",
+            "badge": "voice",
+            "title": "Voice command route",
+            "detail": "Voice input follows the same route preview and resolves the target phrase to summarize-today.",
+            "entry": "voice",
+            "command_id": "summarize-today",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+            "executes": False,
+            "routes_commands": False,
+            "executes_commands": False,
+            "starts_workflows": False,
+            "starts_jobs": False,
+            "runs_shell": False,
+            "writes_activity": False,
+            "uses_network": False,
+        },
+        {
+            "id": "workflow-handoff",
+            "state": "ok",
+            "badge": "flow",
+            "title": "Agent workflow handoff",
+            "detail": "Agent and workflow catalogs can point daily briefing handoffs at summarize-today while keeping execution permissioned.",
+            "entry": "workflow",
+            "command_id": "summarize-today",
+            "action": "open-automation-map",
+            "actionLabel": "Automation",
+            "executes": False,
+            "routes_commands": False,
+            "executes_commands": False,
+            "starts_workflows": False,
+            "starts_jobs": False,
+            "runs_shell": False,
+            "writes_activity": False,
+            "uses_network": False,
+        },
+    ]
+
+
 def run_operator_briefing_snapshot(owner: str = "local") -> dict[str, Any]:
     """Return a local-first briefing snapshot for the current operator."""
     owner = owner or "local"
@@ -663,6 +919,14 @@ def run_operator_briefing_snapshot(owner: str = "local") -> dict[str, Any]:
         "services": _section(_service_summary),
     }
     summary = _briefing_summary(sections)
+    route_rows = _route_rows()
+    alert_rows = _alert_rows(sections, summary)
+    summary["route_count"] = len(route_rows)
+    summary["route_ready_count"] = sum(1 for row in route_rows if row.get("state") == "ok")
+    summary["entry_route_count"] = len(route_rows)
+    summary["entry_route_ready_count"] = sum(1 for row in route_rows if row.get("state") == "ok")
+    summary["briefing_alert_count"] = len(alert_rows)
+    summary["critical_briefing_alert_count"] = sum(1 for row in alert_rows if row.get("state") == "error")
     return {
         "generated_at": _iso(_utc_now()),
         "mode": "read-only-local",
@@ -673,6 +937,9 @@ def run_operator_briefing_snapshot(owner: str = "local") -> dict[str, Any]:
         "action_rows": _action_rows(summary),
         "risk_rows": _risk_rows(summary),
         "data_source_rows": _data_source_rows(sections),
+        "alert_rows": alert_rows,
+        "route_rows": route_rows,
+        "entry_rows": route_rows,
         "api_actions": _api_actions(),
         "sections": sections,
         "approval": {

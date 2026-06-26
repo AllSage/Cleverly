@@ -147,6 +147,398 @@ def _api_action(
     }
 
 
+def _entry_rows(
+    *,
+    stt_configured: bool,
+    tts_configured: bool,
+    endpoint_voice: bool,
+    offline_enabled: bool,
+) -> list[dict[str, Any]]:
+    state = "ok" if stt_configured else "warn"
+    io_state = "ok" if stt_configured and tts_configured else "warn"
+    privacy_state = "warn" if endpoint_voice else "ok"
+    network_detail = (
+        "endpoint voice is configured; starting voice remains permissioned and policy-reviewed"
+        if endpoint_voice
+        else "voice preflight does not use network access"
+    )
+    return [
+        {
+            "id": "voice-dashboard-route",
+            "entry": "dashboard",
+            "state": io_state,
+            "badge": "dash",
+            "title": "Dashboard voice preflight",
+            "detail": "The Voice I/O card opens this read-only preflight before any listening or speaking starts.",
+            "command_id": "open-voice-preflight",
+            "start_command_id": "start-voice-command",
+            "action": "open-voice-preflight",
+            "actionLabel": "Plan",
+            "executes": False,
+            "starts_microphone": False,
+            "records_audio": False,
+            "speaks_audio": False,
+            "uses_network": False,
+            "requires_permission": True,
+            "requires_user_activation": True,
+        },
+        {
+            "id": "voice-text-route",
+            "entry": "text",
+            "state": state,
+            "badge": "text",
+            "title": "Typed voice command route",
+            "detail": "Typed requests such as start voice command route to the same approval-gated voice command.",
+            "command_id": "start-voice-command",
+            "preflight_command_id": "open-voice-preflight",
+            "action": "start-voice-command" if stt_configured else "enable-browser-voice-mode",
+            "actionLabel": "Start" if stt_configured else "Enable",
+            "executes": False,
+            "starts_microphone": False,
+            "records_audio": False,
+            "speaks_audio": False,
+            "uses_network": False,
+            "requires_permission": True,
+            "requires_user_activation": True,
+        },
+        {
+            "id": "voice-palette-route",
+            "entry": "palette",
+            "state": state,
+            "badge": "cmd",
+            "title": "Palette voice route",
+            "detail": "The command palette exposes voice start and setup commands under the operator trust policy.",
+            "command_id": "start-voice-command",
+            "preflight_command_id": "open-voice-preflight",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+            "executes": False,
+            "starts_microphone": False,
+            "records_audio": False,
+            "speaks_audio": False,
+            "uses_network": False,
+            "requires_permission": True,
+            "requires_user_activation": True,
+        },
+        {
+            "id": "voice-button-route",
+            "entry": "voice",
+            "state": state,
+            "badge": "mic",
+            "title": "Voice button activation",
+            "detail": "Microphone activation still requires an explicit user action and the browser permission prompt.",
+            "command_id": "start-voice-command",
+            "preflight_command_id": "open-voice-preflight",
+            "action": "start-voice-command" if stt_configured else "enable-browser-voice-mode",
+            "actionLabel": "Start" if stt_configured else "Enable",
+            "executes": False,
+            "starts_microphone": False,
+            "records_audio": False,
+            "speaks_audio": False,
+            "uses_network": False,
+            "requires_permission": True,
+            "requires_user_activation": True,
+        },
+        {
+            "id": "voice-workflow-route",
+            "entry": "workflow",
+            "state": privacy_state if not offline_enabled else ("warn" if endpoint_voice else "ok"),
+            "badge": "flow",
+            "title": "Workflow transcript route",
+            "detail": f"Recognized transcripts route through operatorCommands after permissioned capture; {network_detail}.",
+            "command_id": "start-voice-command",
+            "preflight_command_id": "open-voice-preflight",
+            "action": "open-trust-controls",
+            "actionLabel": "Trust",
+            "executes": False,
+            "starts_microphone": False,
+            "records_audio": False,
+            "speaks_audio": False,
+            "uses_network": False,
+            "requires_permission": True,
+            "requires_user_activation": True,
+        },
+    ]
+
+
+def _voice_alert_row(
+    *,
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    requires_approval: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state,
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "starts_microphone": False,
+        "records_audio": False,
+        "uploads_audio": False,
+        "transcribes_audio": False,
+        "synthesizes_audio": False,
+        "speaks_audio": False,
+        "changes_settings": False,
+        "routes_commands": False,
+        "runs_shell": False,
+        "uses_network": False,
+    }
+
+
+def _alert_rows(
+    *,
+    stt_provider: str,
+    tts_provider: str,
+    stt_state: str,
+    tts_state: str,
+    stt_configured: bool,
+    tts_configured: bool,
+    endpoint_voice: bool,
+    local_voice: bool,
+    browser_pair: bool,
+    offline_enabled: bool,
+    endpoint_feature: Any,
+) -> list[dict[str, Any]]:
+    rows = [
+        _voice_alert_row(
+            row_id="voice-microphone-permission",
+            state="warn",
+            badge="mic",
+            title="Microphone permission required",
+            detail="Voice input cannot start until the owner triggers voice mode and the browser grants microphone access.",
+            action="start-voice-command" if stt_configured else "open-voice-preflight",
+            action_label="Voice" if stt_configured else "Plan",
+            requires_approval=True,
+        ),
+        _voice_alert_row(
+            row_id="voice-user-activation-required",
+            state="warn",
+            badge="click",
+            title="Voice start requires user activation",
+            detail="The dashboard can show voice readiness, but it cannot record, transcribe, or speak without an explicit user action.",
+            action="open-voice-preflight",
+            action_label="Plan",
+        ),
+    ]
+    if not stt_configured:
+        rows.append(_voice_alert_row(
+            row_id="voice-stt-disabled",
+            state="warn",
+            badge="stt",
+            title="Speech-to-text is disabled",
+            detail="Enable browser or local STT before voice commands can listen for transcripts.",
+            action="enable-browser-voice-mode",
+            action_label="Enable",
+        ))
+    elif stt_state == "warn":
+        rows.append(_voice_alert_row(
+            row_id="voice-stt-readiness",
+            state="warn",
+            badge="stt",
+            title="Speech-to-text readiness needs review",
+            detail=f"STT provider {stt_provider} is configured but not fully ready in this plan.",
+            action="open-voice-preflight",
+            action_label="Review",
+        ))
+    if not tts_configured:
+        rows.append(_voice_alert_row(
+            row_id="voice-tts-disabled",
+            state="warn",
+            badge="tts",
+            title="Text-to-speech is disabled",
+            detail="Voice output stays text-only until browser or local TTS is enabled.",
+            action="enable-browser-voice-mode",
+            action_label="Enable",
+        ))
+    elif tts_state == "warn":
+        rows.append(_voice_alert_row(
+            row_id="voice-tts-readiness",
+            state="warn",
+            badge="tts",
+            title="Text-to-speech readiness needs review",
+            detail=f"TTS provider {tts_provider} is configured but not fully ready in this plan.",
+            action="open-voice-preflight",
+            action_label="Review",
+        ))
+    if not browser_pair:
+        rows.append(_voice_alert_row(
+            row_id="voice-browser-setup-review",
+            state="warn",
+            badge="setup",
+            title="Browser voice setup is not fully local",
+            detail="Browser STT and browser TTS are not both selected; review provider privacy before starting voice.",
+            action="enable-browser-voice-mode",
+            action_label="Setup",
+        ))
+    if local_voice:
+        rows.append(_voice_alert_row(
+            row_id="voice-local-service-gate",
+            state="warn",
+            badge="local",
+            title="Local voice service route requires review",
+            detail="Local STT/TTS can use server audio routes only after user-submitted audio or text is provided.",
+            action="open-voice-preflight",
+            action_label="Review",
+            requires_approval=True,
+        ))
+    if endpoint_voice:
+        rows.append(_voice_alert_row(
+            row_id="voice-endpoint-privacy-review",
+            state="warn",
+            badge="net",
+            title="Endpoint voice privacy review",
+            detail=(
+                "Offline mode is active and endpoint voice should remain blocked unless explicitly allowed."
+                if offline_enabled
+                else "Endpoint voice is configured; review network and provider policy before starting."
+            ),
+            action="open-offline",
+            action_label="Policy",
+            requires_approval=True,
+        ))
+    if endpoint_voice and endpoint_feature is False:
+        rows.append(_voice_alert_row(
+            row_id="voice-endpoint-feature-disabled",
+            state="warn",
+            badge="flag",
+            title="Endpoint voice feature disabled",
+            detail="External model endpoints are disabled while an endpoint voice provider is configured.",
+            action="open-offline",
+            action_label="Policy",
+        ))
+    return rows[:10]
+
+
+def _handoff_row(
+    *,
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    requires_approval: bool = False,
+    requires_permission: bool = False,
+    network_after_approval: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state,
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "requires_approval": requires_approval,
+        "requires_permission": requires_permission,
+        "network_after_approval": network_after_approval,
+        "executes": False,
+        "starts_microphone": False,
+        "records_audio": False,
+        "uploads_audio": False,
+        "transcribes_audio": False,
+        "synthesizes_audio": False,
+        "speaks_audio": False,
+        "changes_settings": False,
+        "routes_commands": False,
+        "runs_shell": False,
+        "uses_network": False,
+    }
+
+
+def _handoff_rows(
+    *,
+    stt_configured: bool,
+    tts_configured: bool,
+    endpoint_voice: bool,
+    offline_enabled: bool,
+) -> list[dict[str, Any]]:
+    route_state = "ok" if stt_configured else "warn"
+    output_state = "ok" if tts_configured else "warn"
+    privacy_state = "warn" if endpoint_voice else "ok"
+    privacy_detail = (
+        "Endpoint voice is configured; any transcript or speech provider egress remains outside this plan and needs policy review."
+        if endpoint_voice
+        else "No endpoint voice provider is configured; transcript handoff stays in the local operator command path."
+    )
+    if endpoint_voice and offline_enabled:
+        privacy_detail = "Offline mode is active while endpoint voice is configured; endpoint egress should remain blocked unless explicitly allowed."
+    return [
+        _handoff_row(
+            row_id="voice-permission-handoff",
+            state="warn",
+            badge="ask",
+            title="Permission handoff",
+            detail="Voice capture begins only after an owner action and the browser microphone permission prompt.",
+            action="start-voice-command" if stt_configured else "enable-browser-voice-mode",
+            action_label="Voice" if stt_configured else "Enable",
+            requires_approval=True,
+            requires_permission=True,
+        ),
+        _handoff_row(
+            row_id="voice-transcript-route-handoff",
+            state=route_state,
+            badge="route",
+            title="Transcript route handoff",
+            detail="Recognized transcript text routes through operatorCommands and /api/operator/route before a local command runs.",
+            action="start-voice-command" if stt_configured else "open-voice-preflight",
+            action_label="Route",
+            requires_approval=True,
+            requires_permission=True,
+        ),
+        _handoff_row(
+            row_id="voice-trust-gate-handoff",
+            state="ok",
+            badge="trust",
+            title="Trust gate handoff",
+            detail="Destructive, network, credential, filesystem, and shell actions keep the selected command's approval policy.",
+            action="open-trust-controls",
+            action_label="Trust",
+        ),
+        _handoff_row(
+            row_id="voice-activity-ledger-handoff",
+            state="ok",
+            badge="log",
+            title="Activity ledger handoff",
+            detail="Voice start, listen, no-speech, route, cancel, and error states are recorded as metadata only; audio is not stored.",
+            action="open-activity-preflight",
+            action_label="Activity",
+        ),
+        _handoff_row(
+            row_id="voice-output-review-handoff",
+            state=output_state,
+            badge="tts",
+            title="Voice output review",
+            detail="Speech output is a separate explicit action; this preflight does not synthesize or play audio.",
+            action="open-voice-preflight",
+            action_label="Review",
+            requires_approval=not tts_configured,
+        ),
+        _handoff_row(
+            row_id="voice-endpoint-privacy-handoff",
+            state=privacy_state,
+            badge="net",
+            title="Endpoint privacy handoff",
+            detail=privacy_detail,
+            action="open-offline",
+            action_label="Policy",
+            requires_approval=endpoint_voice,
+            network_after_approval=endpoint_voice,
+        ),
+    ]
+
+
 def run_operator_voice_plan(
     owner: str = "local",
     *,
@@ -316,10 +708,10 @@ def run_operator_voice_plan(
         },
         {
             "id": "activity-ledger",
-            "state": "loading",
+            "state": "ok",
             "badge": "log",
             "title": "Activity timeline coverage",
-            "detail": "Voice actions should be recorded in the local operator activity ledger when routed through the Command Center.",
+            "detail": "The browser voice controller records start, listening, no-speech, route, and error metadata in data/operator_activity.json; audio is not stored.",
             "action": "open-activity-preflight",
             "actionLabel": "Activity",
             "executes": False,
@@ -471,6 +863,31 @@ def run_operator_voice_plan(
             "actionLabel": "Trust",
         },
     ]
+    entry_rows = _entry_rows(
+        stt_configured=stt_configured,
+        tts_configured=tts_configured,
+        endpoint_voice=endpoint_voice,
+        offline_enabled=offline_enabled,
+    )
+    alert_rows = _alert_rows(
+        stt_provider=stt_provider,
+        tts_provider=tts_provider,
+        stt_state=stt_state,
+        tts_state=tts_state,
+        stt_configured=stt_configured,
+        tts_configured=tts_configured,
+        endpoint_voice=endpoint_voice,
+        local_voice=local_voice,
+        browser_pair=browser_pair,
+        offline_enabled=offline_enabled,
+        endpoint_feature=endpoint_feature,
+    )
+    handoff_rows = _handoff_rows(
+        stt_configured=stt_configured,
+        tts_configured=tts_configured,
+        endpoint_voice=endpoint_voice,
+        offline_enabled=offline_enabled,
+    )
 
     return {
         "mode": "read-only-voice-io-plan",
@@ -505,6 +922,13 @@ def run_operator_voice_plan(
             "runs_shell": False,
             "uses_network": False,
             "network_possible_after_start": endpoint_voice,
+            "activity_metadata_only": True,
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": sum(1 for row in entry_rows if row["state"] == "ok"),
+            "voice_alert_count": len(alert_rows),
+            "critical_voice_alert_count": sum(1 for row in alert_rows if row.get("state") == "error"),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": sum(1 for row in handoff_rows if row["state"] == "ok"),
             "route_command_id": "start-voice-command",
             "setup_command_id": "enable-browser-voice-mode",
             "next_action": "Open Voice Operations Preflight, enable browser voice if desired, then start voice after browser microphone approval.",
@@ -532,6 +956,9 @@ def run_operator_voice_plan(
         "permission_rows": permission_rows,
         "api_actions": api_actions,
         "evidence_rows": evidence_rows,
+        "entry_rows": entry_rows,
+        "alert_rows": alert_rows,
+        "handoff_rows": handoff_rows,
         "approval": {
             "required": False,
             "gate": "User activation and browser permission",
@@ -551,6 +978,7 @@ def run_operator_voice_plan(
             "tts_cache": str(data_path / "tts_cache"),
             "stt_route": "/api/stt/transcribe",
             "tts_route": "/api/tts/synthesize",
+            "activity": "data/operator_activity.json",
             "voice_command_script": "static/js/voiceCommand.js",
             "voice_recorder_script": "static/js/voiceRecorder.js",
             "tts_script": "static/js/tts-ai.js",

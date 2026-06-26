@@ -108,6 +108,325 @@ def _sample_rows(index: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
+def _entry_rows(doc_count: int, keyword_ready: bool, vector_ready: bool) -> list[dict[str, Any]]:
+    ready = keyword_ready or vector_ready
+    readiness_detail = (
+        "Local Document Search opens with vector or keyword retrieval evidence ready; query text is still required before search."
+        if ready
+        else "Local Document Search opens first and shows index/RAG readiness gaps before a query is useful."
+    )
+    workflow_detail = (
+        "Workflow handoff can route to local Library search, but web research stays separate and network-gated."
+        if ready
+        else "Workflow handoff stays in review mode until local documents, chunks, or RAG evidence are available."
+    )
+    return [
+        {
+            "id": "document-search-dashboard-entry",
+            "entry": "dashboard",
+            "state": "ok" if ready else "warn",
+            "badge": "dash",
+            "title": "Command Center dashboard",
+            "detail": readiness_detail,
+            "command_id": "search-local-documents",
+            "action": "search-local-documents",
+            "actionLabel": "Search",
+            "requires_query": True,
+            "executes": False,
+            "uses_network": False,
+        },
+        {
+            "id": "document-search-text-entry",
+            "entry": "text",
+            "state": "ok",
+            "badge": "text",
+            "title": "Typed operator command",
+            "detail": "The phrase 'Search my local documents for this' opens local search and requires query text before retrieval.",
+            "command_id": "search-local-documents",
+            "action": "search-local-documents",
+            "actionLabel": "Search",
+            "requires_query": True,
+            "executes": False,
+            "uses_network": False,
+        },
+        {
+            "id": "document-search-palette-entry",
+            "entry": "palette",
+            "state": "ok",
+            "badge": "cmd",
+            "title": "Global command palette",
+            "detail": "The palette exposes Search Local Documents as a local-only Library route, not a web research route.",
+            "command_id": "search-local-documents",
+            "action": "open-command-palette",
+            "actionLabel": "Palette",
+            "requires_query": True,
+            "executes": False,
+            "uses_network": False,
+        },
+        {
+            "id": "document-search-voice-entry",
+            "entry": "voice",
+            "state": "ok",
+            "badge": "voice",
+            "title": "Voice command mode",
+            "detail": "Voice routing can open the same local search surface without sending documents or queries to network services.",
+            "command_id": "search-local-documents",
+            "action": "open-voice-preflight",
+            "actionLabel": "Voice",
+            "requires_query": True,
+            "executes": False,
+            "uses_network": False,
+        },
+        {
+            "id": "document-search-workflow-entry",
+            "entry": "workflow",
+            "state": "ok" if ready and doc_count else "warn",
+            "badge": "flow",
+            "title": "Automation workflow handoff",
+            "detail": workflow_detail,
+            "command_id": "search-local-documents",
+            "action": "open-automation-map",
+            "actionLabel": "Workflow",
+            "requires_query": True,
+            "executes": False,
+            "uses_network": False,
+        },
+    ]
+
+
+def _document_alert_rows(
+    *,
+    doc_count: int,
+    chunk_count: int,
+    directory_count: int,
+    excluded_count: int,
+    rag: dict[str, Any],
+    keyword_ready: bool,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if doc_count < 1:
+        rows.append(
+            {
+                "id": "document-index-empty",
+                "state": "warn",
+                "badge": "docs",
+                "title": "Local document index is empty",
+                "detail": "Add or index local documents before relying on local document search.",
+                "action": "open-documents-preflight",
+                "actionLabel": "Files",
+                "requires_approval": True,
+            }
+        )
+    if doc_count and chunk_count < 1:
+        rows.append(
+            {
+                "id": "keyword-chunks-missing",
+                "state": "warn",
+                "badge": "idx",
+                "title": "Keyword chunks missing",
+                "detail": "Documents are visible, but no keyword chunks are indexed for fallback search.",
+                "action": "open-documents-preflight",
+                "actionLabel": "Files",
+                "requires_approval": True,
+            }
+        )
+    if not rag.get("available"):
+        rows.append(
+            {
+                "id": "vector-search-unavailable",
+                "state": "warn",
+                "badge": "rag",
+                "title": "Vector search unavailable",
+                "detail": rag.get("detail") or "RAG manager or Chroma index is unavailable; keyword fallback may still work.",
+                "action": "open-embedding-preflight",
+                "actionLabel": "RAG",
+                "requires_approval": False,
+            }
+        )
+    if not keyword_ready:
+        rows.append(
+            {
+                "id": "keyword-fallback-not-ready",
+                "state": "warn",
+                "badge": "key",
+                "title": "Keyword fallback not ready",
+                "detail": f"{doc_count} document(s) and {chunk_count} chunk(s) visible; local search may have no fallback results.",
+                "action": "open-documents-preflight",
+                "actionLabel": "Files",
+                "requires_approval": False,
+            }
+        )
+    if directory_count < 1:
+        rows.append(
+            {
+                "id": "tracked-directory-missing",
+                "state": "warn",
+                "badge": "dirs",
+                "title": "No tracked document directory",
+                "detail": "No local directory is registered for document indexing.",
+                "action": "open-documents-preflight",
+                "actionLabel": "Files",
+                "requires_approval": True,
+            }
+        )
+    if excluded_count:
+        rows.append(
+            {
+                "id": "excluded-files-present",
+                "state": "loading",
+                "badge": "skip",
+                "title": "Excluded files need review",
+                "detail": f"{excluded_count} local file(s) are excluded from document search.",
+                "action": "open-documents-preflight",
+                "actionLabel": "Files",
+                "requires_approval": False,
+            }
+        )
+    rows.append(
+        {
+            "id": "index-write-gate",
+            "state": "warn",
+            "badge": "gate",
+            "title": "Index changes require review",
+            "detail": "Reloading, adding directories, excluding files, rebuilding RAG, and deleting documents remain explicit Library actions.",
+            "action": "open-documents-preflight",
+            "actionLabel": "Files",
+            "requires_approval": True,
+        }
+    )
+    return rows[:12]
+
+
+def _handoff_row(
+    row_id: str,
+    state: str,
+    badge: str,
+    title: str,
+    detail: str,
+    action: str,
+    action_label: str,
+    *,
+    target_api: str,
+    approval_command_id: str = "open-documents-preflight",
+    requires_approval: bool = False,
+) -> dict[str, Any]:
+    return {
+        "id": row_id,
+        "state": state if state in {"ok", "warn", "error", "loading"} else "warn",
+        "badge": badge,
+        "title": title,
+        "detail": detail,
+        "action": action,
+        "actionLabel": action_label,
+        "target_api": target_api,
+        "approval_command_id": approval_command_id,
+        "requires_approval": requires_approval,
+        "executes": False,
+        "runs_search": False,
+        "reads_query": False,
+        "reads_result_snippets": False,
+        "indexes_files": False,
+        "changes_files": False,
+        "adds_directories": False,
+        "excludes_files": False,
+        "rebuilds_rag": False,
+        "starts_research": False,
+        "writes_activity": False,
+        "uses_network": False,
+    }
+
+
+def _handoff_rows(
+    *,
+    doc_count: int,
+    chunk_count: int,
+    directory_count: int,
+    excluded_count: int,
+    vector_ready: bool,
+    keyword_ready: bool,
+) -> list[dict[str, Any]]:
+    search_state = "ok" if doc_count and (vector_ready or keyword_ready) else "warn"
+    vector_state = "ok" if vector_ready else "warn"
+    keyword_state = "ok" if keyword_ready else "warn"
+    directory_state = "ok" if directory_count else "warn"
+    exclusion_state = "warn" if excluded_count else "ok"
+    return [
+        _handoff_row(
+            "document-query-review-handoff",
+            search_state,
+            "query",
+            "Query review handoff",
+            f"{doc_count} document(s) and {chunk_count} chunk(s) are visible; query text is required before retrieval starts.",
+            "search-local-documents",
+            "Search",
+            target_api="/api/personal/search",
+        ),
+        _handoff_row(
+            "document-vector-keyword-handoff",
+            "ok" if vector_ready or keyword_ready else "warn",
+            "rag",
+            "Vector and keyword retrieval handoff",
+            f"vector_ready={vector_ready}; keyword_ready={keyword_ready}; retrieval stays local to RAG and personal document chunks.",
+            "open-embedding-preflight",
+            "RAG",
+            target_api="/api/rag/stats",
+        ),
+        _handoff_row(
+            "document-index-refresh-handoff",
+            "warn",
+            "idx",
+            "Index refresh handoff",
+            "Reloading indexes, rebuilding RAG, or refreshing personal document chunks requires explicit Library review.",
+            "open-documents-preflight",
+            "Files",
+            target_api="/api/personal/reload",
+            requires_approval=True,
+        ),
+        _handoff_row(
+            "document-directory-scope-handoff",
+            directory_state,
+            "dirs",
+            "Directory scope handoff",
+            f"{directory_count} tracked directory entry/entries are visible; adding external directories stays owner-selected.",
+            "open-documents-preflight",
+            "Files",
+            target_api="/api/operator/document-search-plan",
+            requires_approval=directory_count < 1,
+        ),
+        _handoff_row(
+            "document-exclusion-handoff",
+            exclusion_state,
+            "skip",
+            "Exclusion and file boundary handoff",
+            f"{excluded_count} excluded file(s) are recorded; include/exclude changes are separate local Library actions.",
+            "open-local-data-map",
+            "Data",
+            target_api="/api/operator/file-ops-plan",
+            requires_approval=bool(excluded_count),
+        ),
+        _handoff_row(
+            "document-research-escalation-handoff",
+            "ok" if doc_count else "warn",
+            "web",
+            "Research escalation handoff",
+            "Local document search should be reviewed before escalating to network-capable Deep Research.",
+            "open-research-preflight",
+            "Research",
+            target_api="/api/operator/research-plan",
+        ),
+        _handoff_row(
+            "document-activity-handoff",
+            "ok",
+            "log",
+            "Activity logging handoff",
+            "Completed local document searches should write only query metadata, result count, route type, and result references to activity.",
+            "open-activity-preflight",
+            "Activity",
+            target_api="/api/operator/activity",
+        ),
+    ]
+
+
 def run_operator_document_search_plan(
     owner: str = "local",
     *,
@@ -131,6 +450,23 @@ def run_operator_document_search_plan(
     directory_count = int(stats.get("directories_count") or (len(dirs) + 1))
     keyword_ready = doc_count > 0 and chunk_count > 0
     state = "ok" if keyword_ready or rag.get("available") else "warn"
+    alert_rows = _document_alert_rows(
+        doc_count=doc_count,
+        chunk_count=chunk_count,
+        directory_count=directory_count,
+        excluded_count=excluded_count,
+        rag=rag,
+        keyword_ready=keyword_ready,
+    )
+    entry_rows = _entry_rows(doc_count, keyword_ready, bool(rag.get("available")))
+    handoff_rows = _handoff_rows(
+        doc_count=doc_count,
+        chunk_count=chunk_count,
+        directory_count=directory_count,
+        excluded_count=excluded_count,
+        vector_ready=bool(rag.get("available")),
+        keyword_ready=keyword_ready,
+    )
 
     index_rows = [
         {
@@ -344,6 +680,12 @@ def run_operator_document_search_plan(
             "excluded_count": excluded_count,
             "vector_ready": bool(rag.get("available")),
             "keyword_ready": keyword_ready,
+            "entry_route_count": len(entry_rows),
+            "entry_route_ready_count": len([row for row in entry_rows if row.get("state") == "ok"]),
+            "document_alert_count": len(alert_rows),
+            "critical_document_alert_count": len([row for row in alert_rows if row.get("state") == "error"]),
+            "handoff_count": len(handoff_rows),
+            "handoff_ready_count": len([row for row in handoff_rows if row.get("state") == "ok"]),
             "runs_search": False,
             "reads_query": False,
             "indexes_files": False,
@@ -356,8 +698,11 @@ def run_operator_document_search_plan(
         },
         "rag": rag,
         "index_rows": index_rows,
+        "entry_rows": entry_rows,
         "route_rows": route_rows,
         "guard_rows": guard_rows,
+        "alert_rows": alert_rows,
+        "handoff_rows": handoff_rows,
         "api_actions": api_actions,
         "evidence_rows": evidence_rows,
         "approval": {
