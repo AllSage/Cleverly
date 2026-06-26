@@ -6875,8 +6875,15 @@ def test_operator_goal_plan_maps_operating_console_goal_without_execution():
     release_gates = {row["id"]: row for row in plan["release_gate_rows"]}
     assert "ci/operator_route_smoke.py" in release_gates["operator-plan-route-smokes"]["paths"]
     assert "ci/smoke-operator-routes.ps1" in release_gates["operator-plan-route-smokes"]["paths"]
+    assert "ci/command_center_ui_smoke.py" in release_gates["responsive-ui-inspection"]["paths"]
+    assert "ci/smoke-command-center-ui.ps1" in release_gates["responsive-ui-inspection"]["paths"]
+    assert "tests/bombadil-spec.ts" in release_gates["responsive-ui-inspection"]["paths"]
+    assert "dist/command-center-ui-smoke.json" in release_gates["responsive-ui-inspection"]["paths"]
     route_smoke_py = Path("ci/operator_route_smoke.py").read_text(encoding="utf-8")
     route_smoke_ps1 = Path("ci/smoke-operator-routes.ps1").read_text(encoding="utf-8")
+    ui_smoke_py = Path("ci/command_center_ui_smoke.py").read_text(encoding="utf-8")
+    ui_smoke_ps1 = Path("ci/smoke-command-center-ui.ps1").read_text(encoding="utf-8")
+    bombadil_spec = Path("tests/bombadil-spec.ts").read_text(encoding="utf-8")
     assert 'OPERATOR_PREFIX = "/api/operator"' in route_smoke_py
     assert "/console-plan" in route_smoke_py
     assert "/goal-plan" in route_smoke_py
@@ -6887,6 +6894,15 @@ def test_operator_goal_plan_maps_operating_console_goal_without_execution():
     assert '"request-build-watch-loop"' in route_smoke_py
     assert '"example_ok"' in route_smoke_py
     assert "operator_route_smoke.py" in route_smoke_ps1
+    assert "desktop-command-center" in ui_smoke_py
+    assert "mobile-command-center" in ui_smoke_py
+    assert "--require-live" in ui_smoke_py
+    assert "CLEVERLY_BOMBADIL_USERNAME" in ui_smoke_py
+    assert "command_center_ui_smoke.py" in ui_smoke_ps1
+    assert "commandCenterBecomesReady" in bombadil_spec
+    assert "commandCenterDoesNotStayLoading" in bombadil_spec
+    assert "commandCenterHasResponsiveClearance" in bombadil_spec
+    assert "commandCenterTargetRoutesVisible" in bombadil_spec
     assert any(row["id"] == "goal-readiness-proof" for row in plan["evidence_rows"])
     assert any(row["id"] == "chat-reasoning" for row in plan["capability_rows"])
     assert any(row["id"] == "docker-services" for row in plan["capability_rows"])

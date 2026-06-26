@@ -819,6 +819,10 @@ client data:
 - Run `.\ci\smoke-operator-routes.ps1` against the running `cleverly`
   container and keep `dist\operator-route-smoke.json`; it verifies the
   read-only operator routes and the nine v1 target command phrases.
+- Run `.\ci\smoke-command-center-ui.ps1` and keep
+  `dist\command-center-ui-smoke.json`; set `CLEVERLY_BOMBADIL_USERNAME` and
+  `CLEVERLY_BOMBADIL_PASSWORD` to include authenticated Chrome/Edge desktop and
+  mobile checks, or use `-StaticOnly` for the dependency-free contract check.
 - Run `.\ci\fresh-machine-offline-smoke.ps1` and keep the JSON report.
 - Run `.\ci\fresh-machine-proof.ps1` on the offline target and keep the JSON
   report plus `.sha256` file.

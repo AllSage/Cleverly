@@ -346,10 +346,10 @@ def test_command_center_home_has_top_clearance_for_container_frame():
     assert container_rule is not None
     assert desktop_rule is not None
     assert mobile_rule is not None
-    assert "margin-top: 48px;" in container_rule.group("body")
+    assert "margin-top: 64px;" in container_rule.group("body")
     assert "top: 88px;" in desktop_rule.group("body")
     assert "max-height: calc(100dvh - 276px);" in desktop_rule.group("body")
-    assert "margin-top: 32px;" in mobile_rule.group("body")
+    assert "margin-top: 48px;" in mobile_rule.group("body")
     assert "top: 40px;" in mobile_rule.group("body")
     assert "max-height: calc(100dvh - 160px);" in mobile_rule.group("body")
 

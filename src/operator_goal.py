@@ -217,8 +217,8 @@ RELEASE_GATE_ROWS = [
         "action_label": "Audit",
         "proof_key": "ui_inspection_passed",
         "endpoints": ["/", "/api/operator/console-plan"],
-        "paths": ["static/style.css", "static/js/commandCenter.js"],
-        "proof": "Browser inspection confirms the dashboard, command palette, voice entry, activity timeline, and approval surfaces are usable on desktop and mobile.",
+        "paths": ["ci/command_center_ui_smoke.py", "ci/smoke-command-center-ui.ps1", "tests/bombadil-spec.ts", "dist/command-center-ui-smoke.json", "static/style.css", "static/js/commandCenter.js"],
+        "proof": "Browser/static UI smoke and Bombadil invariants confirm the dashboard, command palette, voice entry, activity timeline, and approval surfaces are usable on desktop and mobile.",
     },
     {
         "id": "clean-commit-push",

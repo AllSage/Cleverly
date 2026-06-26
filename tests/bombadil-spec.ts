@@ -48,6 +48,27 @@ const visibleModals = extract((state) => {
   return count;
 });
 
+const commandCenterState = extract((state) => {
+  if (state.document.querySelector("#username") !== null) return null;
+  const root = state.document.querySelector("#command-center") as HTMLElement | null;
+  const chatContainer = state.document.querySelector("#chat-container") as HTMLElement | null;
+  if (!root || !chatContainer) return null;
+  const rect = chatContainer.getBoundingClientRect();
+  const readinessCards = Array.from(state.document.querySelectorAll("#cc-command-readiness-deck [data-state]")) as HTMLElement[];
+  const targetCards = Array.from(state.document.querySelectorAll(".command-center-targets [data-state]")) as HTMLElement[];
+  const targetSummary = (state.document.querySelector("#cc-targets-summary")?.textContent || "").trim();
+  return {
+    ready: (state.document.body as HTMLElement).dataset.cleverlyCommandCenterReady || "",
+    top: rect.top,
+    horizontalOverflow: state.document.documentElement.scrollWidth > state.document.documentElement.clientWidth + 1,
+    readinessCount: readinessCards.length,
+    targetCount: targetCards.length,
+    loadingReadiness: readinessCards.filter((el) => el.dataset.state === "loading").length,
+    loadingTargets: targetCards.filter((el) => el.dataset.state === "loading").length,
+    targetSummary,
+  };
+});
+
 const clickableElements = extract((state) => {
   const els: { name: string; x: number; y: number }[] = [];
   const selectors = "button:not([disabled]),.list-item,.icon-rail-btn,.section-header-flex,.send-btn,.sidebar-brand,input[type=checkbox]";
@@ -107,5 +128,29 @@ export const noModalStacking = always(() => (visibleModals.current || 0) <= 2);
 export const chatInputAppears = always(
   now(() => onLoginPage.current === false).implies(
     eventually(() => chatInput.current !== null).within(10, "seconds")
+  )
+);
+export const commandCenterBecomesReady = always(
+  now(() => onLoginPage.current === false).implies(
+    eventually(() => {
+      const cc = commandCenterState.current;
+      return cc !== null && cc.ready === "ready" && cc.readinessCount >= 8 && cc.targetCount >= 9;
+    }).within(15, "seconds")
+  )
+);
+export const commandCenterDoesNotStayLoading = always(() => {
+  const cc = commandCenterState.current;
+  return cc === null || cc.ready !== "ready" || (cc.loadingReadiness === 0 && cc.loadingTargets === 0);
+});
+export const commandCenterHasResponsiveClearance = always(() => {
+  const cc = commandCenterState.current;
+  return cc === null || (cc.top >= 0 && cc.horizontalOverflow === false);
+});
+export const commandCenterTargetRoutesVisible = always(
+  now(() => onLoginPage.current === false).implies(
+    eventually(() => {
+      const cc = commandCenterState.current;
+      return cc !== null && cc.targetSummary.includes("9/9 route-ready");
+    }).within(15, "seconds")
   )
 );
